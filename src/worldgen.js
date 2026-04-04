@@ -54,6 +54,7 @@ export function unloadChunk(cq, cr) {
 
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
+}
 
 
 export function updateChunks() {
