@@ -1,5 +1,5 @@
 export const HEX_RADIUS = 1;
-export const HEX_HEIGHT = HEX_RADIUS * 2;
+export const HEX_HEIGHT = HEX_RADIUS * 1.6;
 export const CHUNK_SIZE = 8;
 export const RENDER_DIST = 3;
 
@@ -15,3 +15,6 @@ export const PLAYER_HEIGHT = HEX_HEIGHT * PLAYER_HEIGHT_IN_HEXES;
 
 export const GRAVITY = -0.02;
 export const JUMP_FORCE = 0.42;
+export const MOVE_SPEED = 0.12;
+export const MOVE_ACCELERATION = 0.35;
+export const MOVE_FRICTION = 0.2;
