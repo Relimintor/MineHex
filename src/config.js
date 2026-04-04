@@ -7,7 +7,8 @@ export const BLOCK_TYPES = [
     { name: 'Grass', color: 0x4caf50 },
     { name: 'Dirt', color: 0x795548 },
     { name: 'Stone', color: 0x9e9e9e },
-    { name: 'Cloud', color: 0xffffff }
+    { name: 'Cloud', color: 0xffffff },
+    { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true }
 ];
 
 export const PLAYER_HEIGHT_IN_HEXES = 1.8;

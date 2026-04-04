@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { GRAVITY, JUMP_FORCE, MOVE_ACCELERATION, MOVE_FRICTION, MOVE_SPEED, PLAYER_HEIGHT } from './config.js';
+import { BLOCK_TYPES, GRAVITY, JUMP_FORCE, MOVE_ACCELERATION, MOVE_FRICTION, MOVE_SPEED, PLAYER_HEIGHT } from './config.js';
 import { camera } from './scene.js';
 import { inputState, worldState } from './state.js';
 
@@ -11,7 +11,11 @@ const groundRaycaster = new THREE.Raycaster();
 function getGroundHit() {
     groundRaycaster.set(camera.position, DOWN);
     groundRaycaster.far = PLAYER_HEIGHT + 1;
-    const intersections = groundRaycaster.intersectObjects(Array.from(worldState.worldBlocks.values()), false);
+    const collidableBlocks = Array.from(worldState.worldBlocks.values()).filter((mesh) => {
+        const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
+        return !blockType?.isLiquid;
+    });
+    const intersections = groundRaycaster.intersectObjects(collidableBlocks, false);
     return intersections[0] ?? null;
 }
 
