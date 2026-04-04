@@ -3,6 +3,7 @@ const THREE = window.THREE;
 export const worldState = {
     selectedBlockIndex: 0,
     worldBlocks: new Map(),
+    chunkBlocks: new Map(),
     loadedChunks: new Set(),
     simplex: new window.SimplexNoise()
 };
