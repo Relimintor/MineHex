@@ -1,24 +1,26 @@
-# MineHex 3D
+# MineHex FPS
 
-MineHex 3D is a Minecraft-inspired sandbox prototype where the world is wrapped into a connected football-like planet made from hex-style tiles.
+MineHex FPS is a Minecraft-like prototype with a **first-person camera on a flat world**, where terrain uses connected **hexagonal columns** instead of square blocks.
 
-## What changed
+## Highlights
 
-- Moved tile/type definitions into `config.js` so adding new types (like `wood`) is simple.
-- Switched from a flat 2D map to a 3D rotatable globe.
-- Each surface cell is generated from a sphere graph so tiles are connected across the planet.
-- Click to place selected material, `Shift + Click` to break/reset a tile.
+- Flat hex world (not a planet).
+- First-person controls with pointer lock + WASD movement.
+- Left click places selected material.
+- `Shift + Left click` breaks tile (resets to grass).
+- Tile types live in `config.js` for easy extension (example: `wood`).
 
 ## Controls
 
-- **Drag**: rotate planet
-- **Mouse wheel**: zoom
-- **Click**: place selected type
-- **Shift + Click**: break (reset to grass)
+- **Click viewport**: lock pointer
+- **Mouse move**: look around
+- **W/A/S/D**: move
+- **Left click**: place selected material
+- **Shift + Left click**: break/reset tile
 
 ## Run
 
-Open `index.html` in a modern browser (internet required for Three.js CDN import).
+Open `index.html` in a modern browser (requires internet for Three.js CDN import).
 
 Or serve locally:
 

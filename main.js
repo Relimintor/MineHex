@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { HEX_TYPES, WORLD_CONFIG } from './config.js';
 
 const mount = document.querySelector('#game');
@@ -9,8 +9,8 @@ const status = document.querySelector('#status');
 
 const state = {
   selectedType: 'grass',
-  cells: [],
-  planetGroup: new THREE.Group()
+  cellsByKey: new Map(),
+  keysDown: new Set()
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -20,42 +20,53 @@ mount.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(WORLD_CONFIG.skyColor);
-scene.fog = new THREE.Fog(WORLD_CONFIG.fogColor, 10, 28);
+scene.fog = new THREE.Fog(WORLD_CONFIG.skyColor, 25, 90);
 
-const camera = new THREE.PerspectiveCamera(55, mount.clientWidth / mount.clientHeight, 0.1, 100);
-camera.position.set(0, 5, 14);
+const camera = new THREE.PerspectiveCamera(70, mount.clientWidth / mount.clientHeight, 0.1, 200);
+camera.position.set(0, WORLD_CONFIG.cameraEyeHeight + 3, 7);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.minDistance = 8;
-controls.maxDistance = 22;
+const controls = new PointerLockControls(camera, renderer.domElement);
+scene.add(controls.getObject());
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.65);
-scene.add(ambient);
+const hemi = new THREE.HemisphereLight(0xffffff, WORLD_CONFIG.groundColor, 0.95);
+scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-sun.position.set(7, 8, 10);
+const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+sun.position.set(22, 35, 12);
 scene.add(sun);
 
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshStandardMaterial({ color: 0x6c8a56, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.02;
+scene.add(ground);
 
-scene.add(state.planetGroup);
+const raycaster = new THREE.Raycaster();
+const clock = new THREE.Clock();
+
 initMaterialList();
-buildPlanet();
-setStatus('Welcome to MineHex 3D. Build with connected hexes.');
+generateHexWorld();
+setStatus('Click world to lock pointer. WASD to move.');
 animate();
 
+mount.addEventListener('click', () => {
+  if (!controls.isLocked) controls.lock();
+});
+
 window.addEventListener('resize', onResize);
+window.addEventListener('keydown', (event) => state.keysDown.add(event.key.toLowerCase()));
+window.addEventListener('keyup', (event) => state.keysDown.delete(event.key.toLowerCase()));
+renderer.domElement.addEventListener('mousedown', onMouseDown);
 regenBtn.addEventListener('click', () => {
-  buildPlanet();
-  setStatus('Regenerated connected hex planet.');
+  generateHexWorld();
+  setStatus('Regenerated flat connected hex world.');
 });
 materialSelect.addEventListener('change', () => {
   state.selectedType = materialSelect.value;
   setStatus(`Selected ${HEX_TYPES[state.selectedType].label}.`);
 });
-renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
 function initMaterialList() {
   Object.entries(HEX_TYPES).forEach(([key, meta]) => {
@@ -66,51 +77,33 @@ function initMaterialList() {
   });
 }
 
-function buildPlanet() {
-  for (const child of [...state.planetGroup.children]) {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-    state.planetGroup.remove(child);
+function generateHexWorld() {
+  for (const cell of state.cellsByKey.values()) {
+    if (cell.mesh.geometry) cell.mesh.geometry.dispose();
+    if (cell.mesh.material) cell.mesh.material.dispose();
+    scene.remove(cell.mesh);
   }
+  state.cellsByKey.clear();
 
-  state.cells = [];
+  for (let q = -WORLD_CONFIG.worldRadius; q <= WORLD_CONFIG.worldRadius; q++) {
+    const r1 = Math.max(-WORLD_CONFIG.worldRadius, -q - WORLD_CONFIG.worldRadius);
+    const r2 = Math.min(WORLD_CONFIG.worldRadius, -q + WORLD_CONFIG.worldRadius);
 
-  const sphere = new THREE.IcosahedronGeometry(WORLD_CONFIG.sphereRadius, WORLD_CONFIG.radius);
-  const pos = sphere.getAttribute('position');
-  const dedup = new Map();
-
-  for (let i = 0; i < pos.count; i++) {
-    const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-    const key = `${v.x.toFixed(4)}:${v.y.toFixed(4)}:${v.z.toFixed(4)}`;
-    if (!dedup.has(key)) dedup.set(key, v);
+    for (let r = r1; r <= r2; r++) {
+      const type = randomType();
+      addCell(q, r, type);
+    }
   }
-
-  const normals = [...dedup.values()];
-
-  for (const normal of normals) {
-    const type = randomType();
-    const mesh = createCell(normal, type);
-    state.cells.push({ normal, type, mesh });
-    state.planetGroup.add(mesh);
-  }
-
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(WORLD_CONFIG.sphereRadius - 0.55, 36, 24),
-    new THREE.MeshStandardMaterial({ color: 0x121b33, roughness: 0.95, metalness: 0.05 })
-  );
-  state.planetGroup.add(shell);
-
-  sphere.dispose();
 }
 
-function createCell(normal, type) {
+function addCell(q, r, type) {
   const meta = HEX_TYPES[type];
-  const height = WORLD_CONFIG.tileDepth + meta.height;
+  const h = meta.height + WORLD_CONFIG.baseDepth;
 
   const geometry = new THREE.CylinderGeometry(
     WORLD_CONFIG.tileRadius,
     WORLD_CONFIG.tileRadius,
-    height,
+    h,
     6,
     1,
     false
@@ -118,66 +111,144 @@ function createCell(normal, type) {
 
   const material = new THREE.MeshStandardMaterial({
     color: meta.color,
-    roughness: 0.88,
+    roughness: 0.9,
     metalness: 0.02
   });
 
   const mesh = new THREE.Mesh(geometry, material);
+  const { x, z } = axialToWorld(q, r);
+  mesh.position.set(x, h / 2, z);
+  mesh.userData = { q, r, type };
 
-  const up = normal.clone();
-  const tangent = Math.abs(up.y) > 0.95 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-  const side = new THREE.Vector3().crossVectors(tangent, up).normalize();
-  const forward = new THREE.Vector3().crossVectors(up, side).normalize();
-  const matrix = new THREE.Matrix4().makeBasis(side, up, forward);
+  state.cellsByKey.set(keyFor(q, r), { q, r, type, mesh });
+  scene.add(mesh);
+}
 
-  mesh.setRotationFromMatrix(matrix);
-  mesh.position.copy(up.multiplyScalar(WORLD_CONFIG.sphereRadius + height / 2 - 0.16));
-  mesh.userData.type = type;
+function onMouseDown(event) {
+  if (event.button !== 0 || !controls.isLocked) return;
 
-  return mesh;
+  raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+  const meshes = [...state.cellsByKey.values()].map((cell) => cell.mesh);
+  const hit = raycaster.intersectObjects(meshes, false)[0];
+  if (!hit) return;
+
+  const mesh = hit.object;
+  const { q, r } = mesh.userData;
+
+  if (event.shiftKey) {
+    setCellType(q, r, 'grass');
+    setStatus(`Broke tile at (${q}, ${r}) -> Grass.`);
+    return;
+  }
+
+  setCellType(q, r, state.selectedType);
+  setStatus(`Placed ${HEX_TYPES[state.selectedType].label} at (${q}, ${r}).`);
+}
+
+function setCellType(q, r, type) {
+  const cell = state.cellsByKey.get(keyFor(q, r));
+  if (!cell) return;
+
+  cell.type = type;
+  cell.mesh.userData.type = type;
+  cell.mesh.material.color.set(HEX_TYPES[type].color);
+
+  const newHeight = HEX_TYPES[type].height + WORLD_CONFIG.baseDepth;
+  const currentHeight = cell.mesh.geometry.parameters.height;
+  const scaleY = newHeight / currentHeight;
+  cell.mesh.scale.y = scaleY;
+  cell.mesh.position.y = newHeight / 2;
+}
+
+function updateMovement(dt) {
+  if (!controls.isLocked) return;
+
+  const move = WORLD_CONFIG.moveSpeed * dt;
+  const dir = new THREE.Vector3();
+
+  if (state.keysDown.has('w')) dir.z -= 1;
+  if (state.keysDown.has('s')) dir.z += 1;
+  if (state.keysDown.has('a')) dir.x -= 1;
+  if (state.keysDown.has('d')) dir.x += 1;
+  if (dir.lengthSq() === 0) return;
+
+  dir.normalize();
+  controls.moveRight(dir.x * move);
+  controls.moveForward(dir.z * move);
+
+  const pos = controls.getObject().position;
+  const cell = nearestCellAt(pos.x, pos.z);
+  const walkable = !cell || HEX_TYPES[cell.type].walkable;
+
+  if (!walkable) {
+    controls.moveRight(-dir.x * move);
+    controls.moveForward(-dir.z * move);
+    setStatus(`Blocked by ${HEX_TYPES[cell.type].label}.`);
+  }
+
+  controls.getObject().position.y = WORLD_CONFIG.cameraEyeHeight + terrainHeightAt(controls.getObject().position.x, controls.getObject().position.z);
+}
+
+function terrainHeightAt(x, z) {
+  const cell = nearestCellAt(x, z);
+  if (!cell) return 0;
+  return HEX_TYPES[cell.type].height + WORLD_CONFIG.baseDepth;
+}
+
+function nearestCellAt(x, z) {
+  const axial = worldToAxial(x, z);
+  return state.cellsByKey.get(keyFor(axial.q, axial.r)) || null;
+}
+
+function axialToWorld(q, r) {
+  const x = WORLD_CONFIG.tileRadius * 1.5 * q;
+  const z = WORLD_CONFIG.tileRadius * Math.sqrt(3) * (r + q / 2);
+  return { x, z };
+}
+
+function worldToAxial(x, z) {
+  const q = (2 / 3) * (x / WORLD_CONFIG.tileRadius);
+  const r = ((-1 / 3) * x + (Math.sqrt(3) / 3) * z) / WORLD_CONFIG.tileRadius;
+  return axialRound(q, r);
+}
+
+function axialRound(q, r) {
+  let x = q;
+  let z = r;
+  let y = -x - z;
+
+  let rx = Math.round(x);
+  let ry = Math.round(y);
+  let rz = Math.round(z);
+
+  const xDiff = Math.abs(rx - x);
+  const yDiff = Math.abs(ry - y);
+  const zDiff = Math.abs(rz - z);
+
+  if (xDiff > yDiff && xDiff > zDiff) {
+    rx = -ry - rz;
+  } else if (yDiff > zDiff) {
+    ry = -rx - rz;
+  } else {
+    rz = -rx - ry;
+  }
+
+  return { q: rx, r: rz };
 }
 
 function randomType() {
   const roll = Math.random();
   if (roll < 0.1) return 'water';
-  if (roll < 0.15) return 'lava';
-  if (roll < 0.3) return 'stone';
-  if (roll < 0.48) return 'dirt';
-  if (roll < 0.66) return 'wood';
-  if (roll < 0.82) return 'sand';
+  if (roll < 0.14) return 'lava';
+  if (roll < 0.33) return 'stone';
+  if (roll < 0.52) return 'dirt';
+  if (roll < 0.7) return 'wood';
+  if (roll < 0.84) return 'sand';
   return 'grass';
 }
 
-function onPointerDown(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(pointer, camera);
-  const intersects = raycaster.intersectObjects(state.planetGroup.children, false);
-  const hit = intersects.find((entry) => entry.object.geometry?.type === 'CylinderGeometry');
-  if (!hit) return;
-
-  const mesh = hit.object;
-
-  if (event.shiftKey) {
-    applyType(mesh, 'grass');
-    setStatus('Broke tile: reset to Grass.');
-    return;
-  }
-
-  applyType(mesh, state.selectedType);
-  setStatus(`Placed ${HEX_TYPES[state.selectedType].label}.`);
-}
-
-function applyType(mesh, type) {
-  mesh.userData.type = type;
-  mesh.material.color.set(HEX_TYPES[type].color);
-
-  const normal = mesh.position.clone().normalize();
-  const height = WORLD_CONFIG.tileDepth + HEX_TYPES[type].height;
-  mesh.scale.set(1, height / (WORLD_CONFIG.tileDepth + 0.16), 1);
-  mesh.position.copy(normal.multiplyScalar(WORLD_CONFIG.sphereRadius + height / 2 - 0.16));
+function keyFor(q, r) {
+  return `${q},${r}`;
 }
 
 function onResize() {
@@ -188,8 +259,7 @@ function onResize() {
 
 function animate() {
   requestAnimationFrame(animate);
-  state.planetGroup.rotation.y += 0.001;
-  controls.update();
+  updateMovement(clock.getDelta());
   renderer.render(scene, camera);
 }
 
