@@ -3,17 +3,21 @@ const THREE = window.THREE;
 import {
     BLOCK_TYPES,
     GRAVITY,
+    HEX_HEIGHT,
     JUMP_FORCE,
     MOVE_ACCELERATION,
     MOVE_FRICTION,
     MOVE_SPEED,
+    NETHROCK_LEVEL_HEX,
     PLAYER_HEIGHT,
     SWIM_GRAVITY,
     SWIM_MOVE_SPEED,
-    SWIM_UP_FORCE
+    SWIM_UP_FORCE,
+    VOID_RESPAWN_BUFFER_HEX
 } from './config.js';
+import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
-import { isCameraInLiquid } from './rules.js';
+import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
 import { inputState, worldState } from './state.js';
 
 const GROUND_STICK_DISTANCE = 0.08;
@@ -102,8 +106,11 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
 
     resolveGroundCollision();
 
-    if (camera.position.y < -20) {
-        camera.position.y = 10;
+    const worldEndY = (NETHROCK_LEVEL_HEX - VOID_RESPAWN_BUFFER_HEX) * HEX_HEIGHT;
+    if (camera.position.y < worldEndY) {
+        const currentAxial = worldToAxial(camera.position);
+        const didRespawnNearby = enforceSpawnOnSolidBlock(currentAxial.q, currentAxial.r);
+        if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
     }
 }
