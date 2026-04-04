@@ -6,7 +6,12 @@ import { hexGeometry } from './geometry.js';
 import { scene } from './scene.js';
 import { worldState } from './state.js';
 
-const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMaterial({ color: blockType.color }));
+const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMaterial({
+    color: blockType.color,
+    transparent: blockType.transparent ?? false,
+    opacity: blockType.opacity ?? 1,
+    depthWrite: blockType.transparent ? false : true
+}));
 const getChunkKey = (q, r) => `${Math.round(q / CHUNK_SIZE)},${Math.round(r / CHUNK_SIZE)}`;
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false) {
@@ -17,7 +22,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     const mesh = new THREE.Mesh(hexGeometry, blockMaterials[safeTypeIndex]);
     const pos = axialToWorld(q, r, h);
     mesh.position.copy(pos);
-    mesh.userData = { q, r, h, key, isPermanent };
+    mesh.userData = { q, r, h, key, isPermanent, typeIndex: safeTypeIndex };
 
     scene.add(mesh);
     worldState.worldBlocks.set(key, mesh);
@@ -32,9 +37,12 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
+        const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
+        if (blockType?.unbreakable && !force) return false;
+
         scene.remove(mesh);
         worldState.worldBlocks.delete(key);
 
@@ -48,4 +56,6 @@ export function removeBlock(key, { preservePermanent = false } = {}) {
             }
         }
     }
+
+    return true;
 }

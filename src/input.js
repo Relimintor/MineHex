@@ -47,7 +47,7 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 export function registerDesktopInputHandlers() {
     document.addEventListener('keydown', (event) => {
         inputState.keys[event.code] = true;
-        if (event.key >= '1' && event.key <= '4') updateSelectedBlock(parseInt(event.key, 10) - 1);
+        if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 
     document.addEventListener('keyup', (event) => {
