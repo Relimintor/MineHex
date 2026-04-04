@@ -11,7 +11,11 @@ export const BLOCK_TYPES = [
     { name: 'Stone', color: 0x9e9e9e },
     { name: 'Cloud', color: 0xffffff },
     { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true },
-    { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true }
+    { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true },
+    { name: 'Oak Wood', color: 0x8d6e63 },
+    { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true },
+    { name: 'Snow', color: 0xf5f8ff },
+    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true }
 ];
 
 export const PLAYER_HEIGHT_IN_HEXES = 1.8;
