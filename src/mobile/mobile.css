@@ -1,0 +1,68 @@
+body.mobile-mode {
+    touch-action: none;
+}
+
+body.mobile-mode #crosshair {
+    display: none;
+}
+
+body.mobile-mode #inventory {
+    bottom: 20px;
+}
+
+#mobile-controls {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+}
+
+#joystick {
+    position: absolute;
+    left: 20px;
+    bottom: 20px;
+    width: 130px;
+    height: 130px;
+    pointer-events: auto;
+}
+
+#joystick-base,
+#joystick-center {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+#joystick-center {
+    width: 55px;
+    height: 55px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.1s ease;
+}
+
+#jump-btn {
+    position: absolute;
+    right: 20px;
+    bottom: 34px;
+    width: 96px;
+    height: 96px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    pointer-events: auto;
+}
+
+#jump-btn img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+}

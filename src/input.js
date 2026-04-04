@@ -8,12 +8,44 @@ import { inputState, worldState } from './state.js';
 
 const raycaster = new THREE.Raycaster();
 
-function updateSelectedBlock(index) {
+export function updateSelectedBlock(index) {
     worldState.selectedBlockIndex = index;
     document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
 }
 
-export function registerInputHandlers() {
+function getCenterIntersection() {
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const intersects = raycaster.intersectObjects(Array.from(worldState.worldBlocks.values()));
+    return intersects[0] ?? null;
+}
+
+export function placeBlockFromCenter() {
+    const intersect = getCenterIntersection();
+    if (!intersect) return false;
+
+    const normal = intersect.face.normal.clone();
+    normal.transformDirection(intersect.object.matrixWorld);
+    const placePos = intersect.point.clone().add(normal.multiplyScalar(HEX_HEIGHT * 0.6));
+    const coords = worldToAxial(placePos);
+    addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
+    return true;
+}
+
+export function mineBlockFromCenter({ force = false } = {}) {
+    const intersect = getCenterIntersection();
+    if (!intersect) return false;
+    if (!force && !intersect.object.userData.isPermanent) return false;
+    removeBlock(intersect.object.userData.key);
+    return true;
+}
+
+export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
+    inputState.yaw -= deltaX * sensitivity;
+    inputState.pitch -= deltaY * sensitivity;
+    inputState.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, inputState.pitch));
+}
+
+export function registerDesktopInputHandlers() {
     document.addEventListener('keydown', (event) => {
         inputState.keys[event.code] = true;
         if (event.key >= '1' && event.key <= '4') updateSelectedBlock(parseInt(event.key, 10) - 1);
@@ -33,32 +65,17 @@ export function registerInputHandlers() {
 
     document.addEventListener('mousemove', (event) => {
         if (!inputState.isLocked) return;
-        inputState.yaw -= event.movementX * 0.002;
-        inputState.pitch -= event.movementY * 0.002;
-        inputState.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, inputState.pitch));
+        applyLookDelta(event.movementX, event.movementY);
     });
 
     window.addEventListener('mousedown', (event) => {
         if (!inputState.isLocked) return;
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-        const intersects = raycaster.intersectObjects(Array.from(worldState.worldBlocks.values()));
-
-        if (intersects.length === 0) return;
-
-        const intersect = intersects[0];
         if (event.button === 0) {
-            if (!intersect.object.userData.isPermanent && !event.shiftKey) return;
-            removeBlock(intersect.object.userData.key);
+            mineBlockFromCenter({ force: event.shiftKey });
             return;
         }
 
-        if (event.button === 2) {
-            const normal = intersect.face.normal.clone();
-            normal.transformDirection(intersect.object.matrixWorld);
-            const placePos = intersect.point.clone().add(normal.multiplyScalar(HEX_HEIGHT * 0.6));
-            const coords = worldToAxial(placePos);
-            addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
-        }
+        if (event.button === 2) placeBlockFromCenter();
     });
 
     window.addEventListener('contextmenu', (event) => event.preventDefault());

@@ -1,11 +1,35 @@
 import { camera, renderer, scene } from './scene.js';
 import { inputState } from './state.js';
-import { registerInputHandlers } from './input.js';
+import { registerDesktopInputHandlers } from './input.js';
+import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
 import { updateChunks } from './worldgen.js';
 
 camera.position.set(0, 10, 0);
-registerInputHandlers();
+
+function chooseControlMode() {
+    const modeScreen = document.getElementById('mode-select');
+    if (!modeScreen) return Promise.resolve('pc');
+
+    return new Promise((resolve) => {
+        const buttons = modeScreen.querySelectorAll('[data-mode]');
+
+        buttons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const mode = button.dataset.mode;
+                if (mode === 'console') {
+                    const status = modeScreen.querySelector('#mode-status');
+                    if (status) status.textContent = 'Console controls are coming next.';
+                    return;
+                }
+
+                modeScreen.classList.add('hidden');
+                resolve(mode);
+            });
+        });
+    });
+}
+
 let lastFrameTime = performance.now();
 
 function animate(now = performance.now()) {
@@ -22,7 +46,15 @@ function animate(now = performance.now()) {
     renderer.render(scene, camera);
 }
 
-animate();
+chooseControlMode().then((mode) => {
+    if (mode === 'mobile') {
+        registerMobileInputHandlers();
+    } else {
+        registerDesktopInputHandlers();
+    }
+
+    animate();
+});
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
