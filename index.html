@@ -3,25 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MineHex</title>
+    <title>MineHex 3D</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main>
-      <h1>MineHex</h1>
+      <h1>MineHex 3D</h1>
       <p>
-        A tiny Minecraft-inspired sandbox using hexagons instead of blocks.
-        <strong>Click</strong> a tile to place terrain, <strong>Shift + Click</strong>
-        to break it, and use <strong>W/A/S/D</strong> to move.
+        Minecraft vibe, but on a connected hex world wrapped like a football.
+        Drag to rotate, scroll to zoom, click to place, and Shift+Click to break.
       </p>
       <section class="toolbar">
         <label for="material">Material</label>
         <select id="material"></select>
-        <button id="regen">Regenerate World</button>
+        <button id="regen">Regenerate Planet</button>
       </section>
-      <canvas id="game" width="980" height="620" aria-label="MineHex world"></canvas>
+      <div id="game" aria-label="MineHex 3D world"></div>
       <p id="status" aria-live="polite"></p>
     </main>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+        }
+      }
+    </script>
     <script src="main.js" type="module"></script>
   </body>
 </html>
