@@ -46,6 +46,7 @@ export function registerInputHandlers() {
 
         const intersect = intersects[0];
         if (event.button === 0) {
+            if (!intersect.object.userData.isPermanent && !event.shiftKey) return;
             removeBlock(intersect.object.userData.key);
             return;
         }
