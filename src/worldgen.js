@@ -56,6 +56,19 @@ export function unloadChunk(cq, cr) {
     worldState.loadedChunks.delete(chunkKey);
 }
 
+export function unloadChunk(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (!worldState.loadedChunks.has(chunkKey)) return;
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+    for (const key of chunkBlockKeys) {
+        removeBlock(key);
+    }
+
+    worldState.chunkBlocks.delete(chunkKey);
+    worldState.loadedChunks.delete(chunkKey);
+}
+
 export function updateChunks() {
     const current = worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
