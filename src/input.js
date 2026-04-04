@@ -31,10 +31,9 @@ export function placeBlockFromCenter() {
     return true;
 }
 
-export function mineBlockFromCenter({ force = false } = {}) {
+export function mineBlockFromCenter() {
     const intersect = getCenterIntersection();
     if (!intersect) return false;
-    if (!force && !intersect.object.userData.isPermanent) return false;
     removeBlock(intersect.object.userData.key);
     return true;
 }
@@ -71,7 +70,7 @@ export function registerDesktopInputHandlers() {
     window.addEventListener('mousedown', (event) => {
         if (!inputState.isLocked) return;
         if (event.button === 0) {
-            mineBlockFromCenter({ force: event.shiftKey });
+            mineBlockFromCenter();
             return;
         }
 

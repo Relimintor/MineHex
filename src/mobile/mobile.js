@@ -92,8 +92,8 @@ export function registerMobileInputHandlers() {
     function startMiningHold() {
         clearMiningTimers();
         mineTimeout = window.setTimeout(() => {
-            mineBlockFromCenter({ force: true });
-            mineInterval = window.setInterval(() => mineBlockFromCenter({ force: true }), MINE_REPEAT_MS);
+            mineBlockFromCenter();
+            mineInterval = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
         }, HOLD_TO_MINE_DELAY_MS);
     }
 
