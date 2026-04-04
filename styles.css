@@ -1,6 +1,47 @@
 body { margin: 0; overflow: hidden; background-color: #87ceeb; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
 canvas { display: block; }
 
+#mode-select {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+#mode-select.hidden {
+    display: none;
+}
+
+.mode-panel {
+    width: min(90vw, 340px);
+    background: rgba(20, 23, 30, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 24px;
+    display: grid;
+    gap: 10px;
+    color: #fff;
+    text-align: center;
+}
+
+.mode-panel button {
+    border: none;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#mode-status {
+    min-height: 20px;
+    color: #ffe082;
+    font-size: 14px;
+}
+
 #version {
     position: absolute;
     top: 14px;
@@ -34,7 +75,8 @@ canvas { display: block; }
     transform: translateX(-50%);
     display: flex;
     gap: 5px;
-    pointer-events: none;
+    pointer-events: auto;
+    z-index: 30;
 }
 
 .slot {
