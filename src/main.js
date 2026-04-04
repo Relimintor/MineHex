@@ -6,12 +6,15 @@ import { updateChunks } from './worldgen.js';
 
 camera.position.set(0, 10, 0);
 registerInputHandlers();
+let lastFrameTime = performance.now();
 
-function animate() {
+function animate(now = performance.now()) {
     requestAnimationFrame(animate);
+    const deltaTimeSeconds = Math.min(0.1, (now - lastFrameTime) / 1000);
+    lastFrameTime = now;
 
     if (inputState.isLocked) {
-        handlePhysics();
+        handlePhysics(deltaTimeSeconds);
         updateChunks();
     }
 
