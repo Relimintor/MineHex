@@ -6,12 +6,14 @@ import { hexGeometry } from './geometry.js';
 import { scene } from './scene.js';
 import { worldState } from './state.js';
 
+const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMaterial({ color: blockType.color }));
+
 export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     const key = `${q},${r},${h}`;
     if (worldState.worldBlocks.has(key)) return;
 
-    const material = new THREE.MeshLambertMaterial({ color: BLOCK_TYPES[typeIndex].color });
-    const mesh = new THREE.Mesh(hexGeometry, material);
+    const safeTypeIndex = blockMaterials[typeIndex] ? typeIndex : 0;
+    const mesh = new THREE.Mesh(hexGeometry, blockMaterials[safeTypeIndex]);
     const pos = axialToWorld(q, r, h);
     mesh.position.copy(pos);
     mesh.userData = { q, r, h, key, isPermanent };
