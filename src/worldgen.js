@@ -2,12 +2,13 @@ import { CHUNK_SIZE, RENDER_DIST } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
-import { addBlock } from './blocks.js';
+import { addBlock, removeBlock } from './blocks.js';
 
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.loadedChunks.has(chunkKey)) return;
     worldState.loadedChunks.add(chunkKey);
+    worldState.chunkBlocks.set(chunkKey, new Set());
 
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
@@ -23,19 +24,45 @@ export function generateChunk(cq, cr) {
 
                 addBlock(absQ, absR, height, 0);
                 addBlock(absQ, absR, height - 1, 1);
+                worldState.chunkBlocks.get(chunkKey).add(`${absQ},${absR},${height}`);
+                worldState.chunkBlocks.get(chunkKey).add(`${absQ},${absR},${height - 1}`);
             }
         }
     }
+}
+
+export function unloadChunk(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (!worldState.loadedChunks.has(chunkKey)) return;
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+    for (const key of chunkBlockKeys) {
+        removeBlock(key);
+    }
+
+    worldState.chunkBlocks.delete(chunkKey);
+    worldState.loadedChunks.delete(chunkKey);
 }
 
 export function updateChunks() {
     const current = worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
     const cr = Math.round(current.r / CHUNK_SIZE);
+    const visibleChunkKeys = new Set();
 
     for (let i = -RENDER_DIST; i <= RENDER_DIST; i++) {
         for (let j = -RENDER_DIST; j <= RENDER_DIST; j++) {
-            generateChunk(cq + i, cr + j);
+            const visibleCq = cq + i;
+            const visibleCr = cr + j;
+            visibleChunkKeys.add(`${visibleCq},${visibleCr}`);
+            generateChunk(visibleCq, visibleCr);
         }
+    }
+
+    for (const chunkKey of Array.from(worldState.loadedChunks)) {
+        if (visibleChunkKeys.has(chunkKey)) continue;
+
+        const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
+        unloadChunk(chunkQ, chunkR);
     }
 }
