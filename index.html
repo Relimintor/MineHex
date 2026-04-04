@@ -1,35 +1,413 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MineHex FPS</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main>
-      <h1>MineHex FPS</h1>
-      <p>
-        Minecraft-style first-person sandbox on a flat world using connected hex columns.
-        Click the viewport to lock pointer, move with WASD, left click to place, Shift+Left click to break.
-      </p>
-      <section class="toolbar">
-        <label for="material">Material</label>
-        <select id="material"></select>
-        <button id="regen">Regenerate World</button>
-      </section>
-      <div id="game" aria-label="MineHex first-person world"></div>
-      <p id="status" aria-live="polite"></p>
-    </main>
-
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HexCraft - Infinite Hexagonal World</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Simplex Noise for procedural terrain -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87ceeb; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: none;
+            user-select: none;
+            backdrop-filter: blur(4px);
         }
-      }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: difference;
+        }
+
+        .controls { font-size: 0.85em; margin-top: 10px; opacity: 0.9; }
+        kbd { background: #333; padding: 2px 5px; border-radius: 3px; border: 1px solid #555; }
+        
+        /* Hexagonal Hotbar Styling */
+        #inventory {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+            pointer-events: none;
+        }
+
+        .slot {
+            width: 60px;
+            height: 60px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        /* The hexagon shape using clip-path */
+        .slot-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(5px);
+            clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            z-index: -1;
+        }
+
+        .slot.active .slot-bg {
+            background: rgba(255, 255, 255, 0.4);
+            border-color: white;
+            box-shadow: 0 0 15px white;
+        }
+
+        .slot.active {
+            transform: translateY(-5px) scale(1.1);
+        }
+
+        .block-preview {
+            width: 25px;
+            height: 25px;
+            clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        .slot-label {
+            position: absolute;
+            bottom: 2px;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h2 style="margin:0 0 5px 0">HexCraft Infinite</h2>
+        <div id="status">Left Click: Mine | Right Click: Place</div>
+        <div class="controls">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk | <kbd>Space</kbd> Jump<br>
+            <kbd>1-4</kbd> Blocks | <kbd>Esc</kbd> Unlock Mouse
+        </div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <div id="inventory">
+        <div class="slot active" data-index="0">
+            <div class="slot-bg"></div>
+            <div class="block-preview" style="background: #4caf50;"></div>
+            <div class="slot-label">1</div>
+        </div>
+        <div class="slot" data-index="1">
+            <div class="slot-bg"></div>
+            <div class="block-preview" style="background: #795548;"></div>
+            <div class="slot-label">2</div>
+        </div>
+        <div class="slot" data-index="2">
+            <div class="slot-bg"></div>
+            <div class="block-preview" style="background: #9e9e9e;"></div>
+            <div class="slot-label">3</div>
+        </div>
+        <div class="slot" data-index="3">
+            <div class="slot-bg"></div>
+            <div class="block-preview" style="background: #e1e1e1;"></div>
+            <div class="slot-label">4</div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const HEX_RADIUS = 1;
+        const HEX_HEIGHT = 1;
+        const CHUNK_SIZE = 8; 
+        const RENDER_DIST = 3; 
+        
+        const BLOCK_TYPES = [
+            { name: 'Grass', color: 0x4caf50 },
+            { name: 'Dirt', color: 0x795548 },
+            { name: 'Stone', color: 0x9e9e9e },
+            { name: 'Cloud', color: 0xffffff }
+        ];
+
+        // --- Physics Constants ---
+        const GRAVITY = -0.015;
+        const JUMP_FORCE = 0.35;
+        const PLAYER_HEIGHT = 2.5;
+        const PLAYER_RADIUS = 0.5;
+
+        let selectedBlockIndex = 0;
+        const worldBlocks = new Map(); 
+        const loadedChunks = new Set();
+        const simplex = new SimplexNoise();
+
+        // --- Three.js Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.Fog(0x87ceeb, 20, 60);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        sunLight.position.set(50, 100, 50);
+        scene.add(sunLight);
+
+        // --- Hexagon Geometry ---
+        function createHexGeometry() {
+            const shape = new THREE.Shape();
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i + (Math.PI / 6);
+                const x = Math.cos(angle) * HEX_RADIUS;
+                const y = Math.sin(angle) * HEX_RADIUS;
+                if (i === 0) shape.moveTo(x, y);
+                else shape.lineTo(x, y);
+            }
+            shape.closePath();
+
+            const extrudeSettings = {
+                depth: HEX_HEIGHT,
+                bevelEnabled: true,
+                bevelThickness: 0.05,
+                bevelSize: 0.05
+            };
+
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geometry.rotateX(Math.PI / 2);
+            return geometry;
+        }
+
+        const hexGeometry = createHexGeometry();
+
+        // --- Coordinate Helpers ---
+        function axialToWorld(q, r, h) {
+            const x = HEX_RADIUS * Math.sqrt(3) * (q + r / 2);
+            const z = HEX_RADIUS * (3 / 2) * r;
+            const y = h * HEX_HEIGHT;
+            return new THREE.Vector3(x, y, z);
+        }
+
+        function worldToAxial(point) {
+            const q = (Math.sqrt(3)/3 * point.x - 1/3 * point.z) / HEX_RADIUS;
+            const r = (2/3 * point.z) / HEX_RADIUS;
+            const h = Math.round(point.y / HEX_HEIGHT);
+            
+            let x = q, z = r, y = -x - z;
+            let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
+
+            const x_diff = Math.abs(rx - x), y_diff = Math.abs(ry - y), z_diff = Math.abs(rz - z);
+
+            if (x_diff > y_diff && x_diff > z_diff) rx = -ry - rz;
+            else if (y_diff > z_diff) ry = -rx - rz;
+            else rz = -rx - ry;
+
+            return { q: rx, r: rz, h: h };
+        }
+
+        // --- Block Management ---
+        function addBlock(q, r, h, typeIndex, isPermanent = false) {
+            const key = `${q},${r},${h}`;
+            if (worldBlocks.has(key)) return;
+
+            const material = new THREE.MeshLambertMaterial({ color: BLOCK_TYPES[typeIndex].color });
+            const mesh = new THREE.Mesh(hexGeometry, material);
+            const pos = axialToWorld(q, r, h);
+            mesh.position.copy(pos);
+            mesh.userData = { q, r, h, key, isPermanent };
+            
+            scene.add(mesh);
+            worldBlocks.set(key, mesh);
+            return mesh;
+        }
+
+        function removeBlock(key) {
+            const mesh = worldBlocks.get(key);
+            if (mesh) {
+                scene.remove(mesh);
+                worldBlocks.delete(key);
+            }
+        }
+
+        // --- Terrain Generation ---
+        function generateChunk(cq, cr) {
+            const chunkKey = `${cq},${cr}`;
+            if (loadedChunks.has(chunkKey)) return;
+            loadedChunks.add(chunkKey);
+
+            const centerQ = cq * CHUNK_SIZE;
+            const centerR = cr * CHUNK_SIZE;
+
+            for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
+                for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
+                    if (Math.abs(q + r) <= CHUNK_SIZE) {
+                        const absQ = centerQ + q;
+                        const absR = centerR + r;
+
+                        const noise = simplex.noise2D(absQ * 0.05, absR * 0.05);
+                        const height = Math.floor(noise * 5);
+
+                        addBlock(absQ, absR, height, 0);
+                        addBlock(absQ, absR, height - 1, 1);
+                    }
+                }
+            }
+        }
+
+        function updateChunks() {
+            const current = worldToAxial(camera.position);
+            const cq = Math.round(current.q / CHUNK_SIZE);
+            const cr = Math.round(current.r / CHUNK_SIZE);
+
+            for (let i = -RENDER_DIST; i <= RENDER_DIST; i++) {
+                for (let j = -RENDER_DIST; j <= RENDER_DIST; j++) {
+                    generateChunk(cq + i, cr + j);
+                }
+            }
+        }
+
+        // --- Physics & Movement ---
+        const keys = {};
+        let isLocked = false;
+        let velocity = new THREE.Vector3();
+        let pitch = 0, yaw = 0;
+        let canJump = false;
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.key >= '1' && e.key <= '4') updateSelectedBlock(parseInt(e.key) - 1);
+        });
+        document.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        function updateSelectedBlock(index) {
+            selectedBlockIndex = index;
+            document.querySelectorAll('.slot').forEach((s, i) => s.classList.toggle('active', i === index));
+        }
+
+        renderer.domElement.addEventListener('click', () => {
+            if (!isLocked) renderer.domElement.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            isLocked = document.pointerLockElement === renderer.domElement;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isLocked) return;
+            yaw -= e.movementX * 0.002;
+            pitch -= e.movementY * 0.002;
+            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        });
+
+        const raycaster = new THREE.Raycaster();
+        window.addEventListener('mousedown', (e) => {
+            if (!isLocked) return;
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(Array.from(worldBlocks.values()));
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                if (e.button === 0) { // Left Click: MINE
+                    removeBlock(intersect.object.userData.key);
+                } 
+                else if (e.button === 2) { // Right Click: PLACE
+                    const normal = intersect.face.normal.clone();
+                    normal.transformDirection(intersect.object.matrixWorld);
+                    const placePos = intersect.point.clone().add(normal.multiplyScalar(0.5));
+                    const c = worldToAxial(placePos);
+                    addBlock(c.q, c.r, c.h, selectedBlockIndex, true);
+                }
+            }
+        });
+
+        window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // --- Simulation Loop ---
+        camera.position.set(0, 10, 0);
+
+        function handlePhysics() {
+            const moveDir = new THREE.Vector3();
+            if (keys['KeyW']) moveDir.z -= 1;
+            if (keys['KeyS']) moveDir.z += 1;
+            if (keys['KeyA']) moveDir.x -= 1;
+            if (keys['KeyD']) moveDir.x += 1;
+            
+            moveDir.applyEuler(new THREE.Euler(0, yaw, 0, 'YXZ')).normalize();
+            velocity.x = moveDir.x * 0.12;
+            velocity.z = moveDir.z * 0.12;
+
+            velocity.y += GRAVITY;
+
+            const feetPos = camera.position.clone();
+            feetPos.y += velocity.y;
+            
+            const axialAtFeet = worldToAxial(new THREE.Vector3(feetPos.x, feetPos.y - PLAYER_HEIGHT + 0.5, feetPos.z));
+            const groundBlock = worldBlocks.get(`${axialAtFeet.q},${axialAtFeet.r},${axialAtFeet.h}`);
+
+            if (groundBlock && velocity.y < 0) {
+                const groundY = groundBlock.position.y + (HEX_HEIGHT / 2) + PLAYER_HEIGHT;
+                if (camera.position.y + velocity.y <= groundY) {
+                    camera.position.y = groundY;
+                    velocity.y = 0;
+                    canJump = true;
+                }
+            } else {
+                canJump = false;
+            }
+
+            if (keys['Space'] && canJump) {
+                velocity.y = JUMP_FORCE;
+                canJump = false;
+            }
+
+            camera.position.x += velocity.x;
+            camera.position.z += velocity.z;
+            camera.position.y += velocity.y;
+
+            if (camera.position.y < -20) camera.position.y = 10;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isLocked) {
+                handlePhysics();
+                updateChunks();
+            }
+            camera.rotation.set(pitch, yaw, 0, 'YXZ');
+            renderer.render(scene, camera);
+        }
+
+        window.onload = animate;
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
-    <script src="main.js" type="module"></script>
-  </body>
+</body>
 </html>
