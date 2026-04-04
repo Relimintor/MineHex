@@ -8,12 +8,15 @@ const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
 const CONTINENT_FREQUENCY = 0.001;
 const CONTINENT_OFFSET = 20;
-const TERRAIN_AMPLITUDE = 8;
-const TERRAIN_FREQUENCY = 0.02;
+const TERRAIN_MID_AMPLITUDE = 20;
+const TERRAIN_MID_FREQUENCY = 0.01;
+const TERRAIN_DETAIL_AMPLITUDE = 5;
+const TERRAIN_DETAIL_FREQUENCY = 0.05;
 
 function getHeight(q, r) {
     const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
-    const terrain = TERRAIN_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_FREQUENCY, r * TERRAIN_FREQUENCY);
+    const terrain = (TERRAIN_MID_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_MID_FREQUENCY, r * TERRAIN_MID_FREQUENCY))
+        + (TERRAIN_DETAIL_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_DETAIL_FREQUENCY, r * TERRAIN_DETAIL_FREQUENCY));
     return Math.floor(continent + terrain);
 }
 
