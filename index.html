@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MineHex</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>MineHex</h1>
+      <p>
+        A tiny Minecraft-inspired sandbox using hexagons instead of blocks.
+        <strong>Click</strong> a tile to place terrain, <strong>Shift + Click</strong>
+        to break it, and use <strong>W/A/S/D</strong> to move.
+      </p>
+      <section class="toolbar">
+        <label for="material">Material</label>
+        <select id="material"></select>
+        <button id="regen">Regenerate World</button>
+      </section>
+      <canvas id="game" width="980" height="620" aria-label="MineHex world"></canvas>
+      <p id="status" aria-live="polite"></p>
+    </main>
+    <script src="main.js" type="module"></script>
+  </body>
+</html>
