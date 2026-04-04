@@ -1,5 +1,5 @@
 export const HEX_RADIUS = 1;
-export const HEX_HEIGHT = HEX_RADIUS * 2;
+export const HEX_HEIGHT = HEX_RADIUS * 1.6;
 export const CHUNK_SIZE = 8;
 export const RENDER_DIST = 3;
 

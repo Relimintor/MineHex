@@ -1,6 +1,7 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
+import { HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
@@ -54,7 +55,7 @@ export function registerInputHandlers() {
         if (event.button === 2) {
             const normal = intersect.face.normal.clone();
             normal.transformDirection(intersect.object.matrixWorld);
-            const placePos = intersect.point.clone().add(normal.multiplyScalar(0.5));
+            const placePos = intersect.point.clone().add(normal.multiplyScalar(HEX_HEIGHT * 0.6));
             const coords = worldToAxial(placePos);
             addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
         }
