@@ -10,6 +10,7 @@ const CONTINENT_FREQUENCY = 0.001;
 const CONTINENT_OFFSET = 20;
 const TERRAIN_AMPLITUDE = 8;
 const TERRAIN_FREQUENCY = 0.02;
+const NETHROCK_LEVEL = -40;
 
 function getHeight(q, r) {
     const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
@@ -43,6 +44,10 @@ export function generateChunk(cq, cr) {
                 if (worldState.worldBlocks.has(topKey)) chunkBlockKeys.add(topKey);
                 if (worldState.worldBlocks.has(lowerKey)) chunkBlockKeys.add(lowerKey);
 
+                const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL}`;
+                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL, 5);
+                if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+
                 if (height < SEA_LEVEL) {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, 4);
@@ -68,7 +73,7 @@ export function unloadChunk(cq, cr) {
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
     for (const key of chunkBlockKeys) {
-        removeBlock(key, { preservePermanent: true });
+        removeBlock(key, { preservePermanent: true, force: true });
     }
 
     worldState.chunkBlocks.delete(chunkKey);

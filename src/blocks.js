@@ -37,9 +37,12 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
+        const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
+        if (blockType?.unbreakable && !force) return false;
+
         scene.remove(mesh);
         worldState.worldBlocks.delete(key);
 
@@ -53,4 +56,6 @@ export function removeBlock(key, { preservePermanent = false } = {}) {
             }
         }
     }
+
+    return true;
 }
