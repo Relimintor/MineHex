@@ -4,6 +4,19 @@ import { camera } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, removeBlock } from './blocks.js';
 
+const SEA_LEVEL = 0;
+const CONTINENT_AMPLITUDE = 50;
+const CONTINENT_FREQUENCY = 0.001;
+const CONTINENT_OFFSET = 20;
+const TERRAIN_AMPLITUDE = 8;
+const TERRAIN_FREQUENCY = 0.02;
+
+function getHeight(q, r) {
+    const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
+    const terrain = TERRAIN_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_FREQUENCY, r * TERRAIN_FREQUENCY);
+    return Math.floor(continent + terrain);
+}
+
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.loadedChunks.has(chunkKey)) return;
@@ -20,15 +33,21 @@ export function generateChunk(cq, cr) {
                 const absQ = centerQ + q;
                 const absR = centerR + r;
 
-                const noise = worldState.simplex.noise2D(absQ * 0.05, absR * 0.05);
-                const height = Math.floor(noise * 5);
+                const height = getHeight(absQ, absR);
                 const topKey = `${absQ},${absR},${height}`;
                 const lowerKey = `${absQ},${absR},${height - 1}`;
 
-                if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, 0);
+                const topBlockType = height < SEA_LEVEL ? 1 : 0;
+                if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, topBlockType);
                 if (!worldState.permanentBlocks.has(lowerKey)) addBlock(absQ, absR, height - 1, 1);
                 if (worldState.worldBlocks.has(topKey)) chunkBlockKeys.add(topKey);
                 if (worldState.worldBlocks.has(lowerKey)) chunkBlockKeys.add(lowerKey);
+
+                if (height < SEA_LEVEL) {
+                    const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
+                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, 4);
+                    if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
+                }
             }
         }
     }
