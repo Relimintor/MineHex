@@ -3,7 +3,7 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
-import { runChunkOcclusionCulling, updateChunks } from './worldgen.js';
+import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial } from './coords.js';
@@ -36,6 +36,8 @@ function chooseControlMode() {
 
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
+const CHUNK_STREAM_INTERVAL_FRAMES = 3;
+const CHUNK_VISIBILITY_INTERVAL_FRAMES = 2;
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
@@ -47,7 +49,10 @@ function animate(now = performance.now()) {
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
-        updateChunks();
+        updateChunkBudgetGovernor(deltaTimeSeconds * 1000);
+        tickChunkApplyBudget();
+        if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
+        if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
     }
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
@@ -65,7 +70,10 @@ chooseControlMode().then((mode) => {
         registerDesktopInputHandlers();
     }
 
-    updateChunks();
+    updateChunkBudgetGovernor(16.7);
+    tickChunkStreaming();
+    tickChunkApplyBudget();
+    tickChunkVisibility();
     enforceSpawnOnSolidBlock(0, 0);
     animate();
 });
