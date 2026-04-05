@@ -34,6 +34,16 @@ function getHeight(q, r) {
     return Math.floor(continent + terrain);
 }
 
+function smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - (2 * t));
+}
+
+function getSmoothedHeight(rawHeight) {
+    const coastBlend = smoothstep(SEA_LEVEL - 3, SEA_LEVEL + 3, rawHeight);
+    return Math.round((rawHeight * coastBlend) + (SEA_LEVEL * (1 - coastBlend)));
+}
+
 function getClimate(q, r) {
     return {
         temp: worldState.simplex.noise2D(q * TEMPERATURE_FREQUENCY, r * TEMPERATURE_FREQUENCY),
@@ -45,6 +55,14 @@ function getBiome(temp, moist) {
     if (temp < -0.6) return 'arctic';
     if (moist > 0) return temp < -0.2 ? 'snowy_forest' : 'forest';
     return temp < -0.2 ? 'snowy_plains' : 'plains';
+}
+
+function getBiomeAt(q, r, height) {
+    if (height < SEA_LEVEL) return 'ocean';
+    if (height < SEA_LEVEL + 2) return 'beach';
+
+    const climate = getClimate(q, r);
+    return getBiome(climate.temp, climate.moist);
 }
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
@@ -85,14 +103,16 @@ export function generateChunk(cq, cr) {
                 const absQ = centerQ + q;
                 const absR = centerR + r;
 
-                const height = getHeight(absQ, absR);
-                const climate = getClimate(absQ, absR);
-                const biome = getBiome(climate.temp, climate.moist);
+                const rawHeight = getHeight(absQ, absR);
+                const height = getSmoothedHeight(rawHeight);
+                const biome = getBiomeAt(absQ, absR, height);
                 const topKey = `${absQ},${absR},${height}`;
                 const lowerKey = `${absQ},${absR},${height - 1}`;
 
                 const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest' || biome === 'arctic';
-                const topBlockType = height < SEA_LEVEL ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass);
+                const topBlockType = biome === 'beach'
+                    ? BLOCK_INDEX.dirt
+                    : (height < SEA_LEVEL ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
                 if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, topBlockType);
                 if (!worldState.permanentBlocks.has(lowerKey)) addBlock(absQ, absR, height - 1, BLOCK_INDEX.dirt);
                 if (worldState.worldBlocks.has(topKey)) chunkBlockKeys.add(topKey);
@@ -102,9 +122,10 @@ export function generateChunk(cq, cr) {
                 if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
-                if (height < SEA_LEVEL) {
+                if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
-                    const surfaceFluidType = biome === 'arctic' ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
+                    const climate = getClimate(absQ, absR);
+                    const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
                     if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
                 }
