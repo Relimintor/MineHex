@@ -121,15 +121,24 @@ function markChunkAndNeighborsDirty(q, r) {
     }
 }
 
-function occupancyAt(q, r, h) {
-    return worldState.worldBlocks.has(`${q},${r},${h}`) ? 1 : 0;
+function isSolidGlobal(q, r, h) {
+    const blockKey = `${q},${r},${h}`;
+    const chunkKey = getChunkKey(q, r);
+    const chunkBlocks = worldState.chunkBlocks.get(chunkKey);
+
+    // Chunk-boundary-aware lookup:
+    // if i + d stays in this chunk we resolve locally via that chunk set;
+    // otherwise we resolve via whichever neighbor chunk owns the coordinate.
+    // getChunkKey(...) handles both cases from global coordinates.
+    if (chunkBlocks?.has(blockKey)) return 1;
+    return worldState.worldBlocks.has(blockKey) ? 1 : 0;
 }
 
 function isFaceVisible(q, r, h, [dq, dr, dh]) {
     // F(i, d) = O(i) * (1 - O(i + d))
     // A face belongs to the boundary only when current voxel is solid
     // and the neighboring voxel in direction d is empty.
-    return occupancyAt(q, r, h) * (1 - occupancyAt(q + dq, r + dr, h + dh));
+    return isSolidGlobal(q, r, h) * (1 - isSolidGlobal(q + dq, r + dr, h + dh));
 }
 
 function getVisibleFaces(q, r, h) {
