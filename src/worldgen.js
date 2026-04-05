@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -358,9 +358,16 @@ function updateChunkLodLevels(cameraChunkQ, cameraChunkR) {
         if (!chunkMeta) continue;
 
         const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
-        const nextLodLevel = ENABLE_COMPLEX_LOD
+        let nextLodLevel = ENABLE_COMPLEX_LOD
             ? getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR)
             : 0;
+
+        if (FORCE_BATCHED_CHUNK_RENDERING) {
+            // Celeron mode stays on chunk-batched instanced meshes only.
+            // We avoid mega-hex proxy rendering here because it can produce large
+            // flat green surfaces that look like broken terrain at close/mid range.
+            nextLodLevel = 1;
+        }
 
         if (nextLodLevel === chunkMeta.lodLevel) continue;
         chunkMeta.lodLevel = nextLodLevel;
