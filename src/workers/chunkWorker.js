@@ -106,14 +106,57 @@ function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel }) {
     return columns;
 }
 
+function packChunkColumns(columns) {
+    const count = columns.length;
+    const q = new Int32Array(count);
+    const r = new Int32Array(count);
+    const height = new Int32Array(count);
+    const topBlockType = new Uint8Array(count);
+    const surfaceFluidType = new Uint8Array(count);
+    const flags = new Uint8Array(count);
+
+    for (let i = 0; i < count; i++) {
+        const column = columns[i];
+        q[i] = column.q;
+        r[i] = column.r;
+        height[i] = column.height;
+        topBlockType[i] = column.topBlockType;
+        surfaceFluidType[i] = column.surfaceFluidType;
+
+        let bits = 0;
+        if (column.addSurfaceFluid) bits |= 1;
+        if (column.addTree === 'forest') bits |= 2;
+        if (column.addTree === 'snow') bits |= 4;
+        flags[i] = bits;
+    }
+
+    return {
+        count,
+        qBuffer: q.buffer,
+        rBuffer: r.buffer,
+        heightBuffer: height.buffer,
+        topBlockTypeBuffer: topBlockType.buffer,
+        surfaceFluidTypeBuffer: surfaceFluidType.buffer,
+        flagsBuffer: flags.buffer
+    };
+}
+
 self.addEventListener('message', (event) => {
     if (event.data?.type !== 'generate') return;
     const { cq, cr, chunkSize, nethrockLevel, seaLevel } = event.data;
     const columns = buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel });
+    const packed = packChunkColumns(columns);
     self.postMessage({
         chunkKey: `${cq},${cr}`,
         cq,
         cr,
-        columns
-    });
+        columns: packed
+    }, [
+        packed.qBuffer,
+        packed.rBuffer,
+        packed.heightBuffer,
+        packed.topBlockTypeBuffer,
+        packed.surfaceFluidTypeBuffer,
+        packed.flagsBuffer
+    ]);
 });
