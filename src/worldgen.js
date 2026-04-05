@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -179,13 +179,23 @@ function syncMegaHexTransform(chunkKey) {
 }
 
 function updateChunkLodLevels(cameraChunkQ, cameraChunkR) {
+    const changedChunkKeys = [];
+
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta) continue;
 
         const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
-        chunkMeta.lodLevel = getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR);
+        const nextLodLevel = ENABLE_COMPLEX_LOD
+            ? getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR)
+            : 0;
+
+        if (nextLodLevel === chunkMeta.lodLevel) continue;
+        chunkMeta.lodLevel = nextLodLevel;
+        changedChunkKeys.push(chunkKey);
     }
+
+    return changedChunkKeys;
 }
 
 function updateChunkMeshVisibility(chunkKey) {
@@ -223,6 +233,8 @@ function updateChunkMeshVisibility(chunkKey) {
 }
 
 function ensureOcclusionProxy(chunkKey) {
+    if (!ENABLE_OCCLUSION_CULLING) return null;
+
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta?.bounds) return null;
     if (chunkMeta.occlusionProxy) return chunkMeta.occlusionProxy;
@@ -252,6 +264,8 @@ function ensureOcclusionProxy(chunkKey) {
 }
 
 function syncOcclusionProxyTransform(chunkKey) {
+    if (!ENABLE_OCCLUSION_CULLING) return;
+
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta?.bounds) return;
 
@@ -266,6 +280,15 @@ function syncOcclusionProxyTransform(chunkKey) {
 
 function disposeChunkOcclusionState(chunkMeta) {
     if (!chunkMeta) return;
+
+    if (!ENABLE_OCCLUSION_CULLING) {
+        if (chunkMeta.megaHexMesh) {
+            scene.remove(chunkMeta.megaHexMesh);
+            chunkMeta.megaHexMesh.geometry.dispose();
+            chunkMeta.megaHexMesh = null;
+        }
+        return;
+    }
 
     if (chunkMeta.occlusionQuery) {
         const gl = renderer.getContext();
@@ -339,6 +362,8 @@ function applyChunkFrustumCulling() {
 }
 
 export function runChunkOcclusionCulling() {
+    if (!ENABLE_OCCLUSION_CULLING) return;
+
     const gl = renderer.getContext();
     if (!(gl instanceof WebGL2RenderingContext)) return;
 
@@ -720,8 +745,8 @@ export function updateChunks() {
     flushChunkGenerationBudget();
 
     if (chunkChanged) {
-        updateChunkLodLevels(cq, cr);
-        for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
+        const lodChangedChunks = updateChunkLodLevels(cq, cr);
+        for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
     }
 
     applyChunkFrustumCulling();
