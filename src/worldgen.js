@@ -39,6 +39,8 @@ const CHUNK_NEIGHBOR_OFFSETS = [
     [-1, 1]
 ];
 
+const CHUNK_AABB_MARGIN = 0.08;
+
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
     return {
@@ -101,8 +103,8 @@ function recomputeChunkBounds(chunkKey) {
     if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
 
     return new THREE.Box3(
-        new THREE.Vector3(minX, 0, minZ),
-        new THREE.Vector3(maxX, (maxH + 1) * HEX_HEIGHT, maxZ)
+        new THREE.Vector3(minX - CHUNK_AABB_MARGIN, 0, minZ - CHUNK_AABB_MARGIN),
+        new THREE.Vector3(maxX + CHUNK_AABB_MARGIN, ((maxH + 1) * HEX_HEIGHT) + CHUNK_AABB_MARGIN, maxZ + CHUNK_AABB_MARGIN)
     );
 }
 
