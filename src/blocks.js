@@ -30,6 +30,16 @@ const NEIGHBOR_OFFSETS = [
     [1, -1],
     [-1, 1]
 ];
+const BLOCK_NEIGHBOR_OFFSETS = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [1, -1, 0],
+    [-1, 1, 0],
+    [0, 0, 1],
+    [0, 0, -1]
+];
 
 function getNeighborChunkKeys(cq, cr) {
     const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
@@ -53,7 +63,46 @@ function markChunkAndNeighborsDirty(q, r) {
     }
 }
 
-export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true) {
+function hasExposedFace(q, r, h) {
+    for (const [dq, dr, dh] of BLOCK_NEIGHBOR_OFFSETS) {
+        const neighborKey = `${q + dq},${r + dr},${h + dh}`;
+        if (!worldState.worldBlocks.has(neighborKey)) return true;
+    }
+
+    return false;
+}
+
+function updateBlockVisibilityAt(q, r, h) {
+    const key = `${q},${r},${h}`;
+    const block = worldState.worldBlocks.get(key);
+    if (!block) return;
+    block.visible = hasExposedFace(q, r, h);
+}
+
+function updateVisibilityAround(q, r, h) {
+    updateBlockVisibilityAt(q, r, h);
+    for (const [dq, dr, dh] of BLOCK_NEIGHBOR_OFFSETS) {
+        updateBlockVisibilityAt(q + dq, r + dr, h + dh);
+    }
+}
+
+export function refreshBlockVisibilityForKeys(blockKeys) {
+    const visited = new Set();
+
+    for (const key of blockKeys) {
+        const [q, r, h] = key.split(',').map(Number);
+        const targets = [[q, r, h], ...BLOCK_NEIGHBOR_OFFSETS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
+
+        for (const [targetQ, targetR, targetH] of targets) {
+            const targetKey = `${targetQ},${targetR},${targetH}`;
+            if (visited.has(targetKey)) continue;
+            visited.add(targetKey);
+            updateBlockVisibilityAt(targetQ, targetR, targetH);
+        }
+    }
+}
+
+export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true, refreshVisibility = true) {
     const key = `${q},${r},${h}`;
     if (worldState.worldBlocks.has(key)) return;
 
@@ -70,6 +119,10 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
         markChunkAndNeighborsDirty(q, r);
     }
 
+    if (refreshVisibility) {
+        updateVisibilityAround(q, r, h);
+    }
+
     if (isPermanent) {
         worldState.permanentBlocks.set(key, { q, r, h, typeIndex: safeTypeIndex });
         const chunkKey = getChunkKey(q, r);
@@ -80,7 +133,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
@@ -91,6 +144,10 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         if (trackDirty) {
             markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
+        }
+
+        if (refreshVisibility) {
+            updateVisibilityAround(mesh.userData.q, mesh.userData.r, mesh.userData.h);
         }
 
         if (mesh.userData.isPermanent && !preservePermanent) {

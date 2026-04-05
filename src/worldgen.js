@@ -2,7 +2,7 @@ import { CHUNK_SIZE, NETHROCK_LEVEL_HEX, RENDER_DIST } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
-import { addBlock, removeBlock } from './blocks.js';
+import { addBlock, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -126,7 +126,7 @@ function getBiomeAt(climateBiome, height) {
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = `${q},${r},${h}`;
-    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false);
+    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
 
@@ -216,18 +216,18 @@ export function generateChunk(cq, cr) {
                     if (h === height) blockType = topBlockType;
                     else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
 
-                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false);
+                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
                 const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
-                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false);
+                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
-                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false);
+                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false, false);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
                 }
 
@@ -241,9 +241,11 @@ export function generateChunk(cq, cr) {
         const permanentBlock = worldState.permanentBlocks.get(key);
         if (!permanentBlock) continue;
 
-        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true, false);
+        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true, false, false);
         chunkBlockKeys.add(key);
     }
+
+    refreshBlockVisibilityForKeys(chunkBlockKeys);
 }
 
 export function unloadChunk(cq, cr) {
