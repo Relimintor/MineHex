@@ -363,8 +363,10 @@ function updateChunkLodLevels(cameraChunkQ, cameraChunkR) {
             : 0;
 
         if (FORCE_BATCHED_CHUNK_RENDERING) {
-            const batchedLod = getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR);
-            nextLodLevel = Math.max(1, batchedLod);
+            // Celeron mode stays on chunk-batched instanced meshes only.
+            // We avoid mega-hex proxy rendering here because it can produce large
+            // flat green surfaces that look like broken terrain at close/mid range.
+            nextLodLevel = 1;
         }
 
         if (nextLodLevel === chunkMeta.lodLevel) continue;
