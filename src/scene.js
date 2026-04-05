@@ -4,6 +4,9 @@ export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 20, 60);
 
+// Separate scene for occlusion proxy boxes so queries can run after the main depth pass.
+export const occlusionScene = new THREE.Scene();
+
 export const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 export const renderer = new THREE.WebGLRenderer({ antialias: true });

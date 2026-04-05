@@ -1,7 +1,20 @@
 export const HEX_RADIUS = 1;
 export const HEX_HEIGHT = HEX_RADIUS * 1.6;
-export const CHUNK_SIZE = 8;
-export const RENDER_DIST = 3;
+
+const runtimeNavigator = typeof navigator === 'undefined' ? null : navigator;
+const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(runtimeNavigator?.userAgent ?? '');
+const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
+const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
+const useLowEndChunkProfile = isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
+
+// Chunking Goldilocks profile:
+// - low-end/mobile: 8-ish footprint reduces remesh spikes.
+// - desktop/high-end: 16-ish footprint lowers draw-call pressure.
+export const CHUNK_SIZE = useLowEndChunkProfile ? 8 : 16;
+export const RENDER_DIST = useLowEndChunkProfile ? 3 : 2;
+export const CHUNK_CREATION_BUDGET = useLowEndChunkProfile ? 1 : 3;
+export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
+export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
