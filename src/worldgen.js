@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -62,22 +62,24 @@ const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
 const pendingChunkGenerationInFlight = new Set();
 let lastStreamChunkKey = null;
-let chunkTick = 0;
-const STREAM_INTERVAL_TICKS = 3;
-const FRUSTUM_INTERVAL_TICKS = 2;
-const LOD_INTERVAL_TICKS = 2;
 const CHUNK_UNLOAD_BUDGET = 1;
+const DIRTY_CHUNK_APPLY_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
 const chunkInstanceDummy = new THREE.Object3D();
 const projectedChunkCenter = new THREE.Vector3();
 const hizCenter = new THREE.Vector3();
+const cameraForwardXZ = new THREE.Vector3();
+const chunkPriorityVector = new THREE.Vector3();
 const HIZ_SECTORS_X = 32;
 const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
 const pendingChunkUnloadQueue = [];
 const pendingChunkUnloadSet = new Set();
+const pendingChunkApplyQueue = [];
+const pendingChunkApplySet = new Set();
+const recycledChunkBlockSets = [];
 let chunkGenerationWorker = null;
 
 
@@ -113,6 +115,8 @@ function ensureChunkMeta(cq, cr) {
         occlusionProxy: null,
         lodLevel: 0,
         megaHexMesh: null,
+        detailedChunkGroup: null,
+        detailedChunkMeshes: [],
         instancedLodGroup: null,
         instancedLodMeshes: [],
         bounds: null
@@ -193,6 +197,72 @@ function ensureMegaHexMesh(chunkKey) {
     return mesh;
 }
 
+function disposeDetailedChunkMeshes(chunkMeta) {
+    if (!chunkMeta?.detailedChunkGroup) return;
+    scene.remove(chunkMeta.detailedChunkGroup);
+    for (const mesh of chunkMeta.detailedChunkMeshes ?? []) mesh.geometry.dispose();
+    chunkMeta.detailedChunkMeshes = [];
+    chunkMeta.detailedChunkGroup = null;
+}
+
+function rebuildChunkDetailedMeshes(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta) return;
+
+    disposeDetailedChunkMeshes(chunkMeta);
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
+
+    const perTypeInstances = new Map();
+    for (const blockKey of chunkBlockKeys) {
+        const mesh = worldState.worldBlocks.get(blockKey);
+        if (!mesh) continue;
+        const visibleFaces = mesh.userData.visibleFaces;
+        const hasVisibleFaces = !Array.isArray(visibleFaces) || visibleFaces.length > 0;
+        if (!hasVisibleFaces) continue;
+
+        const typeIndex = mesh.userData.typeIndex ?? 0;
+        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
+        perTypeInstances.get(typeIndex).push(mesh);
+    }
+
+    if (perTypeInstances.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
+
+    const group = new THREE.Group();
+    group.visible = false;
+    const createdMeshes = [];
+
+    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
+        const geometry = new THREE.InstancedBufferGeometry().copy(sourceMeshes[0].geometry);
+        const instanced = new THREE.InstancedMesh(geometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+
+        for (let i = 0; i < sourceMeshes.length; i++) {
+            const sourceMesh = sourceMeshes[i];
+            chunkInstanceDummy.position.copy(sourceMesh.position);
+            chunkInstanceDummy.rotation.copy(sourceMesh.rotation);
+            chunkInstanceDummy.scale.copy(sourceMesh.scale);
+            chunkInstanceDummy.updateMatrix();
+            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+        }
+
+        instanced.instanceMatrix.needsUpdate = true;
+        group.add(instanced);
+        createdMeshes.push(instanced);
+    }
+
+    scene.add(group);
+    chunkMeta.detailedChunkGroup = group;
+    chunkMeta.detailedChunkMeshes = createdMeshes;
+    chunkMeta.dirty = false;
+}
+
 function disposeInstancedLodMeshes(chunkMeta) {
     if (!chunkMeta?.instancedLodGroup) return;
     scene.remove(chunkMeta.instancedLodGroup);
@@ -208,7 +278,10 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     disposeInstancedLodMeshes(chunkMeta);
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) return;
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
 
     const perTypeInstances = new Map();
     for (const blockKey of chunkBlockKeys) {
@@ -223,7 +296,10 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
         perTypeInstances.get(typeIndex).push(mesh);
     }
 
-    if (perTypeInstances.size === 0) return;
+    if (perTypeInstances.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
 
     const group = new THREE.Group();
     group.visible = false;
@@ -250,6 +326,7 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     scene.add(group);
     chunkMeta.instancedLodGroup = group;
     chunkMeta.instancedLodMeshes = createdMeshes;
+    chunkMeta.dirty = false;
 }
 
 function syncMegaHexTransform(chunkKey) {
@@ -295,6 +372,7 @@ function updateChunkMeshVisibility(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
 
     if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = false;
+    if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = false;
 
     if (chunkMeta.lodLevel === 2 && chunkVisible) {
         syncMegaHexTransform(chunkKey);
@@ -318,6 +396,9 @@ function updateChunkMeshVisibility(chunkKey) {
         }
         return;
     }
+
+    if (!chunkMeta.detailedChunkGroup || chunkMeta.dirty) rebuildChunkDetailedMeshes(chunkKey);
+    if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = chunkVisible;
 
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
@@ -378,6 +459,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     if (!chunkMeta) return;
 
     if (!ENABLE_OCCLUSION_CULLING) {
+        disposeDetailedChunkMeshes(chunkMeta);
         disposeInstancedLodMeshes(chunkMeta);
         if (chunkMeta.megaHexMesh) {
             scene.remove(chunkMeta.megaHexMesh);
@@ -399,6 +481,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     }
 
     disposeInstancedLodMeshes(chunkMeta);
+    disposeDetailedChunkMeshes(chunkMeta);
 
     if (chunkMeta.megaHexMesh) {
         scene.remove(chunkMeta.megaHexMesh);
@@ -655,12 +738,18 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
 
-function applyDirtyChunks() {
+function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
+    if (budget <= 0) return;
 
+    let processed = 0;
+    const processedChunkKeys = [];
     for (const chunkKey of worldState.dirtyChunks) {
+        if (processed >= budget) break;
         if (!worldState.loadedChunks.has(chunkKey)) {
             worldState.chunkBlocks.delete(chunkKey);
+            processedChunkKeys.push(chunkKey);
+            processed++;
             continue;
         }
 
@@ -677,14 +766,15 @@ function applyDirtyChunks() {
         }
 
         updateChunkMeshVisibility(chunkKey);
+        processedChunkKeys.push(chunkKey);
+        processed++;
     }
 
-    for (const chunkKey of worldState.dirtyChunks) {
+    for (const chunkKey of processedChunkKeys) {
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) chunk.dirty = false;
+        worldState.dirtyChunks.delete(chunkKey);
     }
-
-    worldState.dirtyChunks.clear();
 }
 
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
@@ -728,7 +818,9 @@ function initChunkGenerationWorker() {
         pendingChunkGenerationInFlight.delete(chunkKey);
         if (!isChunkWithinRenderDistance(cq, cr)) return;
         if (worldState.loadedChunks.has(chunkKey)) return;
-        applyGeneratedChunkColumns(cq, cr, columns);
+        if (pendingChunkApplySet.has(chunkKey)) return;
+        pendingChunkApplySet.add(chunkKey);
+        pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
     });
 
     chunkGenerationWorker.addEventListener('error', (error) => {
@@ -736,6 +828,8 @@ function initChunkGenerationWorker() {
         chunkGenerationWorker?.terminate();
         chunkGenerationWorker = null;
         pendingChunkGenerationInFlight.clear();
+        pendingChunkApplyQueue.length = 0;
+        pendingChunkApplySet.clear();
     });
 }
 
@@ -743,8 +837,9 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
     const chunkKey = `${cq},${cr}`;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
-    worldState.chunkBlocks.set(chunkKey, new Set());
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
+    chunkBlockKeys.clear();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
 
     for (const column of columns) {
         const { q, r, height, topBlockType, addSurfaceFluid, surfaceFluidType, addTree } = column;
@@ -783,9 +878,9 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
-    rebuildChunkInstancedLodMeshes(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
     if (chunk) {
+        chunk.dirty = true;
         chunk.bounds = recomputeChunkBounds(chunkKey);
         chunk.occlusionVisible = true;
         if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
@@ -798,8 +893,9 @@ export function generateChunk(cq, cr) {
     if (worldState.loadedChunks.has(chunkKey)) return;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
-    worldState.chunkBlocks.set(chunkKey, new Set());
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
+    chunkBlockKeys.clear();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
 
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
@@ -860,9 +956,9 @@ export function generateChunk(cq, cr) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
-    rebuildChunkInstancedLodMeshes(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
     if (chunk) {
+        chunk.dirty = true;
         chunk.bounds = recomputeChunkBounds(chunkKey);
         chunk.occlusionVisible = true;
         if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
@@ -880,6 +976,8 @@ export function unloadChunk(cq, cr) {
     }
 
     worldState.chunkBlocks.delete(chunkKey);
+    if (chunkBlockKeys.size > 0) chunkBlockKeys.clear();
+    if (recycledChunkBlockSets.length < 128) recycledChunkBlockSets.push(chunkBlockKeys);
     worldState.chunkFaceQuads.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
@@ -900,6 +998,21 @@ function axialChunkDistance(cqA, crA, cqB, crB) {
     const dr = crA - crB;
     const ds = -dq - dr;
     return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
+}
+
+function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
+    const distance = axialChunkDistance(chunkQ, chunkR, cameraChunkQ, cameraChunkR);
+    camera.getWorldDirection(cameraForwardXZ);
+    cameraForwardXZ.y = 0;
+    if (cameraForwardXZ.lengthSq() > 0.00001) cameraForwardXZ.normalize();
+
+    const chunkWorld = axialToWorld(chunkQ * CHUNK_SIZE, chunkR * CHUNK_SIZE, 0);
+    chunkPriorityVector.set(chunkWorld.x - camera.position.x, 0, chunkWorld.z - camera.position.z);
+    if (chunkPriorityVector.lengthSq() > 0.00001) chunkPriorityVector.normalize();
+
+    const forwardDot = cameraForwardXZ.dot(chunkPriorityVector);
+    // Lower score is higher priority. Front-facing chunks (dot -> 1) get a stronger boost.
+    return distance - (forwardDot * 0.35);
 }
 
 function enqueueChunkGeneration(cq, cr) {
@@ -959,13 +1072,38 @@ function rebuildStreamingQueue(cq, cr) {
         pendingChunkGenerationInFlight.delete(chunkKey);
     }
 
+    for (let i = pendingChunkApplyQueue.length - 1; i >= 0; i--) {
+        const queued = pendingChunkApplyQueue[i];
+        if (visibleChunkKeys.has(queued.chunkKey)) continue;
+        pendingChunkApplySet.delete(queued.chunkKey);
+        pendingChunkApplyQueue.splice(i, 1);
+    }
+
     const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
     for (const queued of pendingChunkGenerationQueue) {
         const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
-        distanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+        const bucket = distanceBuckets[Math.min(RENDER_DIST, distance)];
+        queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
+        bucket.push(queued);
     }
     pendingChunkGenerationQueue.length = 0;
-    for (const bucket of distanceBuckets) pendingChunkGenerationQueue.push(...bucket);
+    for (const bucket of distanceBuckets) {
+        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
+        pendingChunkGenerationQueue.push(...bucket);
+    }
+
+    const applyDistanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
+    for (const queued of pendingChunkApplyQueue) {
+        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
+        const bucket = applyDistanceBuckets[Math.min(RENDER_DIST, distance)];
+        queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
+        bucket.push(queued);
+    }
+    pendingChunkApplyQueue.length = 0;
+    for (const bucket of applyDistanceBuckets) {
+        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
+        pendingChunkApplyQueue.push(...bucket);
+    }
 }
 
 function flushChunkGenerationBudget() {
@@ -1007,31 +1145,56 @@ function flushChunkUnloadBudget() {
     }
 }
 
-export function updateChunks() {
-    initChunkGenerationWorker();
-    chunkTick++;
-    applyDirtyChunks();
+function flushChunkApplyBudget() {
+    let budget = CHUNK_APPLY_BUDGET;
+    while (budget > 0 && pendingChunkApplyQueue.length > 0) {
+        const nextChunk = pendingChunkApplyQueue.shift();
+        pendingChunkApplySet.delete(nextChunk.chunkKey);
+        if (worldState.loadedChunks.has(nextChunk.chunkKey)) continue;
+        if (!isChunkWithinRenderDistance(nextChunk.cq, nextChunk.cr)) continue;
+        applyGeneratedChunkColumns(nextChunk.cq, nextChunk.cr, nextChunk.columns);
+        budget--;
+    }
+}
 
+function getCurrentChunkCoords() {
     const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const cq = Math.round(current.q / CHUNK_SIZE);
-    const cr = Math.round(current.r / CHUNK_SIZE);
+    return {
+        cq: Math.round(current.q / CHUNK_SIZE),
+        cr: Math.round(current.r / CHUNK_SIZE)
+    };
+}
+
+export function tickChunkApplyBudget() {
+    initChunkGenerationWorker();
+    applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
+    flushChunkApplyBudget();
+}
+
+export function tickChunkStreaming() {
+    initChunkGenerationWorker();
+    const { cq, cr } = getCurrentChunkCoords();
     const currentChunkKey = `${cq},${cr}`;
     const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged || (chunkTick % STREAM_INTERVAL_TICKS) === 0) {
+    if (chunkChanged) {
         rebuildStreamingQueue(cq, cr);
         lastStreamChunkKey = currentChunkKey;
     }
 
     flushChunkUnloadBudget();
     flushChunkGenerationBudget();
+}
 
-    if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
-        const lodChangedChunks = updateChunkLodLevels(cq, cr);
-        for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
-    }
+export function tickChunkVisibility() {
+    const { cq, cr } = getCurrentChunkCoords();
+    const lodChangedChunks = updateChunkLodLevels(cq, cr);
+    for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
+    applyChunkFrustumCulling();
+}
 
-    if ((chunkTick % FRUSTUM_INTERVAL_TICKS) === 0) {
-        applyChunkFrustumCulling();
-    }
+export function updateChunks() {
+    tickChunkStreaming();
+    tickChunkApplyBudget();
+    tickChunkVisibility();
 }

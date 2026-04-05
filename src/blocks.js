@@ -3,7 +3,6 @@ const THREE = window.THREE;
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
 import { axialToWorld } from './coords.js';
 import { hexGeometry } from './geometry.js';
-import { scene } from './scene.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
 
@@ -371,7 +370,8 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     mesh.userData = { q, r, h, key, isPermanent, typeIndex: safeTypeIndex };
     worldState.blockCoordsByKey.set(key, { q, r, h });
 
-    scene.add(mesh);
+    mesh.updateMatrix();
+    mesh.updateMatrixWorld(true);
     worldState.worldBlocks.set(key, mesh);
     addMeshIndexes(mesh);
 
@@ -405,7 +405,6 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
         if (blockType?.unbreakable && !force) return false;
 
-        scene.remove(mesh);
         worldState.worldBlocks.delete(key);
         removeMeshIndexes(mesh);
 
