@@ -3,8 +3,8 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
-import { runChunkOcclusionCulling, updateChunks, updateDynamicChunkWorkload } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING, USE_LOW_END_PROFILE } from './config.js';
+import { runChunkOcclusionCulling, updateChunks } from './worldgen.js';
+import { ENABLE_OCCLUSION_CULLING } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial } from './coords.js';
 import { worldState } from './state.js';
@@ -35,33 +35,12 @@ function chooseControlMode() {
 }
 
 let lastFrameTime = performance.now();
-let appliedPixelRatio = null;
-
-function updateDynamicQuality(deltaTimeSeconds) {
-    const frameTimeMs = deltaTimeSeconds * 1000;
-    worldState.performance.frameTimeEmaMs = (worldState.performance.frameTimeEmaMs * 0.9) + (frameTimeMs * 0.1);
-    const ema = worldState.performance.frameTimeEmaMs;
-
-    updateDynamicChunkWorkload(ema);
-
-    const nativePixelRatio = window.devicePixelRatio || 1;
-    const minimumScale = USE_LOW_END_PROFILE ? 0.6 : 0.72;
-    const desiredScale = ema > 21
-        ? minimumScale
-        : (ema > 18 ? Math.max(minimumScale, 0.82) : 1);
-    const nextPixelRatio = Number((nativePixelRatio * desiredScale).toFixed(2));
-
-    if (appliedPixelRatio === nextPixelRatio) return;
-    appliedPixelRatio = nextPixelRatio;
-    renderer.setPixelRatio(appliedPixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
+const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
     const deltaTimeSeconds = Math.min(0.1, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
-    updateDynamicQuality(deltaTimeSeconds);
 
     worldState.frame += 1;
     worldState.frameCameraAxial = worldToAxial(camera.position);
@@ -73,8 +52,7 @@ function animate(now = performance.now()) {
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
     renderer.render(scene, camera);
-    const occlusionInterval = worldState.performance.dynamicOcclusionIntervalFrames ?? 2;
-    if (ENABLE_OCCLUSION_CULLING && (worldState.frame % occlusionInterval) === 0) {
+    if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
     }
 }

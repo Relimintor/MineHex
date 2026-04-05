@@ -17,13 +17,7 @@ export const worldState = {
     loadedChunks: new Set(),
     simplex: new window.SimplexNoise(),
     frame: 0,
-    frameCameraAxial: { q: 0, r: 0, h: 0 },
-    performance: {
-        frameTimeEmaMs: 16.7,
-        dynamicChunkGenerationBudget: 1,
-        dynamicChunkUnloadBudget: 1,
-        dynamicOcclusionIntervalFrames: 2
-    }
+    frameCameraAxial: { q: 0, r: 0, h: 0 }
 };
 
 export const inputState = {
