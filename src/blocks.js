@@ -25,6 +25,25 @@ const getChunkKey = (q, r) => {
     return `${cq},${cr}`;
 };
 
+function trackRemovedBlock(q, r, h) {
+    const key = `${q},${r},${h}`;
+    worldState.removedBlocks.add(key);
+    const chunkKey = getChunkKey(q, r);
+    if (!worldState.removedBlocksByChunk.has(chunkKey)) worldState.removedBlocksByChunk.set(chunkKey, new Set());
+    worldState.removedBlocksByChunk.get(chunkKey).add(key);
+}
+
+function clearRemovedBlockMark(q, r, h) {
+    const key = `${q},${r},${h}`;
+    if (!worldState.removedBlocks.has(key)) return;
+    worldState.removedBlocks.delete(key);
+    const chunkKey = getChunkKey(q, r);
+    const removedChunkKeys = worldState.removedBlocksByChunk.get(chunkKey);
+    if (!removedChunkKeys) return;
+    removedChunkKeys.delete(key);
+    if (removedChunkKeys.size === 0) worldState.removedBlocksByChunk.delete(chunkKey);
+}
+
 const NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
 const FACE_DIRECTIONS = [
     [1, 0, 0],
@@ -365,6 +384,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     }
 
     if (isPermanent) {
+        clearRemovedBlockMark(q, r, h);
         worldState.permanentBlocks.set(key, { q, r, h, typeIndex: safeTypeIndex });
         const chunkKey = getChunkKey(q, r);
         if (!worldState.permanentBlocksByChunk.has(chunkKey)) worldState.permanentBlocksByChunk.set(chunkKey, new Set());
@@ -374,7 +394,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true, trackRemoval = true } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
@@ -407,6 +427,10 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
                 chunkPermanentBlocks.delete(key);
                 if (chunkPermanentBlocks.size === 0) worldState.permanentBlocksByChunk.delete(chunkKey);
             }
+        }
+
+        if (!mesh.userData.isPermanent && trackRemoval) {
+            trackRemovedBlock(mesh.userData.q, mesh.userData.r, mesh.userData.h);
         }
     }
 
