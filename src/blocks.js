@@ -12,15 +12,6 @@ const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMater
     opacity: blockType.opacity ?? 1,
     depthWrite: blockType.transparent ? false : true
 }));
-const CHUNK_NEIGHBOR_OFFSETS = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-    [1, -1],
-    [-1, 1]
-];
-
 const getChunkCoords = (q, r) => ({
     cq: Math.round(q / CHUNK_SIZE),
     cr: Math.round(r / CHUNK_SIZE)
@@ -33,11 +24,20 @@ const getChunkKey = (q, r) => {
 
 function markChunkAndNeighborsDirty(q, r) {
     const { cq, cr } = getChunkCoords(q, r);
+    const centerQ = cq * CHUNK_SIZE;
+    const centerR = cr * CHUNK_SIZE;
+    const localQ = q - centerQ;
+    const localR = r - centerR;
+
     worldState.dirtyChunks.add(`${cq},${cr}`);
 
-    for (const [dq, dr] of CHUNK_NEIGHBOR_OFFSETS) {
-        worldState.dirtyChunks.add(`${cq + dq},${cr + dr}`);
-    }
+    // Only propagate to neighbors when edits touch a chunk boundary.
+    if (localQ === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq + 1},${cr}`);
+    if (localQ === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq - 1},${cr}`);
+    if (localR === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq},${cr + 1}`);
+    if (localR === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq},${cr - 1}`);
+    if ((localQ + localR) === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq + 1},${cr - 1}`);
+    if ((localQ + localR) === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq - 1},${cr + 1}`);
 }
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true) {
