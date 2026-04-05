@@ -51,6 +51,14 @@ function getColumnTopGroundDistance() {
     return camera.position.y - (topSolidH * HEX_HEIGHT);
 }
 
+function getColumnTopGroundDistance() {
+    const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
+    if (topSolidH === undefined) return null;
+    if (!isSolidBlockAt(q, r, topSolidH)) return null;
+    return camera.position.y - (topSolidH * HEX_HEIGHT);
+}
+
 function getGroundHit() {
     const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, GROUND_RAYCAST_CHUNK_RADIUS, localGroundCandidates, { collidableOnly: true });
