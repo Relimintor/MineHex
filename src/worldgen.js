@@ -53,16 +53,27 @@ function getClimate(q, r) {
 
 function getBiome(temp, moist) {
     if (temp < -0.6) return 'arctic';
+    if (temp > 0.15 && moist < -0.45) return 'mountains';
     if (moist > 0) return temp < -0.2 ? 'snowy_forest' : 'forest';
     return temp < -0.2 ? 'snowy_plains' : 'plains';
 }
 
-function getBiomeAt(q, r, height) {
+function biomeHeightModifier(biome, q, r, baseHeight) {
+    if (biome === 'mountains') {
+        return 30 * worldState.simplex.noise2D(q * 0.02, r * 0.02);
+    }
+
+    if (biome === 'plains') {
+        return -0.5 * baseHeight;
+    }
+
+    return 0;
+}
+
+function getBiomeAt(climateBiome, height) {
     if (height < SEA_LEVEL) return 'ocean';
     if (height < SEA_LEVEL + 2) return 'beach';
-
-    const climate = getClimate(q, r);
-    return getBiome(climate.temp, climate.moist);
+    return climateBiome;
 }
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
@@ -103,9 +114,12 @@ export function generateChunk(cq, cr) {
                 const absQ = centerQ + q;
                 const absR = centerR + r;
 
-                const rawHeight = getHeight(absQ, absR);
-                const height = getSmoothedHeight(rawHeight);
-                const biome = getBiomeAt(absQ, absR, height);
+                const climate = getClimate(absQ, absR);
+                const climateBiome = getBiome(climate.temp, climate.moist);
+                const baseHeight = getHeight(absQ, absR);
+                const heightWithBiome = baseHeight + biomeHeightModifier(climateBiome, absQ, absR, baseHeight);
+                const height = getSmoothedHeight(heightWithBiome);
+                const biome = getBiomeAt(climateBiome, height);
                 const topKey = `${absQ},${absR},${height}`;
                 const lowerKey = `${absQ},${absR},${height - 1}`;
 
@@ -124,7 +138,6 @@ export function generateChunk(cq, cr) {
 
                 if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
-                    const climate = getClimate(absQ, absR);
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
                     if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
