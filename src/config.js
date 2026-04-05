@@ -17,6 +17,7 @@ export const ENABLE_SHADOW_MAP = false;
 export const CHUNK_SIZE = useLowEndChunkProfile ? 8 : 16;
 export const RENDER_DIST = useLowEndChunkProfile ? 3 : 2;
 export const CHUNK_CREATION_BUDGET = 1;
+export const CHUNK_APPLY_BUDGET = useLowEndChunkProfile ? 1 : 2;
 export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
 export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
 export const ENABLE_WORLDGEN_WORKER = true;
