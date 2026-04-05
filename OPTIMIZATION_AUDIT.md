@@ -50,3 +50,8 @@ This audit lists **30 code-level optimizations** found directly in the current c
 9. **Signed distance / heightfield collision proxy** for player movement to avoid mesh raycasts for simple ground checks.
 10. **Progressive rendering quality scaler** (dynamic resolution + selective effect toggles) targeting a stable frame-time budget.
 
+## Newly implemented from this audit
+
+- ✅ **Temporal workload scheduler** added: chunk generation/unload budgets and occlusion query cadence now adapt from a frame-time EMA budget signal. (`src/main.js`, `src/worldgen.js`, `src/state.js`)
+- ✅ **Collision heightfield proxy path** added: physics now first resolves ground contact through the per-column top-solid cache before falling back to mesh raycasts. (`src/physics.js`, `src/rules.js`, `src/state.js`)
+- ✅ **Progressive rendering quality scaler** added: dynamic render pixel ratio now responds to current frame-time pressure to stabilize frame pacing on slower devices. (`src/main.js`, `src/config.js`)

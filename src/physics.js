@@ -16,7 +16,7 @@ import {
 } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
-import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
+import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
 import { inputState, worldState } from './state.js';
 import { isKeyDown } from './input.js';
 
@@ -25,8 +25,26 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 const groundRaycaster = new THREE.Raycaster();
 const moveDir = new THREE.Vector3();
 const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const PROXY_GROUND_HIT = { distance: Infinity };
+
+function getGroundHitFromHeightfield() {
+    const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const columnKey = `${current.q},${current.r}`;
+    const topSolid = worldState.topSolidHeightByColumn.get(columnKey);
+    if (topSolid === undefined) return null;
+    if (!isSolidBlockAt(current.q, current.r, topSolid)) return null;
+
+    const topY = (topSolid + 1) * HEX_HEIGHT;
+    const distance = camera.position.y - topY;
+    if (distance < -HEX_HEIGHT || distance > PLAYER_HEIGHT + 1) return null;
+
+    PROXY_GROUND_HIT.distance = Math.max(0, distance);
+    return PROXY_GROUND_HIT;
+}
 
 function getGroundHit() {
+    const proxyHit = getGroundHitFromHeightfield();
+    if (proxyHit) return proxyHit;
     if (worldState.collidableBlockList.length === 0) return null;
     groundRaycaster.set(camera.position, DOWN);
     groundRaycaster.far = PLAYER_HEIGHT + 1;
