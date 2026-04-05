@@ -10,6 +10,9 @@ MineHex FPS is a Minecraft-like prototype with a **first-person camera on a flat
 - Left click breaks player-placed blocks.
 - `Shift + Left click` breaks terrain blocks.
 - Tile types live in `config.js` for easy extension (example: `wood`).
+- Coordinates follow the common hex approach:
+  - **Cube coordinates internally** (`x`, `y`, `z` with `x + y + z = 0`) for neighbors and distance math.
+  - **Axial coordinates externally** (`q`, `r`) for APIs and block/chunk addressing.
 
 ## Controls
 

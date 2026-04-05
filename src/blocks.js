@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
-import { axialToWorld } from './coords.js';
+import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld } from './coords.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
 
@@ -25,14 +25,7 @@ const getChunkKey = (q, r) => {
     return `${cq},${cr}`;
 };
 
-const NEIGHBOR_OFFSETS = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-    [1, -1],
-    [-1, 1]
-];
+const NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
 const FACE_DIRECTIONS = [
     [1, 0, 0],
     [-1, 0, 0],
