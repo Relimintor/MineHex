@@ -10,11 +10,173 @@ const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMater
     color: blockType.color,
     transparent: blockType.transparent ?? false,
     opacity: blockType.opacity ?? 1,
-    depthWrite: blockType.transparent ? false : true
+    depthWrite: blockType.transparent ? false : true,
+    // GPU backface culling layer:
+    // triangles are rasterized only when their winding faces the camera
+    // (equivalent to n·v < 0 for front-facing triangles).
+    side: THREE.FrontSide
 }));
-const getChunkKey = (q, r) => `${Math.round(q / CHUNK_SIZE)},${Math.round(r / CHUNK_SIZE)}`;
+const getChunkCoords = (q, r) => ({
+    cq: Math.round(q / CHUNK_SIZE),
+    cr: Math.round(r / CHUNK_SIZE)
+});
 
-export function addBlock(q, r, h, typeIndex, isPermanent = false) {
+const getChunkKey = (q, r) => {
+    const { cq, cr } = getChunkCoords(q, r);
+    return `${cq},${cr}`;
+};
+
+const NEIGHBOR_OFFSETS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, -1],
+    [-1, 1]
+];
+const FACE_DIRECTIONS = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1]
+];
+const FACE_GEOMETRY = [
+    {
+        direction: [1, 0, 0],
+        offsets: [
+            [1, 0, 0],
+            [1, 1, 0],
+            [1, 1, 1],
+            [1, 0, 1]
+        ]
+    },
+    {
+        direction: [-1, 0, 0],
+        offsets: [
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 1, 1],
+            [0, 1, 0]
+        ]
+    },
+    {
+        direction: [0, 1, 0],
+        offsets: [
+            [0, 1, 0],
+            [0, 1, 1],
+            [1, 1, 1],
+            [1, 1, 0]
+        ]
+    },
+    {
+        direction: [0, -1, 0],
+        offsets: [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 0, 1],
+            [0, 0, 1]
+        ]
+    },
+    {
+        direction: [0, 0, 1],
+        offsets: [
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1]
+        ]
+    },
+    {
+        direction: [0, 0, -1],
+        offsets: [
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0],
+            [1, 0, 0]
+        ]
+    }
+];
+
+function getNeighborChunkKeys(cq, cr) {
+    const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
+    if (chunk?.neighbors?.length) return chunk.neighbors;
+    return NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+}
+
+function markChunkAndNeighborsDirty(q, r) {
+    const { cq, cr } = getChunkCoords(q, r);
+
+    const selfChunkKey = `${cq},${cr}`;
+    worldState.dirtyChunks.add(selfChunkKey);
+    const selfChunk = worldState.chunkMeta.get(selfChunkKey);
+    if (selfChunk) selfChunk.dirty = true;
+
+    for (const neighborChunkKey of getNeighborChunkKeys(cq, cr)) {
+        worldState.dirtyChunks.add(neighborChunkKey);
+
+        const neighborChunk = worldState.chunkMeta.get(neighborChunkKey);
+        if (neighborChunk) neighborChunk.dirty = true;
+    }
+}
+
+function occupancyAt(q, r, h) {
+    return worldState.worldBlocks.has(`${q},${r},${h}`) ? 1 : 0;
+}
+
+function isFaceVisible(q, r, h, [dq, dr, dh]) {
+    // F(i, d) = O(i) * (1 - O(i + d))
+    // A face belongs to the boundary only when current voxel is solid
+    // and the neighboring voxel in direction d is empty.
+    return occupancyAt(q, r, h) * (1 - occupancyAt(q + dq, r + dr, h + dh));
+}
+
+function getVisibleFaces(q, r, h) {
+    const faces = [];
+    for (const { direction, offsets } of FACE_GEOMETRY) {
+        if (!isFaceVisible(q, r, h, direction)) continue;
+        const vertices = offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz]);
+        faces.push({ direction, vertices });
+    }
+
+    return faces;
+}
+
+function updateBlockVisibilityAt(q, r, h) {
+    const key = `${q},${r},${h}`;
+    const block = worldState.worldBlocks.get(key);
+    if (!block) return;
+
+    const visibleFaces = getVisibleFaces(q, r, h);
+    block.visible = visibleFaces.length > 0;
+    block.userData.visibleFaces = visibleFaces;
+}
+
+function updateVisibilityAround(q, r, h) {
+    updateBlockVisibilityAt(q, r, h);
+    for (const [dq, dr, dh] of FACE_DIRECTIONS) {
+        updateBlockVisibilityAt(q + dq, r + dr, h + dh);
+    }
+}
+
+export function refreshBlockVisibilityForKeys(blockKeys) {
+    const visited = new Set();
+
+    for (const key of blockKeys) {
+        const [q, r, h] = key.split(',').map(Number);
+        const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
+
+        for (const [targetQ, targetR, targetH] of targets) {
+            const targetKey = `${targetQ},${targetR},${targetH}`;
+            if (visited.has(targetKey)) continue;
+            visited.add(targetKey);
+            updateBlockVisibilityAt(targetQ, targetR, targetH);
+        }
+    }
+}
+
+export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true, refreshVisibility = true) {
     const key = `${q},${r},${h}`;
     if (worldState.worldBlocks.has(key)) return;
 
@@ -27,6 +189,14 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     scene.add(mesh);
     worldState.worldBlocks.set(key, mesh);
 
+    if (trackDirty) {
+        markChunkAndNeighborsDirty(q, r);
+    }
+
+    if (refreshVisibility) {
+        updateVisibilityAround(q, r, h);
+    }
+
     if (isPermanent) {
         worldState.permanentBlocks.set(key, { q, r, h, typeIndex: safeTypeIndex });
         const chunkKey = getChunkKey(q, r);
@@ -37,7 +207,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false, force = false } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
@@ -45,6 +215,14 @@ export function removeBlock(key, { preservePermanent = false, force = false } = 
 
         scene.remove(mesh);
         worldState.worldBlocks.delete(key);
+
+        if (trackDirty) {
+            markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
+        }
+
+        if (refreshVisibility) {
+            updateVisibilityAround(mesh.userData.q, mesh.userData.r, mesh.userData.h);
+        }
 
         if (mesh.userData.isPermanent && !preservePermanent) {
             worldState.permanentBlocks.delete(key);

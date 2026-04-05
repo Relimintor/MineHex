@@ -4,6 +4,8 @@ export const worldState = {
     selectedBlockIndex: 0,
     worldBlocks: new Map(),
     chunkBlocks: new Map(),
+    chunkMeta: new Map(),
+    dirtyChunks: new Set(),
     permanentBlocks: new Map(),
     permanentBlocksByChunk: new Map(),
     loadedChunks: new Set(),
