@@ -2,6 +2,7 @@ import { camera, renderer, scene } from './scene.js';
 import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
+import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING, USE_ULTRA_LOW_PROFILE } from './config.js';
@@ -19,9 +20,10 @@ function chooseControlMode() {
     if (!modeScreen) return Promise.resolve('pc');
     const savedProfile = localStorage.getItem(PERFORMANCE_PROFILE_KEY);
     const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
-    if (savedProfile === 'celeron_cb' && savedMode === 'pc') {
+    if (savedProfile === 'celeron_cb' && (savedMode === 'pc' || savedMode === 'celeron_cb')) {
+        localStorage.setItem(CONTROL_MODE_KEY, 'celeron_cb');
         modeScreen.classList.add('hidden');
-        return Promise.resolve('pc');
+        return Promise.resolve('celeron_cb');
     }
 
     return new Promise((resolve) => {
@@ -38,7 +40,7 @@ function chooseControlMode() {
 
                 if (mode === 'celeron_cb') {
                     localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
-                    localStorage.setItem(CONTROL_MODE_KEY, 'pc');
+                    localStorage.setItem(CONTROL_MODE_KEY, 'celeron_cb');
                     window.location.reload();
                     return;
                 }
@@ -62,6 +64,7 @@ const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 3;
 const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
 let hasSpawnedInAllowedRange = false;
+let coordinatesHudFrameInterval = 1;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -77,7 +80,7 @@ function animate(now = performance.now()) {
 
     worldState.frame += 1;
     worldState.frameCameraAxial = worldToAxial(camera.position);
-    updateCoordinatesHud();
+    if ((worldState.frame % coordinatesHudFrameInterval) === 0) updateCoordinatesHud();
 
     if (inputState.isLocked) {
         governorElapsedMs += deltaTimeSeconds * 1000;
@@ -112,6 +115,9 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
+    } else if (mode === 'celeron_cb') {
+        registerCeleronInputHandlers();
+        coordinatesHudFrameInterval = 8;
     } else {
         registerDesktopInputHandlers();
     }
