@@ -63,8 +63,9 @@ const pendingChunkGenerationSet = new Set();
 let lastStreamChunkKey = null;
 let chunkTick = 0;
 const STREAM_INTERVAL_TICKS = 3;
-const FRUSTUM_INTERVAL_TICKS = 1;
+const FRUSTUM_INTERVAL_TICKS = 2;
 const LOD_INTERVAL_TICKS = 2;
+const CHUNK_UNLOAD_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
@@ -74,6 +75,8 @@ const hizCenter = new THREE.Vector3();
 const HIZ_SECTORS_X = 32;
 const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
+const pendingChunkUnloadQueue = [];
+const pendingChunkUnloadSet = new Set();
 
 
 const CHUNK_LOCAL_AXIALS = [];
@@ -751,6 +754,7 @@ export function generateChunk(cq, cr) {
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
+        }
     }
 
     const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
@@ -813,6 +817,13 @@ function enqueueChunkGeneration(cq, cr) {
     pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
 }
 
+function enqueueChunkUnload(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (!worldState.loadedChunks.has(chunkKey) || pendingChunkUnloadSet.has(chunkKey)) return;
+    pendingChunkUnloadSet.add(chunkKey);
+    pendingChunkUnloadQueue.push({ cq, cr, chunkKey });
+}
+
 function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
 
@@ -834,7 +845,14 @@ function rebuildStreamingQueue(cq, cr) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
         const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
-        unloadChunk(chunkQ, chunkR);
+        enqueueChunkUnload(chunkQ, chunkR);
+    }
+
+    for (let i = pendingChunkUnloadQueue.length - 1; i >= 0; i--) {
+        const queued = pendingChunkUnloadQueue[i];
+        if (!visibleChunkKeys.has(queued.chunkKey)) continue;
+        pendingChunkUnloadSet.delete(queued.chunkKey);
+        pendingChunkUnloadQueue.splice(i, 1);
     }
 
     for (let i = pendingChunkGenerationQueue.length - 1; i >= 0; i--) {
@@ -863,6 +881,16 @@ function flushChunkGenerationBudget() {
     }
 }
 
+function flushChunkUnloadBudget() {
+    let budget = CHUNK_UNLOAD_BUDGET;
+    while (budget > 0 && pendingChunkUnloadQueue.length > 0) {
+        const nextChunk = pendingChunkUnloadQueue.shift();
+        pendingChunkUnloadSet.delete(nextChunk.chunkKey);
+        unloadChunk(nextChunk.cq, nextChunk.cr);
+        budget--;
+    }
+}
+
 export function updateChunks() {
     chunkTick++;
     applyDirtyChunks();
@@ -878,6 +906,7 @@ export function updateChunks() {
         lastStreamChunkKey = currentChunkKey;
     }
 
+    flushChunkUnloadBudget();
     flushChunkGenerationBudget();
 
     if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
