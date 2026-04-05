@@ -1,8 +1,129 @@
-import { CHUNK_SIZE, RENDER_DIST } from './config.js';
+import { CHUNK_SIZE, NETHROCK_LEVEL_HEX, RENDER_DIST } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, removeBlock } from './blocks.js';
+
+const SEA_LEVEL = 0;
+const CONTINENT_AMPLITUDE = 50;
+const CONTINENT_FREQUENCY = 0.001;
+const CONTINENT_OFFSET = 20;
+const TERRAIN_MID_AMPLITUDE = 20;
+const TERRAIN_MID_FREQUENCY = 0.01;
+const TERRAIN_DETAIL_AMPLITUDE = 5;
+const TERRAIN_DETAIL_FREQUENCY = 0.05;
+const TEMPERATURE_FREQUENCY = 0.0005;
+const MOISTURE_FREQUENCY = 0.0005;
+const MOISTURE_OFFSET = 100;
+
+const BLOCK_INDEX = {
+    grass: 0,
+    dirt: 1,
+    water: 4,
+    nethrock: 5,
+    oakWood: 6,
+    oakLeaves: 7,
+    snow: 8,
+    ice: 9
+};
+
+function getHeight(q, r) {
+    const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
+    const terrain = (TERRAIN_MID_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_MID_FREQUENCY, r * TERRAIN_MID_FREQUENCY))
+        + (TERRAIN_DETAIL_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_DETAIL_FREQUENCY, r * TERRAIN_DETAIL_FREQUENCY));
+    return Math.floor(continent + terrain);
+}
+
+function smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - (2 * t));
+}
+
+function getSmoothedHeight(rawHeight) {
+    const coastBlend = smoothstep(SEA_LEVEL - 3, SEA_LEVEL + 3, rawHeight);
+    return Math.round((rawHeight * coastBlend) + (SEA_LEVEL * (1 - coastBlend)));
+}
+
+function getClimate(q, r) {
+    return {
+        temp: worldState.simplex.noise2D(q * TEMPERATURE_FREQUENCY, r * TEMPERATURE_FREQUENCY),
+        moist: worldState.simplex.noise2D((q * MOISTURE_FREQUENCY) + MOISTURE_OFFSET, (r * MOISTURE_FREQUENCY) + MOISTURE_OFFSET)
+    };
+}
+
+function normalizeWeights(weights) {
+    const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return weights;
+
+    const normalized = {};
+    Object.entries(weights).forEach(([biome, value]) => {
+        normalized[biome] = value / total;
+    });
+    return normalized;
+}
+
+function getBiomeWeights(temp, moist) {
+    const cold = 1 - smoothstep(-0.3, 0.2, temp);
+    const freezing = 1 - smoothstep(-0.75, -0.45, temp);
+    const wet = smoothstep(-0.1, 0.15, moist);
+    const dry = 1 - wet;
+    const mountainness = smoothstep(-0.65, -0.45, -moist) * smoothstep(0.05, 0.3, temp);
+
+    return normalizeWeights({
+        plains: dry * (1 - cold) * (1 - mountainness),
+        forest: wet * (1 - cold),
+        snowy_plains: dry * cold * (1 - freezing),
+        snowy_forest: wet * cold * (1 - freezing),
+        arctic: freezing,
+        mountains: mountainness * (1 - freezing)
+    });
+}
+
+function getDominantBiome(biomeWeights) {
+    let selected = 'plains';
+    let bestWeight = -1;
+    Object.entries(biomeWeights).forEach(([biome, weight]) => {
+        if (weight > bestWeight) {
+            selected = biome;
+            bestWeight = weight;
+        }
+    });
+    return selected;
+}
+
+function biomeHeightModifier(biomeWeights, q, r, baseHeight) {
+    const mountainModifier = 30 * worldState.simplex.noise2D(q * 0.02, r * 0.02) * (biomeWeights.mountains ?? 0);
+    const plainsModifier = -0.5 * baseHeight * (biomeWeights.plains ?? 0);
+    return mountainModifier + plainsModifier;
+}
+
+function getBiomeAt(climateBiome, height) {
+    if (height < SEA_LEVEL) return 'ocean';
+    if (height < SEA_LEVEL + 2) return 'beach';
+    return climateBiome;
+}
+
+function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
+    const key = `${q},${r},${h}`;
+    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex);
+    if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
+}
+
+function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
+    if (!(biome === 'forest' || biome === 'snowy_forest')) return;
+    if (groundHeight <= SEA_LEVEL) return;
+
+    const treeNoise = worldState.simplex.noise2D((q * 0.13) + 200, (r * 0.13) + 200);
+    if (treeNoise < 0.72) return;
+
+    addGeneratedBlock(chunkBlockKeys, q, r, groundHeight + 1, BLOCK_INDEX.oakWood);
+    addGeneratedBlock(chunkBlockKeys, q, r, groundHeight + 2, BLOCK_INDEX.oakWood);
+    addGeneratedBlock(chunkBlockKeys, q, r, groundHeight + 3, BLOCK_INDEX.oakLeaves);
+    addGeneratedBlock(chunkBlockKeys, q + 1, r, groundHeight + 2, BLOCK_INDEX.oakLeaves);
+    addGeneratedBlock(chunkBlockKeys, q - 1, r, groundHeight + 2, BLOCK_INDEX.oakLeaves);
+    addGeneratedBlock(chunkBlockKeys, q, r + 1, groundHeight + 2, BLOCK_INDEX.oakLeaves);
+    addGeneratedBlock(chunkBlockKeys, q, r - 1, groundHeight + 2, BLOCK_INDEX.oakLeaves);
+}
 
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
@@ -20,15 +141,37 @@ export function generateChunk(cq, cr) {
                 const absQ = centerQ + q;
                 const absR = centerR + r;
 
-                const noise = worldState.simplex.noise2D(absQ * 0.05, absR * 0.05);
-                const height = Math.floor(noise * 5);
+                const climate = getClimate(absQ, absR);
+                const biomeWeights = getBiomeWeights(climate.temp, climate.moist);
+                const climateBiome = getDominantBiome(biomeWeights);
+                const baseHeight = getHeight(absQ, absR);
+                const heightWithBiome = baseHeight + biomeHeightModifier(biomeWeights, absQ, absR, baseHeight);
+                const height = getSmoothedHeight(heightWithBiome);
+                const biome = getBiomeAt(climateBiome, height);
                 const topKey = `${absQ},${absR},${height}`;
                 const lowerKey = `${absQ},${absR},${height - 1}`;
 
-                if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, 0);
-                if (!worldState.permanentBlocks.has(lowerKey)) addBlock(absQ, absR, height - 1, 1);
+                const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest' || biome === 'arctic';
+                const topBlockType = biome === 'beach'
+                    ? BLOCK_INDEX.dirt
+                    : (height < SEA_LEVEL ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
+                if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, topBlockType);
+                if (!worldState.permanentBlocks.has(lowerKey)) addBlock(absQ, absR, height - 1, BLOCK_INDEX.dirt);
                 if (worldState.worldBlocks.has(topKey)) chunkBlockKeys.add(topKey);
                 if (worldState.worldBlocks.has(lowerKey)) chunkBlockKeys.add(lowerKey);
+
+                const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
+                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock);
+                if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+
+                if (biome === 'ocean') {
+                    const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
+                    const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
+                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType);
+                    if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
+                }
+
+                maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
         }
     }
@@ -49,7 +192,7 @@ export function unloadChunk(cq, cr) {
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
     for (const key of chunkBlockKeys) {
-        removeBlock(key, { preservePermanent: true });
+        removeBlock(key, { preservePermanent: true, force: true });
     }
 
     worldState.chunkBlocks.delete(chunkKey);
