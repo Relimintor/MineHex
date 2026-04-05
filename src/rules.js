@@ -1,42 +1,70 @@
-import { PLAYER_HEIGHT } from './config.js';
+import { PLAYER_HEIGHT, BLOCK_TYPES } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
-import { BLOCK_TYPES } from './config.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
 
 const SEARCH_RADIUS = 12;
 const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
+const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
 
 function getBlockAt(q, r, h) {
     return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
 }
 
+function getColumnKey(q, r) {
+    return `${q},${r}`;
+}
+
+export function updateTopSolidHeightOnAdd(q, r, h, typeIndex) {
+    if (!SOLID_TYPE_LOOKUP[typeIndex]) return;
+    const columnKey = getColumnKey(q, r);
+    const previous = worldState.topSolidHeightByColumn.get(columnKey);
+    if (previous === undefined || h > previous) worldState.topSolidHeightByColumn.set(columnKey, h);
+}
+
+export function updateTopSolidHeightOnRemove(q, r, h, typeIndex) {
+    if (!SOLID_TYPE_LOOKUP[typeIndex]) return;
+    const columnKey = getColumnKey(q, r);
+    const previous = worldState.topSolidHeightByColumn.get(columnKey);
+    if (previous === undefined || previous !== h) return;
+
+    for (let nextH = h - 1; nextH >= SEARCH_HEIGHT_BOTTOM; nextH--) {
+        const block = getBlockAt(q, r, nextH);
+        if (!block) continue;
+        if (!SOLID_TYPE_LOOKUP[block.userData.typeIndex]) continue;
+        worldState.topSolidHeightByColumn.set(columnKey, nextH);
+        return;
+    }
+
+    worldState.topSolidHeightByColumn.delete(columnKey);
+}
+
 export function isSolidTypeIndex(typeIndex) {
-    const blockType = BLOCK_TYPES[typeIndex];
-    if (!blockType) return false;
-    return !blockType.isLiquid;
+    return Boolean(SOLID_TYPE_LOOKUP[typeIndex]);
 }
 
 export function isSolidBlockAt(q, r, h) {
     const block = getBlockAt(q, r, h);
-    if (!block) return false; // air is not a solid block
+    if (!block) return false;
     return isSolidTypeIndex(block.userData.typeIndex);
 }
 
 export function isLiquidBlockAt(q, r, h) {
     const block = getBlockAt(q, r, h);
     if (!block) return false;
-    const blockType = BLOCK_TYPES[block.userData.typeIndex];
-    return Boolean(blockType?.isLiquid);
+    return !isSolidTypeIndex(block.userData.typeIndex);
 }
 
 export function isCameraInLiquid() {
-    const { q, r, h } = worldToAxial(camera.position);
+    const { q, r, h } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     return isLiquidBlockAt(q, r, h) || isLiquidBlockAt(q, r, h - 1);
 }
 
 function findSpawnHeight(q, r) {
+    const cachedTopSolid = worldState.topSolidHeightByColumn.get(getColumnKey(q, r));
+    if (cachedTopSolid !== undefined && !isSolidBlockAt(q, r, cachedTopSolid + 1)) return cachedTopSolid;
+
     for (let h = SEARCH_HEIGHT_TOP; h >= SEARCH_HEIGHT_BOTTOM; h--) {
         if (!isSolidBlockAt(q, r, h)) continue;
         if (!isSolidBlockAt(q, r, h + 1)) return h;
@@ -44,7 +72,6 @@ function findSpawnHeight(q, r) {
     return null;
 }
 
-// Rule 1: you must always spawn on a solid block.
 export function enforceSpawnOnSolidBlock(originQ = 0, originR = 0) {
     for (let radius = 0; radius <= SEARCH_RADIUS; radius++) {
         for (let dq = -radius; dq <= radius; dq++) {

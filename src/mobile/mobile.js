@@ -1,5 +1,5 @@
 import { inputState } from '../state.js';
-import { applyLookDelta, mineBlockFromCenter, placeBlockFromCenter, updateSelectedBlock } from '../input.js';
+import { applyLookDelta, mineBlockFromCenter, placeBlockFromCenter, setKeyState, updateSelectedBlock } from '../input.js';
 
 const HOLD_TO_MINE_DELAY_MS = 320;
 const MINE_REPEAT_MS = 120;
@@ -60,10 +60,10 @@ export function registerMobileInputHandlers() {
         joystickBase.src = 'assets/mobile/controls/joystick_off.png';
         joystickCenter.style.opacity = '0';
         joystickCenter.style.transform = 'translate(-50%, -50%)';
-        inputState.keys.KeyW = false;
-        inputState.keys.KeyS = false;
-        inputState.keys.KeyA = false;
-        inputState.keys.KeyD = false;
+        setKeyState('KeyW', false);
+        setKeyState('KeyS', false);
+        setKeyState('KeyA', false);
+        setKeyState('KeyD', false);
     }
 
     function updateMovementFromJoystick(deltaX, deltaY) {
@@ -75,10 +75,10 @@ export function registerMobileInputHandlers() {
         joystickCenter.style.opacity = '1';
         joystickCenter.style.transform = `translate(calc(-50% + ${normalizedX * JOYSTICK_MAX_RADIUS}px), calc(-50% + ${normalizedY * JOYSTICK_MAX_RADIUS}px))`;
 
-        inputState.keys.KeyW = normalizedY < -JOYSTICK_DEADZONE;
-        inputState.keys.KeyS = normalizedY > JOYSTICK_DEADZONE;
-        inputState.keys.KeyA = normalizedX < -JOYSTICK_DEADZONE;
-        inputState.keys.KeyD = normalizedX > JOYSTICK_DEADZONE;
+        setKeyState('KeyW', normalizedY < -JOYSTICK_DEADZONE);
+        setKeyState('KeyS', normalizedY > JOYSTICK_DEADZONE);
+        setKeyState('KeyA', normalizedX < -JOYSTICK_DEADZONE);
+        setKeyState('KeyD', normalizedX > JOYSTICK_DEADZONE);
     }
 
     function updateLookTouch(touchId, x, y) {
@@ -121,7 +121,7 @@ export function registerMobileInputHandlers() {
             }
 
             if (jumpButton.contains(target)) {
-                inputState.keys.Space = true;
+                setKeyState('Space', true);
                 continue;
             }
 
@@ -181,7 +181,7 @@ export function registerMobileInputHandlers() {
             }
 
             if (jumpButton.contains(touch.target)) {
-                inputState.keys.Space = false;
+                setKeyState('Space', false);
             }
 
             activeTouches.delete(touch.identifier);

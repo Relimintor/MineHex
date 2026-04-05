@@ -6,6 +6,8 @@ import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, updateChunks } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
+import { worldToAxial } from './coords.js';
+import { worldState } from './state.js';
 
 camera.position.set(0, 10, 0);
 
@@ -38,6 +40,9 @@ function animate(now = performance.now()) {
     requestAnimationFrame(animate);
     const deltaTimeSeconds = Math.min(0.1, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
+
+    worldState.frame += 1;
+    worldState.frameCameraAxial = worldToAxial(camera.position);
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
