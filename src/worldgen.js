@@ -385,6 +385,18 @@ export function runChunkOcclusionCulling() {
             chunkMeta.occlusionVisible = isVisible;
             updateChunkMeshVisibility(chunkKey);
         }
+
+        syncOcclusionProxyTransform(chunkKey);
+        const proxy = chunkMeta.occlusionProxy;
+        if (!proxy || chunkMeta.occlusionQuery) continue;
+
+        chunkMeta.occlusionQuery = gl.createQuery();
+        if (!chunkMeta.occlusionQuery) continue;
+
+        proxy.userData.activeQuery = chunkMeta.occlusionQuery;
+        proxy.userData.queryTarget = queryTarget;
+        proxy.visible = true;
+        occlusionProxiesToTest.push(proxy);
     }
 
     occlusionProxiesToTest.length = 0;
@@ -738,4 +750,6 @@ export function updateChunks() {
     }
 
     applyChunkFrustumCulling();
+
+    for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
 }
