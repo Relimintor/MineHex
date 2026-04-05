@@ -30,13 +30,11 @@ const NEIGHBOR_OFFSETS = [
     [1, -1],
     [-1, 1]
 ];
-const BLOCK_NEIGHBOR_OFFSETS = [
+const FACE_DIRECTIONS = [
     [1, 0, 0],
     [-1, 0, 0],
     [0, 1, 0],
     [0, -1, 0],
-    [1, -1, 0],
-    [-1, 1, 0],
     [0, 0, 1],
     [0, 0, -1]
 ];
@@ -63,10 +61,18 @@ function markChunkAndNeighborsDirty(q, r) {
     }
 }
 
+function occupancyAt(q, r, h) {
+    return worldState.worldBlocks.has(`${q},${r},${h}`) ? 1 : 0;
+}
+
+function isFaceVisible(q, r, h, [dq, dr, dh]) {
+    // F(i, d) = O(i) * (1 - O(i + d))
+    return occupancyAt(q, r, h) * (1 - occupancyAt(q + dq, r + dr, h + dh));
+}
+
 function hasExposedFace(q, r, h) {
-    for (const [dq, dr, dh] of BLOCK_NEIGHBOR_OFFSETS) {
-        const neighborKey = `${q + dq},${r + dr},${h + dh}`;
-        if (!worldState.worldBlocks.has(neighborKey)) return true;
+    for (const direction of FACE_DIRECTIONS) {
+        if (isFaceVisible(q, r, h, direction)) return true;
     }
 
     return false;
@@ -81,7 +87,7 @@ function updateBlockVisibilityAt(q, r, h) {
 
 function updateVisibilityAround(q, r, h) {
     updateBlockVisibilityAt(q, r, h);
-    for (const [dq, dr, dh] of BLOCK_NEIGHBOR_OFFSETS) {
+    for (const [dq, dr, dh] of FACE_DIRECTIONS) {
         updateBlockVisibilityAt(q + dq, r + dr, h + dh);
     }
 }
@@ -91,7 +97,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
 
     for (const key of blockKeys) {
         const [q, r, h] = key.split(',').map(Number);
-        const targets = [[q, r, h], ...BLOCK_NEIGHBOR_OFFSETS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
+        const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
 
         for (const [targetQ, targetR, targetH] of targets) {
             const targetKey = `${targetQ},${targetR},${targetH}`;
