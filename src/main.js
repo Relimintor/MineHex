@@ -6,7 +6,7 @@ import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
-import { worldToAxial } from './coords.js';
+import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
 
 camera.position.set(0, 10, 0);
@@ -38,6 +38,14 @@ let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
 const CHUNK_STREAM_INTERVAL_FRAMES = 3;
 const CHUNK_VISIBILITY_INTERVAL_FRAMES = 2;
+const coordinatesHud = document.getElementById('coordinates');
+
+function updateCoordinatesHud() {
+    if (!coordinatesHud) return;
+    const { q, r, h } = worldToAxial(camera.position);
+    const { x, y, z } = worldToCube(camera.position);
+    coordinatesHud.textContent = `Axial q:${q} r:${r} h:${h} | Cube x:${x} y:${y} z:${z}`;
+}
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
@@ -46,6 +54,7 @@ function animate(now = performance.now()) {
 
     worldState.frame += 1;
     worldState.frameCameraAxial = worldToAxial(camera.position);
+    updateCoordinatesHud();
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
