@@ -39,6 +39,14 @@ const CHUNK_NEIGHBOR_OFFSETS = [
     [-1, 1]
 ];
 
+const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
+    const angle = (Math.PI / 3) * i + (Math.PI / 6);
+    return {
+        x: Math.cos(angle) * HEX_RADIUS,
+        z: Math.sin(angle) * HEX_RADIUS
+    };
+});
+
 function ensureChunkMeta(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.chunkMeta.has(chunkKey)) return;
@@ -70,10 +78,14 @@ function recomputeChunkBounds(chunkKey) {
             if (Math.abs(q + r) > CHUNK_SIZE) continue;
 
             const worldPos = axialToWorld(centerQ + q, centerR + r, 0);
-            minX = Math.min(minX, worldPos.x);
-            maxX = Math.max(maxX, worldPos.x);
-            minZ = Math.min(minZ, worldPos.z);
-            maxZ = Math.max(maxZ, worldPos.z);
+            for (const offset of HEX_CORNER_OFFSETS_XZ) {
+                const cornerX = worldPos.x + offset.x;
+                const cornerZ = worldPos.z + offset.z;
+                minX = Math.min(minX, cornerX);
+                maxX = Math.max(maxX, cornerX);
+                minZ = Math.min(minZ, cornerZ);
+                maxZ = Math.max(maxZ, cornerZ);
+            }
         }
     }
 
@@ -89,8 +101,8 @@ function recomputeChunkBounds(chunkKey) {
     if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
 
     return new THREE.Box3(
-        new THREE.Vector3(minX - HEX_RADIUS, minH * HEX_HEIGHT, minZ - HEX_RADIUS),
-        new THREE.Vector3(maxX + HEX_RADIUS, (maxH + 1) * HEX_HEIGHT, maxZ + HEX_RADIUS)
+        new THREE.Vector3(minX, 0, minZ),
+        new THREE.Vector3(maxX, (maxH + 1) * HEX_HEIGHT, maxZ)
     );
 }
 
