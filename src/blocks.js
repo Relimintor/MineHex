@@ -161,24 +161,33 @@ function markChunkAndNeighborsDirty(q, r) {
     }
 }
 
-function isSolidGlobal(q, r, h) {
-    const blockKey = `${q},${r},${h}`;
-    const chunkKey = getChunkKey(q, r);
-    const chunkBlocks = worldState.chunkBlocks.get(chunkKey);
-
-    // Chunk-boundary-aware lookup:
-    // if i + d stays in this chunk we resolve locally via that chunk set;
-    // otherwise we resolve via whichever neighbor chunk owns the coordinate.
-    // getChunkKey(...) handles both cases from global coordinates.
-    if (chunkBlocks?.has(blockKey)) return 1;
-    return worldState.worldBlocks.has(blockKey) ? 1 : 0;
+function getBlockAt(q, r, h) {
+    return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
 }
 
 function isFaceVisible(q, r, h, [dq, dr, dh]) {
-    // F(i, d) = O(i) * (1 - O(i + d))
-    // A face belongs to the boundary only when current voxel is solid
-    // and the neighboring voxel in direction d is empty.
-    return isSolidGlobal(q, r, h) * (1 - isSolidGlobal(q + dq, r + dr, h + dh));
+    const current = getBlockAt(q, r, h);
+    if (!current) return false;
+
+    const neighbor = getBlockAt(q + dq, r + dr, h + dh);
+    if (!neighbor) return true;
+
+    const currentType = BLOCK_TYPES[current.userData.typeIndex] ?? {};
+    const neighborType = BLOCK_TYPES[neighbor.userData.typeIndex] ?? {};
+
+    if (currentType.isLiquid) {
+        // Liquids keep boundary faces when touching air, transparent blocks,
+        // or any different material/liquid rule set.
+        if (!neighborType.isLiquid) return true;
+        if (neighbor.userData.typeIndex !== current.userData.typeIndex) return true;
+
+        // Same liquid type next to this face => internal face culled.
+        // (Top face still appears naturally when no liquid above.)
+        return false;
+    }
+
+    if (neighborType.isLiquid || neighborType.transparent) return true;
+    return false;
 }
 
 function getVisibleFaces(q, r, h) {
