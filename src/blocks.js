@@ -439,3 +439,8 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
     return true;
 }
+
+
+export function getBlockMaterial(typeIndex) {
+    return blockMaterials[typeIndex] ?? blockMaterials[0];
+}
