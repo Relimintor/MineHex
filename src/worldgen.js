@@ -106,6 +106,8 @@ function recomputeChunkBounds(chunkKey) {
     );
 }
 
+// For each frustum plane we evaluate max_{x in B}(n·x + d) using the positive vertex vp.
+// If this maximum is still negative, the whole AABB is outside that plane.
 function isChunkVisible(aabb, frustumPlanes) {
     for (const plane of frustumPlanes) {
         const vp = {
@@ -121,6 +123,8 @@ function isChunkVisible(aabb, frustumPlanes) {
     return true;
 }
 
+// Runtime cost remains linear in loaded chunks for the culling pass,
+// but only chunks passing visibility keep their meshes renderable.
 function applyChunkFrustumCulling() {
     const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     const elements = viewProjection.elements;
