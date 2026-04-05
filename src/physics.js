@@ -17,7 +17,7 @@ import {
 import { collectChunkRaycastCandidates } from './blocks.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
-import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
+import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
 import { inputState, worldState } from './state.js';
 import { isKeyDown } from './input.js';
 
@@ -28,6 +28,28 @@ const moveDir = new THREE.Vector3();
 const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const localGroundCandidates = [];
 const GROUND_RAYCAST_CHUNK_RADIUS = 1;
+const collisionProbePoint = new THREE.Vector3();
+const PLAYER_FEET_OFFSET = PLAYER_HEIGHT * 0.9;
+const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
+
+function isSolidAtWorldPosition(x, y, z) {
+    collisionProbePoint.set(x, y, z);
+    const { q, r, h } = worldToAxial(collisionProbePoint);
+    return isSolidBlockAt(q, r, h);
+}
+
+function collidesAtCameraPosition(x, y, z) {
+    if (isSolidAtWorldPosition(x, y, z)) return true;
+    return isSolidAtWorldPosition(x, y - PLAYER_FEET_OFFSET, z);
+}
+
+function getColumnTopGroundDistance() {
+    const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
+    if (topSolidH === undefined) return null;
+    if (!isSolidBlockAt(q, r, topSolidH)) return null;
+    return camera.position.y - (topSolidH * HEX_HEIGHT);
+}
 
 function getGroundHit() {
     const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
@@ -41,13 +63,19 @@ function getGroundHit() {
 
 function resolveGroundCollision() {
     const groundHit = getGroundHit();
-    if (!groundHit) {
+    const fallbackDistanceToGround = groundHit ? null : getColumnTopGroundDistance();
+    if (!groundHit && fallbackDistanceToGround === null) {
         inputState.canJump = false;
         return;
     }
 
     const standingDistance = PLAYER_HEIGHT;
-    const distanceToGround = groundHit.distance;
+    const distanceToGround = groundHit ? groundHit.distance : fallbackDistanceToGround;
+    const usingFallbackDistance = !groundHit;
+    if (usingFallbackDistance && distanceToGround < standingDistance - MAX_FALLBACK_SNAP_UP) {
+        inputState.canJump = false;
+        return;
+    }
     const isInsideGround = distanceToGround < standingDistance;
     const shouldStickToGround = distanceToGround <= standingDistance + GROUND_STICK_DISTANCE && inputState.velocity.y <= 0;
 
@@ -108,8 +136,20 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += GRAVITY * frameScale;
     }
 
-    camera.position.x += inputState.velocity.x * frameScale;
-    camera.position.z += inputState.velocity.z * frameScale;
+    const nextX = camera.position.x + (inputState.velocity.x * frameScale);
+    if (!collidesAtCameraPosition(nextX, camera.position.y, camera.position.z)) {
+        camera.position.x = nextX;
+    } else {
+        inputState.velocity.x = 0;
+    }
+
+    const nextZ = camera.position.z + (inputState.velocity.z * frameScale);
+    if (!collidesAtCameraPosition(camera.position.x, camera.position.y, nextZ)) {
+        camera.position.z = nextZ;
+    } else {
+        inputState.velocity.z = 0;
+    }
+
     camera.position.y += inputState.velocity.y * frameScale;
 
     resolveGroundCollision();

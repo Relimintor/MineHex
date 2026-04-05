@@ -13,6 +13,8 @@ export const worldState = {
     dirtyChunks: new Set(),
     permanentBlocks: new Map(),
     permanentBlocksByChunk: new Map(),
+    removedBlocks: new Set(),
+    removedBlocksByChunk: new Map(),
     topSolidHeightByColumn: new Map(),
     loadedChunks: new Set(),
     simplex: new window.SimplexNoise(),
