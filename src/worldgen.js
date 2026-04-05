@@ -62,11 +62,8 @@ const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
 const pendingChunkGenerationInFlight = new Set();
 let lastStreamChunkKey = null;
-let chunkTick = 0;
-const STREAM_INTERVAL_TICKS = 3;
-const FRUSTUM_INTERVAL_TICKS = 2;
-const LOD_INTERVAL_TICKS = 2;
 const CHUNK_UNLOAD_BUDGET = 1;
+const DIRTY_CHUNK_APPLY_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
@@ -667,12 +664,18 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
 
-function applyDirtyChunks() {
+function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
+    if (budget <= 0) return;
 
+    let processed = 0;
+    const processedChunkKeys = [];
     for (const chunkKey of worldState.dirtyChunks) {
+        if (processed >= budget) break;
         if (!worldState.loadedChunks.has(chunkKey)) {
             worldState.chunkBlocks.delete(chunkKey);
+            processedChunkKeys.push(chunkKey);
+            processed++;
             continue;
         }
 
@@ -689,14 +692,15 @@ function applyDirtyChunks() {
         }
 
         updateChunkMeshVisibility(chunkKey);
+        processedChunkKeys.push(chunkKey);
+        processed++;
     }
 
-    for (const chunkKey of worldState.dirtyChunks) {
+    for (const chunkKey of processedChunkKeys) {
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) chunk.dirty = false;
+        worldState.dirtyChunks.delete(chunkKey);
     }
-
-    worldState.dirtyChunks.clear();
 }
 
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
@@ -1079,32 +1083,44 @@ function flushChunkApplyBudget() {
     }
 }
 
-export function updateChunks() {
-    initChunkGenerationWorker();
-    chunkTick++;
-    applyDirtyChunks();
-
+function getCurrentChunkCoords() {
     const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const cq = Math.round(current.q / CHUNK_SIZE);
-    const cr = Math.round(current.r / CHUNK_SIZE);
+    return {
+        cq: Math.round(current.q / CHUNK_SIZE),
+        cr: Math.round(current.r / CHUNK_SIZE)
+    };
+}
+
+export function tickChunkApplyBudget() {
+    initChunkGenerationWorker();
+    applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
+    flushChunkApplyBudget();
+}
+
+export function tickChunkStreaming() {
+    initChunkGenerationWorker();
+    const { cq, cr } = getCurrentChunkCoords();
     const currentChunkKey = `${cq},${cr}`;
     const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged || (chunkTick % STREAM_INTERVAL_TICKS) === 0) {
+    if (chunkChanged) {
         rebuildStreamingQueue(cq, cr);
         lastStreamChunkKey = currentChunkKey;
     }
 
     flushChunkUnloadBudget();
     flushChunkGenerationBudget();
-    flushChunkApplyBudget();
+}
 
-    if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
-        const lodChangedChunks = updateChunkLodLevels(cq, cr);
-        for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
-    }
+export function tickChunkVisibility() {
+    const { cq, cr } = getCurrentChunkCoords();
+    const lodChangedChunks = updateChunkLodLevels(cq, cr);
+    for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
+    applyChunkFrustumCulling();
+}
 
-    if ((chunkTick % FRUSTUM_INTERVAL_TICKS) === 0) {
-        applyChunkFrustumCulling();
-    }
+export function updateChunks() {
+    tickChunkStreaming();
+    tickChunkApplyBudget();
+    tickChunkVisibility();
 }
