@@ -2,7 +2,7 @@ import { CHUNK_SIZE, NETHROCK_LEVEL_HEX, RENDER_DIST } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
-import { addBlock, removeBlock } from './blocks.js';
+import { addBlock, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -27,6 +27,26 @@ const BLOCK_INDEX = {
     snow: 8,
     ice: 9
 };
+
+const CHUNK_NEIGHBOR_OFFSETS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, -1],
+    [-1, 1]
+];
+
+function ensureChunkMeta(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (worldState.chunkMeta.has(chunkKey)) return;
+
+    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+    worldState.chunkMeta.set(chunkKey, {
+        dirty: false,
+        neighbors
+    });
+}
 
 function getHeight(q, r) {
     const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
@@ -106,8 +126,42 @@ function getBiomeAt(climateBiome, height) {
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = `${q},${r},${h}`;
-    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex);
+    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
+}
+
+function applyDirtyChunks() {
+    if (worldState.dirtyChunks.size === 0) return;
+
+    const rebuiltChunkBlocks = new Map();
+    for (const chunkKey of worldState.dirtyChunks) {
+        if (!worldState.loadedChunks.has(chunkKey)) {
+            worldState.chunkBlocks.delete(chunkKey);
+            continue;
+        }
+
+        rebuiltChunkBlocks.set(chunkKey, new Set());
+    }
+
+    for (const [blockKey, mesh] of worldState.worldBlocks) {
+        const chunkKey = `${Math.round(mesh.userData.q / CHUNK_SIZE)},${Math.round(mesh.userData.r / CHUNK_SIZE)}`;
+        if (!rebuiltChunkBlocks.has(chunkKey)) continue;
+
+        rebuiltChunkBlocks.get(chunkKey).add(blockKey);
+    }
+
+    for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
+        worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+        const chunk = worldState.chunkMeta.get(chunkKey);
+        if (chunk) chunk.dirty = false;
+    }
+
+    for (const chunkKey of worldState.dirtyChunks) {
+        const chunk = worldState.chunkMeta.get(chunkKey);
+        if (chunk) chunk.dirty = false;
+    }
+
+    worldState.dirtyChunks.clear();
 }
 
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
@@ -129,6 +183,7 @@ function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.loadedChunks.has(chunkKey)) return;
+    ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
     worldState.chunkBlocks.set(chunkKey, new Set());
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
@@ -161,18 +216,18 @@ export function generateChunk(cq, cr) {
                     if (h === height) blockType = topBlockType;
                     else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
 
-                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType);
+                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
                 const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
-                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock);
+                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
-                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType);
+                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false, false);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
                 }
 
@@ -186,9 +241,11 @@ export function generateChunk(cq, cr) {
         const permanentBlock = worldState.permanentBlocks.get(key);
         if (!permanentBlock) continue;
 
-        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true);
+        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true, false, false);
         chunkBlockKeys.add(key);
     }
+
+    refreshBlockVisibilityForKeys(chunkBlockKeys);
 }
 
 export function unloadChunk(cq, cr) {
@@ -197,15 +254,21 @@ export function unloadChunk(cq, cr) {
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
     for (const key of chunkBlockKeys) {
-        removeBlock(key, { preservePermanent: true, force: true });
+        removeBlock(key, { preservePermanent: true, force: true, trackDirty: false });
     }
 
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
+    worldState.dirtyChunks.delete(chunkKey);
+
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    if (chunk) chunk.dirty = false;
 }
 
 
 export function updateChunks() {
+    applyDirtyChunks();
+
     const current = worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
     const cr = Math.round(current.r / CHUNK_SIZE);
