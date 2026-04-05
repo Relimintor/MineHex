@@ -1,5 +1,7 @@
-import { CHUNK_SIZE, NETHROCK_LEVEL_HEX, RENDER_DIST } from './config.js';
-import { worldToAxial } from './coords.js';
+const THREE = window.THREE;
+
+import { CHUNK_SIZE, HEX_HEIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { axialToWorld, worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
@@ -44,8 +46,78 @@ function ensureChunkMeta(cq, cr) {
     const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
     worldState.chunkMeta.set(chunkKey, {
         dirty: false,
-        neighbors
+        neighbors,
+        frustumVisible: true,
+        bounds: null
     });
+}
+
+function recomputeChunkBounds(chunkKey) {
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
+
+    const [cq, cr] = chunkKey.split(',').map(Number);
+    const center = axialToWorld(cq * CHUNK_SIZE, cr * CHUNK_SIZE, 0);
+
+    const rimSamples = [
+        axialToWorld((cq * CHUNK_SIZE) + CHUNK_SIZE, cr * CHUNK_SIZE, 0),
+        axialToWorld((cq * CHUNK_SIZE) - CHUNK_SIZE, cr * CHUNK_SIZE, 0),
+        axialToWorld(cq * CHUNK_SIZE, (cr * CHUNK_SIZE) + CHUNK_SIZE, 0),
+        axialToWorld(cq * CHUNK_SIZE, (cr * CHUNK_SIZE) - CHUNK_SIZE, 0),
+        axialToWorld((cq * CHUNK_SIZE) + CHUNK_SIZE, (cr * CHUNK_SIZE) - CHUNK_SIZE, 0),
+        axialToWorld((cq * CHUNK_SIZE) - CHUNK_SIZE, (cr * CHUNK_SIZE) + CHUNK_SIZE, 0)
+    ];
+
+    let planarRadius = 0;
+    for (const sample of rimSamples) {
+        const dx = sample.x - center.x;
+        const dz = sample.z - center.z;
+        planarRadius = Math.max(planarRadius, Math.hypot(dx, dz));
+    }
+
+    let minH = Infinity;
+    let maxH = -Infinity;
+    for (const blockKey of chunkBlockKeys) {
+        const mesh = worldState.worldBlocks.get(blockKey);
+        if (!mesh) continue;
+        minH = Math.min(minH, mesh.userData.h);
+        maxH = Math.max(maxH, mesh.userData.h);
+    }
+
+    if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
+    const verticalRadius = ((maxH - minH + 1) * HEX_HEIGHT) / 2;
+    const radius = Math.hypot(planarRadius, verticalRadius) + HEX_HEIGHT;
+
+    return {
+        center: center.clone().setY(((minH + maxH + 1) * HEX_HEIGHT) / 2),
+        radius
+    };
+}
+
+function applyChunkFrustumCulling() {
+    const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(viewProjection);
+
+    for (const chunkKey of worldState.loadedChunks) {
+        const chunkMeta = worldState.chunkMeta.get(chunkKey);
+        if (!chunkMeta) continue;
+
+        if (!chunkMeta.bounds) chunkMeta.bounds = recomputeChunkBounds(chunkKey);
+        const bounds = chunkMeta.bounds;
+        const isVisible = bounds ? frustum.intersectsSphere(new THREE.Sphere(bounds.center, bounds.radius)) : true;
+
+        if (chunkMeta.frustumVisible === isVisible) continue;
+        chunkMeta.frustumVisible = isVisible;
+
+        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+        for (const blockKey of chunkBlockKeys) {
+            const mesh = worldState.worldBlocks.get(blockKey);
+            if (!mesh) continue;
+
+            const hasVisibleFaces = !Array.isArray(mesh.userData.visibleFaces) || mesh.userData.visibleFaces.length > 0;
+            mesh.visible = isVisible && hasVisibleFaces;
+        }
+    }
 }
 
 function getHeight(q, r) {
@@ -154,7 +226,10 @@ function applyDirtyChunks() {
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
         recomputeChunkGreedyFaceQuads(chunkKey);
         const chunk = worldState.chunkMeta.get(chunkKey);
-        if (chunk) chunk.dirty = false;
+        if (chunk) {
+            chunk.dirty = false;
+            chunk.bounds = recomputeChunkBounds(chunkKey);
+        }
     }
 
     for (const chunkKey of worldState.dirtyChunks) {
@@ -248,6 +323,8 @@ export function generateChunk(cq, cr) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    if (chunk) chunk.bounds = recomputeChunkBounds(chunkKey);
 }
 
 export function unloadChunk(cq, cr) {
@@ -265,7 +342,11 @@ export function unloadChunk(cq, cr) {
     worldState.dirtyChunks.delete(chunkKey);
 
     const chunk = worldState.chunkMeta.get(chunkKey);
-    if (chunk) chunk.dirty = false;
+    if (chunk) {
+        chunk.dirty = false;
+        chunk.bounds = null;
+        chunk.frustumVisible = false;
+    }
 }
 
 
@@ -292,4 +373,6 @@ export function updateChunks() {
         const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
         unloadChunk(chunkQ, chunkR);
     }
+
+    applyChunkFrustumCulling();
 }
