@@ -10,7 +10,11 @@ const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMater
     color: blockType.color,
     transparent: blockType.transparent ?? false,
     opacity: blockType.opacity ?? 1,
-    depthWrite: blockType.transparent ? false : true
+    depthWrite: blockType.transparent ? false : true,
+    // GPU backface culling layer:
+    // triangles are rasterized only when their winding faces the camera
+    // (equivalent to n·v < 0 for front-facing triangles).
+    side: THREE.FrontSide
 }));
 const getChunkCoords = (q, r) => ({
     cq: Math.round(q / CHUNK_SIZE),
@@ -126,16 +130,6 @@ function isFaceVisible(q, r, h, [dq, dr, dh]) {
     // A face belongs to the boundary only when current voxel is solid
     // and the neighboring voxel in direction d is empty.
     return occupancyAt(q, r, h) * (1 - occupancyAt(q + dq, r + dr, h + dh));
-}
-
-function hasExposedFace(q, r, h) {
-    // Surface extraction: ∂S = {(i, d) | i in S, i + d not in S}
-    // where S is the set of solid voxels.
-    for (const direction of FACE_DIRECTIONS) {
-        if (isFaceVisible(q, r, h, direction)) return true;
-    }
-
-    return false;
 }
 
 function getVisibleFaces(q, r, h) {
