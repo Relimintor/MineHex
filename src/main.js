@@ -4,12 +4,15 @@ import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING } from './config.js';
+import { ENABLE_OCCLUSION_CULLING, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
 
 camera.position.set(0, 10, 0);
+
+const PERFORMANCE_PROFILE_KEY = 'minehexPerformanceProfile';
+const CONTROL_MODE_KEY = 'minehexControlMode';
 
 function chooseControlMode() {
     const modeScreen = document.getElementById('mode-select');
@@ -27,6 +30,16 @@ function chooseControlMode() {
                     return;
                 }
 
+                if (mode === 'celeron_cb') {
+                    localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
+                    localStorage.setItem(CONTROL_MODE_KEY, 'pc');
+                    window.location.reload();
+                    return;
+                }
+
+                localStorage.removeItem(PERFORMANCE_PROFILE_KEY);
+                localStorage.setItem(CONTROL_MODE_KEY, mode);
+
                 modeScreen.classList.add('hidden');
                 resolve(mode);
             });
@@ -36,9 +49,12 @@ function chooseControlMode() {
 
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
-const CHUNK_STREAM_INTERVAL_FRAMES = 3;
-const CHUNK_VISIBILITY_INTERVAL_FRAMES = 2;
+const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
+const CHUNK_APPLY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
+const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 4;
+const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 3;
 const coordinatesHud = document.getElementById('coordinates');
+let governorElapsedMs = 0;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -58,8 +74,12 @@ function animate(now = performance.now()) {
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
-        updateChunkBudgetGovernor(deltaTimeSeconds * 1000);
-        tickChunkApplyBudget();
+        governorElapsedMs += deltaTimeSeconds * 1000;
+        if ((worldState.frame % CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES) === 0) {
+            updateChunkBudgetGovernor(governorElapsedMs);
+            governorElapsedMs = 0;
+        }
+        if ((worldState.frame % CHUNK_APPLY_INTERVAL_FRAMES) === 0) tickChunkApplyBudget();
         if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
         if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
     }
