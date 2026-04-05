@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_SIZE, HEX_HEIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
@@ -39,6 +39,14 @@ const CHUNK_NEIGHBOR_OFFSETS = [
     [-1, 1]
 ];
 
+const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
+    const angle = (Math.PI / 3) * i + (Math.PI / 6);
+    return {
+        x: Math.cos(angle) * HEX_RADIUS,
+        z: Math.sin(angle) * HEX_RADIUS
+    };
+});
+
 function ensureChunkMeta(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.chunkMeta.has(chunkKey)) return;
@@ -57,22 +65,28 @@ function recomputeChunkBounds(chunkKey) {
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
 
     const [cq, cr] = chunkKey.split(',').map(Number);
-    const center = axialToWorld(cq * CHUNK_SIZE, cr * CHUNK_SIZE, 0);
+    const centerQ = cq * CHUNK_SIZE;
+    const centerR = cr * CHUNK_SIZE;
 
-    const rimSamples = [
-        axialToWorld((cq * CHUNK_SIZE) + CHUNK_SIZE, cr * CHUNK_SIZE, 0),
-        axialToWorld((cq * CHUNK_SIZE) - CHUNK_SIZE, cr * CHUNK_SIZE, 0),
-        axialToWorld(cq * CHUNK_SIZE, (cr * CHUNK_SIZE) + CHUNK_SIZE, 0),
-        axialToWorld(cq * CHUNK_SIZE, (cr * CHUNK_SIZE) - CHUNK_SIZE, 0),
-        axialToWorld((cq * CHUNK_SIZE) + CHUNK_SIZE, (cr * CHUNK_SIZE) - CHUNK_SIZE, 0),
-        axialToWorld((cq * CHUNK_SIZE) - CHUNK_SIZE, (cr * CHUNK_SIZE) + CHUNK_SIZE, 0)
-    ];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
 
-    let planarRadius = 0;
-    for (const sample of rimSamples) {
-        const dx = sample.x - center.x;
-        const dz = sample.z - center.z;
-        planarRadius = Math.max(planarRadius, Math.hypot(dx, dz));
+    for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
+        for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
+            if (Math.abs(q + r) > CHUNK_SIZE) continue;
+
+            const worldPos = axialToWorld(centerQ + q, centerR + r, 0);
+            for (const offset of HEX_CORNER_OFFSETS_XZ) {
+                const cornerX = worldPos.x + offset.x;
+                const cornerZ = worldPos.z + offset.z;
+                minX = Math.min(minX, cornerX);
+                maxX = Math.max(maxX, cornerX);
+                minZ = Math.min(minZ, cornerZ);
+                maxZ = Math.max(maxZ, cornerZ);
+            }
+        }
     }
 
     let minH = Infinity;
@@ -85,41 +99,50 @@ function recomputeChunkBounds(chunkKey) {
     }
 
     if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
-    const verticalRadius = ((maxH - minH + 1) * HEX_HEIGHT) / 2;
-    const radius = Math.hypot(planarRadius, verticalRadius) + HEX_HEIGHT;
 
-    return {
-        center: center.clone().setY(((minH + maxH + 1) * HEX_HEIGHT) / 2),
-        radius
-    };
+    return new THREE.Box3(
+        new THREE.Vector3(minX, 0, minZ),
+        new THREE.Vector3(maxX, (maxH + 1) * HEX_HEIGHT, maxZ)
+    );
+}
+
+function isChunkVisible(aabb, frustumPlanes) {
+    for (const plane of frustumPlanes) {
+        const vp = {
+            x: plane.nx > 0 ? aabb.max.x : aabb.min.x,
+            y: plane.ny > 0 ? aabb.max.y : aabb.min.y,
+            z: plane.nz > 0 ? aabb.max.z : aabb.min.z
+        };
+
+        const dist = (plane.nx * vp.x) + (plane.ny * vp.y) + (plane.nz * vp.z) + plane.d;
+        if (dist < 0) return false;
+    }
+
+    return true;
 }
 
 function applyChunkFrustumCulling() {
     const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     const elements = viewProjection.elements;
 
-    // Frustum plane model:
-    // p : n·x + d = 0
-    // inside test (sphere): n·x + d >= -radius
-    const planes = [
-        // left
-        new THREE.Vector4(elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]),
-        // right
-        new THREE.Vector4(elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]),
-        // bottom
-        new THREE.Vector4(elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]),
-        // top
-        new THREE.Vector4(elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]),
-        // near
-        new THREE.Vector4(elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]),
-        // far
-        new THREE.Vector4(elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14])
+    const rawPlanes = [
+        [elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]],
+        [elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]],
+        [elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]],
+        [elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]],
+        [elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]],
+        [elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]]
     ];
 
-    for (const plane of planes) {
-        const invLength = 1 / Math.hypot(plane.x, plane.y, plane.z);
-        plane.multiplyScalar(invLength);
-    }
+    const frustumPlanes = rawPlanes.map(([nx, ny, nz, d]) => {
+        const invLength = 1 / Math.hypot(nx, ny, nz);
+        return {
+            nx: nx * invLength,
+            ny: ny * invLength,
+            nz: nz * invLength,
+            d: d * invLength
+        };
+    });
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -127,16 +150,8 @@ function applyChunkFrustumCulling() {
 
         if (!chunkMeta.bounds) chunkMeta.bounds = recomputeChunkBounds(chunkKey);
         const bounds = chunkMeta.bounds;
-        let isVisible = true;
-        if (bounds) {
-            for (const plane of planes) {
-                const signedDistance = (plane.x * bounds.center.x) + (plane.y * bounds.center.y) + (plane.z * bounds.center.z) + plane.w;
-                if (signedDistance < -bounds.radius) {
-                    isVisible = false;
-                    break;
-                }
-            }
-        }
+
+        const isVisible = bounds ? isChunkVisible(bounds, frustumPlanes) : true;
 
         if (chunkMeta.frustumVisible === isVisible) continue;
         chunkMeta.frustumVisible = isVisible;
