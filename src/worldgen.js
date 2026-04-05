@@ -113,17 +113,25 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
 function applyDirtyChunks() {
     if (worldState.dirtyChunks.size === 0) return;
 
+    const rebuiltChunkBlocks = new Map();
     for (const chunkKey of worldState.dirtyChunks) {
-        const diff = worldState.chunkBlockDiffs.get(chunkKey);
-        if (!diff) continue;
+        if (!worldState.loadedChunks.has(chunkKey)) {
+            worldState.chunkBlocks.delete(chunkKey);
+            continue;
+        }
 
-        if (!worldState.chunkBlocks.has(chunkKey)) worldState.chunkBlocks.set(chunkKey, new Set());
-        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+        rebuiltChunkBlocks.set(chunkKey, new Set());
+    }
 
-        for (const blockKey of diff.add) chunkBlockKeys.add(blockKey);
-        for (const blockKey of diff.remove) chunkBlockKeys.delete(blockKey);
+    for (const [blockKey, mesh] of worldState.worldBlocks) {
+        const chunkKey = `${Math.round(mesh.userData.q / CHUNK_SIZE)},${Math.round(mesh.userData.r / CHUNK_SIZE)}`;
+        if (!rebuiltChunkBlocks.has(chunkKey)) continue;
 
-        worldState.chunkBlockDiffs.delete(chunkKey);
+        rebuiltChunkBlocks.get(chunkKey).add(blockKey);
+    }
+
+    for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
+        worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
     }
 
     worldState.dirtyChunks.clear();
@@ -221,6 +229,7 @@ export function unloadChunk(cq, cr) {
 
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
+    worldState.dirtyChunks.delete(chunkKey);
 }
 
 

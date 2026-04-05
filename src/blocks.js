@@ -14,20 +14,7 @@ const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMater
 }));
 const getChunkKey = (q, r) => `${Math.round(q / CHUNK_SIZE)},${Math.round(r / CHUNK_SIZE)}`;
 
-function markChunkDirtyWithDelta(chunkKey, blockKey, isAdd) {
-    if (!worldState.chunkBlockDiffs.has(chunkKey)) {
-        worldState.chunkBlockDiffs.set(chunkKey, { add: new Set(), remove: new Set() });
-    }
-
-    const diff = worldState.chunkBlockDiffs.get(chunkKey);
-    if (isAdd) {
-        diff.remove.delete(blockKey);
-        diff.add.add(blockKey);
-    } else {
-        diff.add.delete(blockKey);
-        diff.remove.add(blockKey);
-    }
-
+function markChunkDirty(chunkKey) {
     worldState.dirtyChunks.add(chunkKey);
 }
 
@@ -46,7 +33,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
 
     if (trackDirty) {
         const chunkKey = getChunkKey(q, r);
-        markChunkDirtyWithDelta(chunkKey, key, true);
+        markChunkDirty(chunkKey);
     }
 
     if (isPermanent) {
@@ -70,7 +57,7 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         if (trackDirty) {
             const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
-            markChunkDirtyWithDelta(chunkKey, key, false);
+            markChunkDirty(chunkKey);
         }
 
         if (mesh.userData.isPermanent && !preservePermanent) {
