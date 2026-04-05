@@ -9,7 +9,7 @@ import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
 
-camera.position.set(0, 10, 0);
+camera.position.set(0, 48, 0);
 
 const PERFORMANCE_PROFILE_KEY = 'minehexPerformanceProfile';
 const CONTROL_MODE_KEY = 'minehexControlMode';
@@ -61,6 +61,7 @@ const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 8 : 4;
 const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 3;
 const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
+let hasSpawnedInAllowedRange = false;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -79,7 +80,6 @@ function animate(now = performance.now()) {
     updateCoordinatesHud();
 
     if (inputState.isLocked) {
-        handlePhysics(deltaTimeSeconds);
         governorElapsedMs += deltaTimeSeconds * 1000;
         if ((worldState.frame % CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES) === 0) {
             updateChunkBudgetGovernor(governorElapsedMs);
@@ -88,6 +88,17 @@ function animate(now = performance.now()) {
         if ((worldState.frame % CHUNK_APPLY_INTERVAL_FRAMES) === 0) tickChunkApplyBudget();
         if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
         if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
+
+        if (!hasSpawnedInAllowedRange) {
+            hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
+            if (!hasSpawnedInAllowedRange) {
+                inputState.velocity.set(0, 0, 0);
+            }
+        }
+
+        if (hasSpawnedInAllowedRange) {
+            handlePhysics(deltaTimeSeconds);
+        }
     }
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
@@ -109,7 +120,7 @@ chooseControlMode().then((mode) => {
     tickChunkStreaming();
     tickChunkApplyBudget();
     tickChunkVisibility();
-    enforceSpawnOnSolidBlock(0, 0);
+    hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
     animate();
 });
 
