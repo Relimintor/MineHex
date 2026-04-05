@@ -51,23 +51,50 @@ function getClimate(q, r) {
     };
 }
 
-function getBiome(temp, moist) {
-    if (temp < -0.6) return 'arctic';
-    if (temp > 0.15 && moist < -0.45) return 'mountains';
-    if (moist > 0) return temp < -0.2 ? 'snowy_forest' : 'forest';
-    return temp < -0.2 ? 'snowy_plains' : 'plains';
+function normalizeWeights(weights) {
+    const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return weights;
+
+    const normalized = {};
+    Object.entries(weights).forEach(([biome, value]) => {
+        normalized[biome] = value / total;
+    });
+    return normalized;
 }
 
-function biomeHeightModifier(biome, q, r, baseHeight) {
-    if (biome === 'mountains') {
-        return 30 * worldState.simplex.noise2D(q * 0.02, r * 0.02);
-    }
+function getBiomeWeights(temp, moist) {
+    const cold = 1 - smoothstep(-0.3, 0.2, temp);
+    const freezing = 1 - smoothstep(-0.75, -0.45, temp);
+    const wet = smoothstep(-0.1, 0.15, moist);
+    const dry = 1 - wet;
+    const mountainness = smoothstep(-0.65, -0.45, -moist) * smoothstep(0.05, 0.3, temp);
 
-    if (biome === 'plains') {
-        return -0.5 * baseHeight;
-    }
+    return normalizeWeights({
+        plains: dry * (1 - cold) * (1 - mountainness),
+        forest: wet * (1 - cold),
+        snowy_plains: dry * cold * (1 - freezing),
+        snowy_forest: wet * cold * (1 - freezing),
+        arctic: freezing,
+        mountains: mountainness * (1 - freezing)
+    });
+}
 
-    return 0;
+function getDominantBiome(biomeWeights) {
+    let selected = 'plains';
+    let bestWeight = -1;
+    Object.entries(biomeWeights).forEach(([biome, weight]) => {
+        if (weight > bestWeight) {
+            selected = biome;
+            bestWeight = weight;
+        }
+    });
+    return selected;
+}
+
+function biomeHeightModifier(biomeWeights, q, r, baseHeight) {
+    const mountainModifier = 30 * worldState.simplex.noise2D(q * 0.02, r * 0.02) * (biomeWeights.mountains ?? 0);
+    const plainsModifier = -0.5 * baseHeight * (biomeWeights.plains ?? 0);
+    return mountainModifier + plainsModifier;
 }
 
 function getBiomeAt(climateBiome, height) {
@@ -115,9 +142,10 @@ export function generateChunk(cq, cr) {
                 const absR = centerR + r;
 
                 const climate = getClimate(absQ, absR);
-                const climateBiome = getBiome(climate.temp, climate.moist);
+                const biomeWeights = getBiomeWeights(climate.temp, climate.moist);
+                const climateBiome = getDominantBiome(biomeWeights);
                 const baseHeight = getHeight(absQ, absR);
-                const heightWithBiome = baseHeight + biomeHeightModifier(climateBiome, absQ, absR, baseHeight);
+                const heightWithBiome = baseHeight + biomeHeightModifier(biomeWeights, absQ, absR, baseHeight);
                 const height = getSmoothedHeight(heightWithBiome);
                 const biome = getBiomeAt(climateBiome, height);
                 const topKey = `${absQ},${absR},${height}`;
