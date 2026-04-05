@@ -4,6 +4,7 @@ import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
 import { updateChunks } from './worldgen.js';
+import { enforceSpawnOnSolidBlock } from './rules.js';
 
 camera.position.set(0, 10, 0);
 
@@ -53,6 +54,8 @@ chooseControlMode().then((mode) => {
         registerDesktopInputHandlers();
     }
 
+    updateChunks();
+    enforceSpawnOnSolidBlock(0, 0);
     animate();
 });
 
