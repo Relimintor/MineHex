@@ -2,14 +2,15 @@ import { camera, renderer, scene } from './scene.js';
 import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
+import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING, USE_ULTRA_LOW_PROFILE } from './config.js';
+import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
 
-camera.position.set(0, 10, 0);
+camera.position.set(0, 48, 0);
 
 const PERFORMANCE_PROFILE_KEY = 'minehexPerformanceProfile';
 const CONTROL_MODE_KEY = 'minehexControlMode';
@@ -19,13 +20,13 @@ function chooseControlMode() {
     if (!modeScreen) return Promise.resolve('pc');
     const savedProfile = localStorage.getItem(PERFORMANCE_PROFILE_KEY);
     const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
-    if (savedProfile === 'celeron_cb' && savedMode === 'pc') {
-        modeScreen.classList.add('hidden');
-        return Promise.resolve('pc');
-    }
-
     return new Promise((resolve) => {
         const buttons = modeScreen.querySelectorAll('[data-mode]');
+        if (savedMode) {
+            for (const button of buttons) {
+                button.classList.toggle('active', button.dataset.mode === savedMode);
+            }
+        }
 
         buttons.forEach((button) => {
             button.addEventListener('click', () => {
@@ -38,13 +39,19 @@ function chooseControlMode() {
 
                 if (mode === 'celeron_cb') {
                     localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
-                    localStorage.setItem(CONTROL_MODE_KEY, 'pc');
+                    localStorage.setItem(CONTROL_MODE_KEY, 'celeron_cb');
                     window.location.reload();
                     return;
                 }
 
+                const wasCeleronProfile = savedProfile === 'celeron_cb';
                 localStorage.removeItem(PERFORMANCE_PROFILE_KEY);
                 localStorage.setItem(CONTROL_MODE_KEY, mode);
+
+                if (wasCeleronProfile) {
+                    window.location.reload();
+                    return;
+                }
 
                 modeScreen.classList.add('hidden');
                 resolve(mode);
@@ -61,6 +68,8 @@ const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 8 : 4;
 const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 3;
 const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
+let hasSpawnedInAllowedRange = false;
+let coordinatesHudFrameInterval = 1;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -76,10 +85,9 @@ function animate(now = performance.now()) {
 
     worldState.frame += 1;
     worldState.frameCameraAxial = worldToAxial(camera.position);
-    updateCoordinatesHud();
+    if ((worldState.frame % coordinatesHudFrameInterval) === 0) updateCoordinatesHud();
 
     if (inputState.isLocked) {
-        handlePhysics(deltaTimeSeconds);
         governorElapsedMs += deltaTimeSeconds * 1000;
         if ((worldState.frame % CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES) === 0) {
             updateChunkBudgetGovernor(governorElapsedMs);
@@ -88,6 +96,17 @@ function animate(now = performance.now()) {
         if ((worldState.frame % CHUNK_APPLY_INTERVAL_FRAMES) === 0) tickChunkApplyBudget();
         if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
         if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
+
+        if (!hasSpawnedInAllowedRange) {
+            hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
+            if (!hasSpawnedInAllowedRange) {
+                inputState.velocity.set(0, 0, 0);
+            }
+        }
+
+        if (hasSpawnedInAllowedRange) {
+            handlePhysics(deltaTimeSeconds);
+        }
     }
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
@@ -101,6 +120,9 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
+    } else if (mode === 'celeron_cb') {
+        registerCeleronInputHandlers();
+        coordinatesHudFrameInterval = 8;
     } else {
         registerDesktopInputHandlers();
     }
@@ -109,12 +131,13 @@ chooseControlMode().then((mode) => {
     tickChunkStreaming();
     tickChunkApplyBudget();
     tickChunkVisibility();
-    enforceSpawnOnSolidBlock(0, 0);
+    hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
     animate();
 });
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO));
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
