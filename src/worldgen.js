@@ -2,7 +2,7 @@ const THREE = window.THREE;
 
 import { CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
-import { camera } from './scene.js';
+import { camera, occlusionScene, renderer } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 
@@ -41,6 +41,13 @@ const CHUNK_NEIGHBOR_OFFSETS = [
 
 const CHUNK_AABB_MARGIN = 0.08;
 
+const occlusionProxyMaterial = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthWrite: false
+});
+
+const OCCLUSION_QUERY_TARGET = 'ANY_SAMPLES_PASSED_CONSERVATIVE';
+
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
     return {
@@ -58,6 +65,9 @@ function ensureChunkMeta(cq, cr) {
         dirty: false,
         neighbors,
         frustumVisible: true,
+        occlusionVisible: true,
+        occlusionQuery: null,
+        occlusionProxy: null,
         bounds: null
     });
 }
@@ -106,6 +116,78 @@ function recomputeChunkBounds(chunkKey) {
         new THREE.Vector3(minX - CHUNK_AABB_MARGIN, 0, minZ - CHUNK_AABB_MARGIN),
         new THREE.Vector3(maxX + CHUNK_AABB_MARGIN, ((maxH + 1) * HEX_HEIGHT) + CHUNK_AABB_MARGIN, maxZ + CHUNK_AABB_MARGIN)
     );
+}
+
+function updateChunkMeshVisibility(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta) return;
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+    for (const blockKey of chunkBlockKeys) {
+        const mesh = worldState.worldBlocks.get(blockKey);
+        if (!mesh) continue;
+
+        const hasVisibleFaces = !Array.isArray(mesh.userData.visibleFaces) || mesh.userData.visibleFaces.length > 0;
+        mesh.visible = chunkMeta.frustumVisible && chunkMeta.occlusionVisible && hasVisibleFaces;
+    }
+}
+
+function ensureOcclusionProxy(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta?.bounds) return null;
+    if (chunkMeta.occlusionProxy) return chunkMeta.occlusionProxy;
+
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), occlusionProxyMaterial);
+    proxy.matrixAutoUpdate = true;
+    proxy.frustumCulled = false;
+    proxy.visible = false;
+    proxy.userData.chunkKey = chunkKey;
+    proxy.onBeforeRender = () => {
+        const query = proxy.userData.activeQuery;
+        const target = proxy.userData.queryTarget;
+        if (!query || !target) return;
+        const gl = renderer.getContext();
+        gl.beginQuery(target, query);
+    };
+    proxy.onAfterRender = () => {
+        const target = proxy.userData.queryTarget;
+        if (!target) return;
+        const gl = renderer.getContext();
+        gl.endQuery(target);
+        proxy.userData.activeQuery = null;
+    };
+    occlusionScene.add(proxy);
+    chunkMeta.occlusionProxy = proxy;
+    return proxy;
+}
+
+function syncOcclusionProxyTransform(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta?.bounds) return;
+
+    const proxy = ensureOcclusionProxy(chunkKey);
+    if (!proxy) return;
+
+    const size = chunkMeta.bounds.getSize(new THREE.Vector3());
+    const center = chunkMeta.bounds.getCenter(new THREE.Vector3());
+    proxy.position.copy(center);
+    proxy.scale.set(size.x, size.y, size.z);
+}
+
+function disposeChunkOcclusionState(chunkMeta) {
+    if (!chunkMeta) return;
+
+    if (chunkMeta.occlusionQuery) {
+        const gl = renderer.getContext();
+        gl.deleteQuery(chunkMeta.occlusionQuery);
+        chunkMeta.occlusionQuery = null;
+    }
+
+    if (chunkMeta.occlusionProxy) {
+        occlusionScene.remove(chunkMeta.occlusionProxy);
+        chunkMeta.occlusionProxy.geometry.dispose();
+        chunkMeta.occlusionProxy = null;
+    }
 }
 
 // For each frustum plane we evaluate max_{x in B}(n·x + d) using the positive vertex vp.
@@ -161,16 +243,68 @@ function applyChunkFrustumCulling() {
 
         if (chunkMeta.frustumVisible === isVisible) continue;
         chunkMeta.frustumVisible = isVisible;
+        updateChunkMeshVisibility(chunkKey);
+    }
+}
 
-        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
-        for (const blockKey of chunkBlockKeys) {
-            const mesh = worldState.worldBlocks.get(blockKey);
-            if (!mesh) continue;
+export function runChunkOcclusionCulling() {
+    const gl = renderer.getContext();
+    if (!(gl instanceof WebGL2RenderingContext)) return;
 
-            const hasVisibleFaces = !Array.isArray(mesh.userData.visibleFaces) || mesh.userData.visibleFaces.length > 0;
-            mesh.visible = isVisible && hasVisibleFaces;
+    const queryTarget = gl[OCCLUSION_QUERY_TARGET] ?? gl.ANY_SAMPLES_PASSED;
+    if (!queryTarget) return;
+
+    for (const chunkKey of worldState.loadedChunks) {
+        const chunkMeta = worldState.chunkMeta.get(chunkKey);
+        if (!chunkMeta?.occlusionQuery) continue;
+
+        const available = gl.getQueryParameter(chunkMeta.occlusionQuery, gl.QUERY_RESULT_AVAILABLE);
+        if (!available) continue;
+
+        const isVisible = !!gl.getQueryParameter(chunkMeta.occlusionQuery, gl.QUERY_RESULT);
+        gl.deleteQuery(chunkMeta.occlusionQuery);
+        chunkMeta.occlusionQuery = null;
+
+        if (chunkMeta.occlusionVisible !== isVisible) {
+            chunkMeta.occlusionVisible = isVisible;
+            updateChunkMeshVisibility(chunkKey);
         }
     }
+
+    const proxiesToTest = [];
+    for (const chunkKey of worldState.loadedChunks) {
+        const chunkMeta = worldState.chunkMeta.get(chunkKey);
+        if (!chunkMeta?.frustumVisible || !chunkMeta.bounds) continue;
+
+        if (chunkMeta.bounds.containsPoint(camera.position)) {
+            if (!chunkMeta.occlusionVisible) {
+                chunkMeta.occlusionVisible = true;
+                updateChunkMeshVisibility(chunkKey);
+            }
+            continue;
+        }
+
+        syncOcclusionProxyTransform(chunkKey);
+        const proxy = chunkMeta.occlusionProxy;
+        if (!proxy || chunkMeta.occlusionQuery) continue;
+
+        chunkMeta.occlusionQuery = gl.createQuery();
+        if (!chunkMeta.occlusionQuery) continue;
+
+        proxy.userData.activeQuery = chunkMeta.occlusionQuery;
+        proxy.userData.queryTarget = queryTarget;
+        proxy.visible = true;
+        proxiesToTest.push(proxy);
+    }
+
+    if (proxiesToTest.length === 0) return;
+
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.render(occlusionScene, camera);
+    renderer.autoClear = prevAutoClear;
+
+    for (const proxy of proxiesToTest) proxy.visible = false;
 }
 
 function getHeight(q, r) {
@@ -282,6 +416,7 @@ function applyDirtyChunks() {
         if (chunk) {
             chunk.dirty = false;
             chunk.bounds = recomputeChunkBounds(chunkKey);
+            if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
     }
 
@@ -377,7 +512,12 @@ export function generateChunk(cq, cr) {
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
-    if (chunk) chunk.bounds = recomputeChunkBounds(chunkKey);
+    if (chunk) {
+        chunk.bounds = recomputeChunkBounds(chunkKey);
+        chunk.occlusionVisible = true;
+        if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
+    }
+    updateChunkMeshVisibility(chunkKey);
 }
 
 export function unloadChunk(cq, cr) {
@@ -399,6 +539,8 @@ export function unloadChunk(cq, cr) {
         chunk.dirty = false;
         chunk.bounds = null;
         chunk.frustumVisible = false;
+        chunk.occlusionVisible = true;
+        disposeChunkOcclusionState(chunk);
     }
 }
 
