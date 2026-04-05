@@ -6,6 +6,8 @@ import { worldState } from './state.js';
 const SEARCH_RADIUS = 12;
 const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
+const SPAWN_HEIGHT_MIN = 14;
+const SPAWN_HEIGHT_MAX = 22;
 const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
 const WATER_TYPE_INDEX = BLOCK_TYPES.findIndex((blockType) => blockType?.name?.toLowerCase() === 'water');
 const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(
@@ -85,7 +87,10 @@ export function isCameraInLiquid() {
 }
 
 function findSpawnHeight(q, r) {
-    for (let h = SEARCH_HEIGHT_TOP; h >= SEARCH_HEIGHT_BOTTOM; h--) {
+    const searchTop = Math.min(SEARCH_HEIGHT_TOP, SPAWN_HEIGHT_MAX);
+    const searchBottom = Math.max(SEARCH_HEIGHT_BOTTOM, SPAWN_HEIGHT_MIN);
+
+    for (let h = searchTop; h >= searchBottom; h--) {
         if (!isSolidBlockAt(q, r, h)) continue;
         if (isWaterBlockAt(q, r, h)) continue;
         if (isSpawnObstructionBlockAt(q, r, h)) continue;
