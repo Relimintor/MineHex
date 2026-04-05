@@ -35,6 +35,7 @@ function chooseControlMode() {
 }
 
 let lastFrameTime = performance.now();
+const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
@@ -51,7 +52,9 @@ function animate(now = performance.now()) {
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
     renderer.render(scene, camera);
-    if (ENABLE_OCCLUSION_CULLING) runChunkOcclusionCulling();
+    if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
+        runChunkOcclusionCulling();
+    }
 }
 
 

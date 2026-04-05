@@ -63,7 +63,7 @@ const pendingChunkGenerationSet = new Set();
 let lastStreamChunkKey = null;
 let chunkTick = 0;
 const STREAM_INTERVAL_TICKS = 3;
-const FRUSTUM_INTERVAL_TICKS = 1;
+const FRUSTUM_INTERVAL_TICKS = 2;
 const LOD_INTERVAL_TICKS = 2;
 
 const reusableOcclusionQueries = [];
@@ -751,6 +751,7 @@ export function generateChunk(cq, cr) {
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
+        }
     }
 
     const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
