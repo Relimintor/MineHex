@@ -854,8 +854,26 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
     chunkBlockKeys.clear();
     worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
 
-    for (const column of columns) {
-        const { q, r, height, topBlockType, addSurfaceFluid, surfaceFluidType, addTree } = column;
+    const packedColumns = columns && typeof columns.count === 'number' && columns.qBuffer instanceof ArrayBuffer;
+    const columnCount = packedColumns ? columns.count : (columns?.length ?? 0);
+    const qValues = packedColumns ? new Int32Array(columns.qBuffer) : null;
+    const rValues = packedColumns ? new Int32Array(columns.rBuffer) : null;
+    const heightValues = packedColumns ? new Int32Array(columns.heightBuffer) : null;
+    const topBlockTypes = packedColumns ? new Uint8Array(columns.topBlockTypeBuffer) : null;
+    const surfaceFluidTypes = packedColumns ? new Uint8Array(columns.surfaceFluidTypeBuffer) : null;
+    const flags = packedColumns ? new Uint8Array(columns.flagsBuffer) : null;
+
+    for (let index = 0; index < columnCount; index++) {
+        const column = packedColumns ? null : columns[index];
+        const q = packedColumns ? qValues[index] : column.q;
+        const r = packedColumns ? rValues[index] : column.r;
+        const height = packedColumns ? heightValues[index] : column.height;
+        const topBlockType = packedColumns ? topBlockTypes[index] : column.topBlockType;
+        const addSurfaceFluid = packedColumns ? (flags[index] & 1) !== 0 : column.addSurfaceFluid;
+        const surfaceFluidType = packedColumns ? surfaceFluidTypes[index] : column.surfaceFluidType;
+        const addTree = packedColumns
+            ? ((flags[index] & 2) !== 0 ? 'forest' : (((flags[index] & 4) !== 0) ? 'snow' : null))
+            : column.addTree;
 
         for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
             const blockKey = `${q},${r},${h}`;
