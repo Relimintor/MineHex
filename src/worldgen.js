@@ -5,6 +5,7 @@ import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
+import { hexGeometry } from './geometry.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -213,7 +214,6 @@ function ensureMegaHexMesh(chunkKey) {
 function disposeDetailedChunkMeshes(chunkMeta) {
     if (!chunkMeta?.detailedChunkGroup) return;
     scene.remove(chunkMeta.detailedChunkGroup);
-    for (const mesh of chunkMeta.detailedChunkMeshes ?? []) mesh.geometry.dispose();
     chunkMeta.detailedChunkMeshes = [];
     chunkMeta.detailedChunkGroup = null;
 }
@@ -253,19 +253,20 @@ function rebuildChunkDetailedMeshes(chunkKey) {
     const createdMeshes = [];
 
     for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const geometry = new THREE.InstancedBufferGeometry().copy(sourceMeshes[0].geometry);
-        const instanced = new THREE.InstancedMesh(geometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
 
         for (let i = 0; i < sourceMeshes.length; i++) {
             const sourceMesh = sourceMeshes[i];
             chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.copy(sourceMesh.rotation);
-            chunkInstanceDummy.scale.copy(sourceMesh.scale);
+            chunkInstanceDummy.rotation.set(0, 0, 0);
+            chunkInstanceDummy.scale.set(1, 1, 1);
             chunkInstanceDummy.updateMatrix();
             instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
+        instanced.userData.typeIndex = typeIndex;
+        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -279,7 +280,6 @@ function rebuildChunkDetailedMeshes(chunkKey) {
 function disposeInstancedLodMeshes(chunkMeta) {
     if (!chunkMeta?.instancedLodGroup) return;
     scene.remove(chunkMeta.instancedLodGroup);
-    for (const mesh of chunkMeta.instancedLodMeshes ?? []) mesh.geometry.dispose();
     chunkMeta.instancedLodMeshes = [];
     chunkMeta.instancedLodGroup = null;
 }
@@ -319,19 +319,20 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     const createdMeshes = [];
 
     for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const geometry = new THREE.InstancedBufferGeometry().copy(sourceMeshes[0].geometry);
-        const instanced = new THREE.InstancedMesh(geometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
 
         for (let i = 0; i < sourceMeshes.length; i++) {
             const sourceMesh = sourceMeshes[i];
             chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.copy(sourceMesh.rotation);
-            chunkInstanceDummy.scale.copy(sourceMesh.scale);
+            chunkInstanceDummy.rotation.set(0, 0, 0);
+            chunkInstanceDummy.scale.set(1, 1, 1);
             chunkInstanceDummy.updateMatrix();
             instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
+        instanced.userData.typeIndex = typeIndex;
+        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
         group.add(instanced);
         createdMeshes.push(instanced);
     }

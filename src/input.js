@@ -3,7 +3,7 @@ const THREE = window.THREE;
 import { camera, renderer } from './scene.js';
 import { HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
-import { addBlock, collectChunkRaycastCandidates, removeBlock } from './blocks.js';
+import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
 
 const raycaster = new THREE.Raycaster();
@@ -65,7 +65,9 @@ export function placeBlockFromCenter() {
 export function mineBlockFromCenter() {
     const intersect = getCenterIntersection();
     if (!intersect) return false;
-    removeBlock(intersect.object.userData.key);
+    const blockKey = getIntersectedBlockKey(intersect);
+    if (!blockKey) return false;
+    removeBlock(blockKey);
     return true;
 }
 
