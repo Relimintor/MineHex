@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -57,6 +57,10 @@ const occlusionProxiesToTest = [];
 const FLAT_HEX_LOD_DISTANCE = Math.max(1, RENDER_DIST - 1);
 const MEGA_HEX_LOD_DISTANCE = RENDER_DIST;
 const megaHexMaterial = new THREE.MeshLambertMaterial({ color: 0x6d8f5f });
+
+const pendingChunkGenerationQueue = [];
+const pendingChunkGenerationSet = new Set();
+let lastStreamChunkKey = null;
 
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
@@ -319,31 +323,6 @@ function applyChunkFrustumCulling() {
     setPlane(4, elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]);
     setPlane(5, elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]);
 
-    return true;
-}
-
-// Runtime cost remains linear in loaded chunks for the culling pass,
-// but only chunks passing visibility keep their meshes renderable.
-function applyChunkFrustumCulling() {
-    frustumViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const elements = frustumViewProjection.elements;
-
-    const setPlane = (index, nx, ny, nz, d) => {
-        const invLength = 1 / Math.hypot(nx, ny, nz);
-        const plane = frustumPlanes[index];
-        plane.nx = nx * invLength;
-        plane.ny = ny * invLength;
-        plane.nz = nz * invLength;
-        plane.d = d * invLength;
-    };
-
-    setPlane(0, elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]);
-    setPlane(1, elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]);
-    setPlane(2, elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]);
-    setPlane(3, elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]);
-    setPlane(4, elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]);
-    setPlane(5, elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]);
-
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta) continue;
@@ -542,6 +521,7 @@ function applyDirtyChunks() {
             chunk.bounds = recomputeChunkBounds(chunkKey);
             if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
+        updateChunkMeshVisibility(chunkKey);
     }
 
     for (const chunkKey of worldState.dirtyChunks) {
@@ -669,20 +649,30 @@ export function unloadChunk(cq, cr) {
 }
 
 
-export function updateChunks() {
-    applyDirtyChunks();
+function axialChunkDistance(cqA, crA, cqB, crB) {
+    const dq = cqA - cqB;
+    const dr = crA - crB;
+    const ds = -dq - dr;
+    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
+}
 
-    const current = worldToAxial(camera.position);
-    const cq = Math.round(current.q / CHUNK_SIZE);
-    const cr = Math.round(current.r / CHUNK_SIZE);
+function enqueueChunkGeneration(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey)) return;
+    pendingChunkGenerationSet.add(chunkKey);
+    pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
+}
+
+function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
 
     for (let i = -RENDER_DIST; i <= RENDER_DIST; i++) {
         for (let j = -RENDER_DIST; j <= RENDER_DIST; j++) {
             const visibleCq = cq + i;
             const visibleCr = cr + j;
-            visibleChunkKeys.add(`${visibleCq},${visibleCr}`);
-            generateChunk(visibleCq, visibleCr);
+            const chunkKey = `${visibleCq},${visibleCr}`;
+            visibleChunkKeys.add(chunkKey);
+            enqueueChunkGeneration(visibleCq, visibleCr);
         }
     }
 
@@ -693,7 +683,47 @@ export function updateChunks() {
         unloadChunk(chunkQ, chunkR);
     }
 
-    updateChunkLodLevels(cq, cr);
+    for (let i = pendingChunkGenerationQueue.length - 1; i >= 0; i--) {
+        const queued = pendingChunkGenerationQueue[i];
+        if (visibleChunkKeys.has(queued.chunkKey)) continue;
+        pendingChunkGenerationSet.delete(queued.chunkKey);
+        pendingChunkGenerationQueue.splice(i, 1);
+    }
+
+    pendingChunkGenerationQueue.sort((a, b) => axialChunkDistance(a.cq, a.cr, cq, cr) - axialChunkDistance(b.cq, b.cr, cq, cr));
+}
+
+function flushChunkGenerationBudget() {
+    let budget = CHUNK_CREATION_BUDGET;
+    while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
+        const nextChunk = pendingChunkGenerationQueue.shift();
+        pendingChunkGenerationSet.delete(nextChunk.chunkKey);
+        generateChunk(nextChunk.cq, nextChunk.cr);
+        budget--;
+    }
+}
+
+export function updateChunks() {
+    applyDirtyChunks();
+
+    const current = worldToAxial(camera.position);
+    const cq = Math.round(current.q / CHUNK_SIZE);
+    const cr = Math.round(current.r / CHUNK_SIZE);
+    const currentChunkKey = `${cq},${cr}`;
+    const chunkChanged = currentChunkKey !== lastStreamChunkKey;
+
+    if (chunkChanged) {
+        rebuildStreamingQueue(cq, cr);
+        lastStreamChunkKey = currentChunkKey;
+    }
+
+    flushChunkGenerationBudget();
+
+    if (chunkChanged) {
+        updateChunkLodLevels(cq, cr);
+        for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
+    }
+
     applyChunkFrustumCulling();
 
     for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
