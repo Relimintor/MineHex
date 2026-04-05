@@ -2,7 +2,6 @@ const THREE = window.THREE;
 
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
 import { axialToWorld } from './coords.js';
-import { hexGeometry } from './geometry.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
 
@@ -53,34 +52,14 @@ function parseBlockKey(key) {
     return parsed;
 }
 
-function addMeshIndexes(mesh) {
-    worldState.worldBlockList.push(mesh);
-    mesh.userData.worldListIndex = worldState.worldBlockList.length - 1;
-    if (isSolidTypeIndex(mesh.userData.typeIndex)) {
-        worldState.collidableBlocks.add(mesh);
-        worldState.collidableBlockList.push(mesh);
-        mesh.userData.collidableListIndex = worldState.collidableBlockList.length - 1;
-    }
-}
-
-function removeMeshIndexes(mesh) {
-    const worldListIndex = mesh.userData.worldListIndex;
-    if (worldListIndex !== undefined) {
-        const last = worldState.worldBlockList.pop();
-        if (worldListIndex < worldState.worldBlockList.length) {
-            worldState.worldBlockList[worldListIndex] = last;
-            last.userData.worldListIndex = worldListIndex;
-        }
-    }
-
-    if (!worldState.collidableBlocks.has(mesh)) return;
-    worldState.collidableBlocks.delete(mesh);
-    const collidableIndex = mesh.userData.collidableListIndex;
-    const lastCollidable = worldState.collidableBlockList.pop();
-    if (collidableIndex !== undefined && collidableIndex < worldState.collidableBlockList.length) {
-        worldState.collidableBlockList[collidableIndex] = lastCollidable;
-        lastCollidable.userData.collidableListIndex = collidableIndex;
-    }
+function createBlockRecord(q, r, h, key, typeIndex, isPermanent) {
+    return {
+        position: axialToWorld(q, r, h),
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        visible: true,
+        userData: { q, r, h, key, isPermanent, typeIndex }
+    };
 }
 const FACE_GEOMETRY = [
     {
@@ -373,16 +352,10 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     if (worldState.worldBlocks.has(key)) return;
 
     const safeTypeIndex = blockMaterials[typeIndex] ? typeIndex : 0;
-    const mesh = new THREE.Mesh(hexGeometry, blockMaterials[safeTypeIndex]);
-    const pos = axialToWorld(q, r, h);
-    mesh.position.copy(pos);
-    mesh.userData = { q, r, h, key, isPermanent, typeIndex: safeTypeIndex };
+    const mesh = createBlockRecord(q, r, h, key, safeTypeIndex, isPermanent);
     worldState.blockCoordsByKey.set(key, { q, r, h });
 
-    mesh.updateMatrix();
-    mesh.updateMatrixWorld(true);
     worldState.worldBlocks.set(key, mesh);
-    addMeshIndexes(mesh);
 
     const chunkKey = getChunkKey(q, r);
     if (!worldState.chunkBlocks.has(chunkKey)) worldState.chunkBlocks.set(chunkKey, new Set());
@@ -415,7 +388,6 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
         if (blockType?.unbreakable && !force) return false;
 
         worldState.worldBlocks.delete(key);
-        removeMeshIndexes(mesh);
 
         const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
         const chunkBlockSet = worldState.chunkBlocks.get(chunkKey);
@@ -464,15 +436,30 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
             if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > chunkRadius) continue;
 
             const chunkKey = `${centerChunkQ + dq},${centerChunkR + dr}`;
-            const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-            if (!chunkBlockKeys || chunkBlockKeys.size === 0) continue;
+            const chunkMeta = worldState.chunkMeta.get(chunkKey);
+            if (!chunkMeta) continue;
 
-            for (const blockKey of chunkBlockKeys) {
-                const mesh = worldState.worldBlocks.get(blockKey);
-                if (!mesh) continue;
-                if (collidableOnly && !isSolidTypeIndex(mesh.userData.typeIndex)) continue;
+            const chunkMeshes = chunkMeta.lodLevel === 1
+                ? (chunkMeta.instancedLodMeshes ?? [])
+                : (chunkMeta.detailedChunkMeshes ?? []);
+
+            for (const mesh of chunkMeshes) {
+                if (!mesh?.visible) continue;
+                if (collidableOnly && !isSolidTypeIndex(mesh.userData.typeIndex ?? 0)) continue;
                 outCandidates.push(mesh);
             }
         }
     }
+}
+
+export function getIntersectedBlockKey(intersection) {
+    const object = intersection?.object;
+    if (!object) return null;
+
+    const { instanceId } = intersection;
+    if (typeof instanceId === 'number' && Array.isArray(object.userData?.instanceKeys)) {
+        return object.userData.instanceKeys[instanceId] ?? null;
+    }
+
+    return object.userData?.key ?? null;
 }
