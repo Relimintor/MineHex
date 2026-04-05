@@ -8,6 +8,15 @@ const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
 const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
 const WATER_TYPE_INDEX = BLOCK_TYPES.findIndex((blockType) => blockType?.name?.toLowerCase() === 'water');
+const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(
+    BLOCK_TYPES
+        .map((blockType, typeIndex) => ({ blockType, typeIndex }))
+        .filter(({ blockType }) => {
+            const name = blockType?.name?.toLowerCase() ?? '';
+            return name.includes('leaves') || name.includes('log') || name.includes('wood');
+        })
+        .map(({ typeIndex }) => typeIndex)
+);
 
 function getBlockAt(q, r, h) {
     return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
@@ -64,6 +73,12 @@ function isWaterBlockAt(q, r, h) {
     return block.userData.typeIndex === WATER_TYPE_INDEX;
 }
 
+function isSpawnObstructionBlockAt(q, r, h) {
+    const block = getBlockAt(q, r, h);
+    if (!block) return false;
+    return SPAWN_OBSTRUCTION_TYPE_INDICES.has(block.userData.typeIndex);
+}
+
 export function isCameraInLiquid() {
     const { q, r, h } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     return isLiquidBlockAt(q, r, h) || isLiquidBlockAt(q, r, h - 1);
@@ -73,6 +88,8 @@ function findSpawnHeight(q, r) {
     for (let h = SEARCH_HEIGHT_TOP; h >= SEARCH_HEIGHT_BOTTOM; h--) {
         if (!isSolidBlockAt(q, r, h)) continue;
         if (isWaterBlockAt(q, r, h)) continue;
+        if (isSpawnObstructionBlockAt(q, r, h)) continue;
+        if (isSpawnObstructionBlockAt(q, r, h + 1)) continue;
         if (isLiquidBlockAt(q, r, h + 1)) continue;
         if (isLiquidBlockAt(q, r, h + 2)) continue;
         return h;
