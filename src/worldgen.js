@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -78,6 +78,8 @@ const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
 const pendingChunkUnloadQueue = [];
 const pendingChunkUnloadSet = new Set();
+const pendingChunkApplyQueue = [];
+const pendingChunkApplySet = new Set();
 let chunkGenerationWorker = null;
 
 
@@ -728,7 +730,9 @@ function initChunkGenerationWorker() {
         pendingChunkGenerationInFlight.delete(chunkKey);
         if (!isChunkWithinRenderDistance(cq, cr)) return;
         if (worldState.loadedChunks.has(chunkKey)) return;
-        applyGeneratedChunkColumns(cq, cr, columns);
+        if (pendingChunkApplySet.has(chunkKey)) return;
+        pendingChunkApplySet.add(chunkKey);
+        pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
     });
 
     chunkGenerationWorker.addEventListener('error', (error) => {
@@ -736,6 +740,8 @@ function initChunkGenerationWorker() {
         chunkGenerationWorker?.terminate();
         chunkGenerationWorker = null;
         pendingChunkGenerationInFlight.clear();
+        pendingChunkApplyQueue.length = 0;
+        pendingChunkApplySet.clear();
     });
 }
 
@@ -959,6 +965,13 @@ function rebuildStreamingQueue(cq, cr) {
         pendingChunkGenerationInFlight.delete(chunkKey);
     }
 
+    for (let i = pendingChunkApplyQueue.length - 1; i >= 0; i--) {
+        const queued = pendingChunkApplyQueue[i];
+        if (visibleChunkKeys.has(queued.chunkKey)) continue;
+        pendingChunkApplySet.delete(queued.chunkKey);
+        pendingChunkApplyQueue.splice(i, 1);
+    }
+
     const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
     for (const queued of pendingChunkGenerationQueue) {
         const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
@@ -966,6 +979,14 @@ function rebuildStreamingQueue(cq, cr) {
     }
     pendingChunkGenerationQueue.length = 0;
     for (const bucket of distanceBuckets) pendingChunkGenerationQueue.push(...bucket);
+
+    const applyDistanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
+    for (const queued of pendingChunkApplyQueue) {
+        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
+        applyDistanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+    }
+    pendingChunkApplyQueue.length = 0;
+    for (const bucket of applyDistanceBuckets) pendingChunkApplyQueue.push(...bucket);
 }
 
 function flushChunkGenerationBudget() {
@@ -1007,6 +1028,18 @@ function flushChunkUnloadBudget() {
     }
 }
 
+function flushChunkApplyBudget() {
+    let budget = CHUNK_APPLY_BUDGET;
+    while (budget > 0 && pendingChunkApplyQueue.length > 0) {
+        const nextChunk = pendingChunkApplyQueue.shift();
+        pendingChunkApplySet.delete(nextChunk.chunkKey);
+        if (worldState.loadedChunks.has(nextChunk.chunkKey)) continue;
+        if (!isChunkWithinRenderDistance(nextChunk.cq, nextChunk.cr)) continue;
+        applyGeneratedChunkColumns(nextChunk.cq, nextChunk.cr, nextChunk.columns);
+        budget--;
+    }
+}
+
 export function updateChunks() {
     initChunkGenerationWorker();
     chunkTick++;
@@ -1025,6 +1058,7 @@ export function updateChunks() {
 
     flushChunkUnloadBudget();
     flushChunkGenerationBudget();
+    flushChunkApplyBudget();
 
     if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
         const lodChangedChunks = updateChunkLodLevels(cq, cr);
