@@ -48,6 +48,12 @@ const occlusionProxyMaterial = new THREE.MeshBasicMaterial({
 
 const OCCLUSION_QUERY_TARGET = 'ANY_SAMPLES_PASSED_CONSERVATIVE';
 
+const frustumViewProjection = new THREE.Matrix4();
+const frustumPlanes = Array.from({ length: 6 }, () => ({ nx: 0, ny: 0, nz: 0, d: 0 }));
+const tmpBoundsSize = new THREE.Vector3();
+const tmpBoundsCenter = new THREE.Vector3();
+const occlusionProxiesToTest = [];
+
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
     return {
@@ -168,8 +174,8 @@ function syncOcclusionProxyTransform(chunkKey) {
     const proxy = ensureOcclusionProxy(chunkKey);
     if (!proxy) return;
 
-    const size = chunkMeta.bounds.getSize(new THREE.Vector3());
-    const center = chunkMeta.bounds.getCenter(new THREE.Vector3());
+    const size = chunkMeta.bounds.getSize(tmpBoundsSize);
+    const center = chunkMeta.bounds.getCenter(tmpBoundsCenter);
     proxy.position.copy(center);
     proxy.scale.set(size.x, size.y, size.z);
 }
@@ -194,13 +200,11 @@ function disposeChunkOcclusionState(chunkMeta) {
 // If this maximum is still negative, the whole AABB is outside that plane.
 function isChunkVisible(aabb, frustumPlanes) {
     for (const plane of frustumPlanes) {
-        const vp = {
-            x: plane.nx > 0 ? aabb.max.x : aabb.min.x,
-            y: plane.ny > 0 ? aabb.max.y : aabb.min.y,
-            z: plane.nz > 0 ? aabb.max.z : aabb.min.z
-        };
+        const vx = plane.nx > 0 ? aabb.max.x : aabb.min.x;
+        const vy = plane.ny > 0 ? aabb.max.y : aabb.min.y;
+        const vz = plane.nz > 0 ? aabb.max.z : aabb.min.z;
 
-        const dist = (plane.nx * vp.x) + (plane.ny * vp.y) + (plane.nz * vp.z) + plane.d;
+        const dist = (plane.nx * vx) + (plane.ny * vy) + (plane.nz * vz) + plane.d;
         if (dist < 0) return false;
     }
 
@@ -210,27 +214,24 @@ function isChunkVisible(aabb, frustumPlanes) {
 // Runtime cost remains linear in loaded chunks for the culling pass,
 // but only chunks passing visibility keep their meshes renderable.
 function applyChunkFrustumCulling() {
-    const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const elements = viewProjection.elements;
+    frustumViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const elements = frustumViewProjection.elements;
 
-    const rawPlanes = [
-        [elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]],
-        [elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]],
-        [elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]],
-        [elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]],
-        [elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]],
-        [elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]]
-    ];
-
-    const frustumPlanes = rawPlanes.map(([nx, ny, nz, d]) => {
+    const setPlane = (index, nx, ny, nz, d) => {
         const invLength = 1 / Math.hypot(nx, ny, nz);
-        return {
-            nx: nx * invLength,
-            ny: ny * invLength,
-            nz: nz * invLength,
-            d: d * invLength
-        };
-    });
+        const plane = frustumPlanes[index];
+        plane.nx = nx * invLength;
+        plane.ny = ny * invLength;
+        plane.nz = nz * invLength;
+        plane.d = d * invLength;
+    };
+
+    setPlane(0, elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]);
+    setPlane(1, elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]);
+    setPlane(2, elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]);
+    setPlane(3, elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]);
+    setPlane(4, elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]);
+    setPlane(5, elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]);
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -271,7 +272,7 @@ export function runChunkOcclusionCulling() {
         }
     }
 
-    const proxiesToTest = [];
+    occlusionProxiesToTest.length = 0;
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta?.frustumVisible || !chunkMeta.bounds) continue;
@@ -294,17 +295,17 @@ export function runChunkOcclusionCulling() {
         proxy.userData.activeQuery = chunkMeta.occlusionQuery;
         proxy.userData.queryTarget = queryTarget;
         proxy.visible = true;
-        proxiesToTest.push(proxy);
+        occlusionProxiesToTest.push(proxy);
     }
 
-    if (proxiesToTest.length === 0) return;
+    if (occlusionProxiesToTest.length === 0) return;
 
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
     renderer.render(occlusionScene, camera);
     renderer.autoClear = prevAutoClear;
 
-    for (const proxy of proxiesToTest) proxy.visible = false;
+    for (const proxy of occlusionProxiesToTest) proxy.visible = false;
 }
 
 function getHeight(q, r) {
