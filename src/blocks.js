@@ -14,7 +14,24 @@ const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMater
 }));
 const getChunkKey = (q, r) => `${Math.round(q / CHUNK_SIZE)},${Math.round(r / CHUNK_SIZE)}`;
 
-export function addBlock(q, r, h, typeIndex, isPermanent = false) {
+function markChunkDirtyWithDelta(chunkKey, blockKey, isAdd) {
+    if (!worldState.chunkBlockDiffs.has(chunkKey)) {
+        worldState.chunkBlockDiffs.set(chunkKey, { add: new Set(), remove: new Set() });
+    }
+
+    const diff = worldState.chunkBlockDiffs.get(chunkKey);
+    if (isAdd) {
+        diff.remove.delete(blockKey);
+        diff.add.add(blockKey);
+    } else {
+        diff.add.delete(blockKey);
+        diff.remove.add(blockKey);
+    }
+
+    worldState.dirtyChunks.add(chunkKey);
+}
+
+export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true) {
     const key = `${q},${r},${h}`;
     if (worldState.worldBlocks.has(key)) return;
 
@@ -27,6 +44,11 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     scene.add(mesh);
     worldState.worldBlocks.set(key, mesh);
 
+    if (trackDirty) {
+        const chunkKey = getChunkKey(q, r);
+        markChunkDirtyWithDelta(chunkKey, key, true);
+    }
+
     if (isPermanent) {
         worldState.permanentBlocks.set(key, { q, r, h, typeIndex: safeTypeIndex });
         const chunkKey = getChunkKey(q, r);
@@ -37,7 +59,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false) {
     return mesh;
 }
 
-export function removeBlock(key, { preservePermanent = false, force = false } = {}) {
+export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true } = {}) {
     const mesh = worldState.worldBlocks.get(key);
     if (mesh) {
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
@@ -45,6 +67,11 @@ export function removeBlock(key, { preservePermanent = false, force = false } = 
 
         scene.remove(mesh);
         worldState.worldBlocks.delete(key);
+
+        if (trackDirty) {
+            const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
+            markChunkDirtyWithDelta(chunkKey, key, false);
+        }
 
         if (mesh.userData.isPermanent && !preservePermanent) {
             worldState.permanentBlocks.delete(key);
