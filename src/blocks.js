@@ -40,6 +40,20 @@ function markChunkAndNeighborsDirty(q, r) {
     if ((localQ + localR) === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq - 1},${cr + 1}`);
 }
 
+function markDirtyCell(q, r, h) {
+    const { cq, cr } = getChunkCoords(q, r);
+    const chunkKey = `${cq},${cr}`;
+    const centerQ = cq * CHUNK_SIZE;
+    const centerR = cr * CHUNK_SIZE;
+    const localCellKey = `${q - centerQ},${r - centerR},${h}`;
+
+    if (!worldState.dirtyChunkCells.has(chunkKey)) {
+        worldState.dirtyChunkCells.set(chunkKey, new Set());
+    }
+
+    worldState.dirtyChunkCells.get(chunkKey).add(localCellKey);
+}
+
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true) {
     const key = `${q},${r},${h}`;
     if (worldState.worldBlocks.has(key)) return;
@@ -55,6 +69,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
 
     if (trackDirty) {
         markChunkAndNeighborsDirty(q, r);
+        markDirtyCell(q, r, h);
     }
 
     if (isPermanent) {
@@ -78,6 +93,7 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         if (trackDirty) {
             markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
+            markDirtyCell(mesh.userData.q, mesh.userData.r, mesh.userData.h);
         }
 
         if (mesh.userData.isPermanent && !preservePermanent) {

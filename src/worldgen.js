@@ -132,6 +132,11 @@ function applyDirtyChunks() {
 
     for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+        worldState.dirtyChunkCells.delete(chunkKey);
+    }
+
+    for (const chunkKey of worldState.dirtyChunks) {
+        worldState.dirtyChunkCells.delete(chunkKey);
     }
 
     worldState.dirtyChunks.clear();
@@ -230,6 +235,7 @@ export function unloadChunk(cq, cr) {
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
+    worldState.dirtyChunkCells.delete(chunkKey);
 }
 
 
