@@ -3,7 +3,7 @@ const THREE = window.THREE;
 import { camera, renderer } from './scene.js';
 import { HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
-import { addBlock, removeBlock } from './blocks.js';
+import { addBlock, collectChunkRaycastCandidates, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
 
 const raycaster = new THREE.Raycaster();
@@ -11,6 +11,8 @@ const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const placeNormal = new THREE.Vector3();
 const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
+const localInteractionCandidates = [];
+const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -40,9 +42,12 @@ export function updateSelectedBlock(index) {
 }
 
 function getCenterIntersection() {
+    const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, INTERACTION_RAYCAST_CHUNK_RADIUS, localInteractionCandidates);
+    if (localInteractionCandidates.length === 0) return null;
     raycaster.setFromCamera(CENTER_SCREEN, camera);
     raycaster.far = INTERACTION_RANGE;
-    const intersects = raycaster.intersectObjects(worldState.worldBlockList, false);
+    const intersects = raycaster.intersectObjects(localInteractionCandidates, false);
     return intersects[0] ?? null;
 }
 
