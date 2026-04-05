@@ -3,7 +3,7 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
-import { updateChunks } from './worldgen.js';
+import { runChunkOcclusionCulling, updateChunks } from './worldgen.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 
 camera.position.set(0, 10, 0);
@@ -45,7 +45,9 @@ function animate(now = performance.now()) {
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
     renderer.render(scene, camera);
+    runChunkOcclusionCulling();
 }
+
 
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
