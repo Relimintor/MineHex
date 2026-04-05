@@ -17,6 +17,12 @@ const CONTROL_MODE_KEY = 'minehexControlMode';
 function chooseControlMode() {
     const modeScreen = document.getElementById('mode-select');
     if (!modeScreen) return Promise.resolve('pc');
+    const savedProfile = localStorage.getItem(PERFORMANCE_PROFILE_KEY);
+    const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
+    if (savedProfile === 'celeron_cb' && savedMode === 'pc') {
+        modeScreen.classList.add('hidden');
+        return Promise.resolve('pc');
+    }
 
     return new Promise((resolve) => {
         const buttons = modeScreen.querySelectorAll('[data-mode]');
@@ -49,10 +55,10 @@ function chooseControlMode() {
 
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
-const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
-const CHUNK_APPLY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
-const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 4;
-const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 3;
+const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 2;
+const CHUNK_APPLY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 2;
+const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 8 : 4;
+const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 3;
 const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
 

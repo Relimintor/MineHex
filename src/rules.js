@@ -7,7 +7,7 @@ const SEARCH_RADIUS = 12;
 const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
 const SPAWN_HEIGHT_MIN = 14;
-const SPAWN_HEIGHT_MAX = 22;
+const SPAWN_HEIGHT_MAX = 26;
 const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
 const WATER_TYPE_INDEX = BLOCK_TYPES.findIndex((blockType) => blockType?.name?.toLowerCase() === 'water');
 const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(

@@ -22,7 +22,7 @@ export const ENABLE_SHADOW_MAP = false;
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
 // - desktop/high-end: 16-ish footprint lowers draw-call pressure.
-export const CHUNK_SIZE = useUltraLowChunkProfile ? 6 : (useLowEndChunkProfile ? 8 : 16);
+export const CHUNK_SIZE = useUltraLowChunkProfile ? 4 : (useLowEndChunkProfile ? 8 : 16);
 export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 3 : 2);
 export const CHUNK_CREATION_BUDGET = 1;
 export const CHUNK_APPLY_BUDGET = 1;
