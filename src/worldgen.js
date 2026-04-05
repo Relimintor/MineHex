@@ -19,6 +19,7 @@ const MOISTURE_OFFSET = 100;
 const BLOCK_INDEX = {
     grass: 0,
     dirt: 1,
+    stone: 2,
     water: 4,
     nethrock: 5,
     oakWood: 6,
@@ -148,17 +149,21 @@ export function generateChunk(cq, cr) {
                 const heightWithBiome = baseHeight + biomeHeightModifier(biomeWeights, absQ, absR, baseHeight);
                 const height = getSmoothedHeight(heightWithBiome);
                 const biome = getBiomeAt(climateBiome, height);
-                const topKey = `${absQ},${absR},${height}`;
-                const lowerKey = `${absQ},${absR},${height - 1}`;
-
                 const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest' || biome === 'arctic';
                 const topBlockType = biome === 'beach'
                     ? BLOCK_INDEX.dirt
                     : (height < SEA_LEVEL ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
-                if (!worldState.permanentBlocks.has(topKey)) addBlock(absQ, absR, height, topBlockType);
-                if (!worldState.permanentBlocks.has(lowerKey)) addBlock(absQ, absR, height - 1, BLOCK_INDEX.dirt);
-                if (worldState.worldBlocks.has(topKey)) chunkBlockKeys.add(topKey);
-                if (worldState.worldBlocks.has(lowerKey)) chunkBlockKeys.add(lowerKey);
+
+                // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
+                for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
+                    const blockKey = `${absQ},${absR},${h}`;
+                    let blockType = BLOCK_INDEX.stone;
+                    if (h === height) blockType = topBlockType;
+                    else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
+
+                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType);
+                    if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
+                }
 
                 const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
                 if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock);
