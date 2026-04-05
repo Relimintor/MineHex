@@ -5,6 +5,7 @@ import { axialToWorld } from './coords.js';
 import { hexGeometry } from './geometry.js';
 import { scene } from './scene.js';
 import { worldState } from './state.js';
+import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
 
 const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMaterial({
     color: blockType.color,
@@ -42,6 +43,46 @@ const FACE_DIRECTIONS = [
     [0, 0, 1],
     [0, 0, -1]
 ];
+
+
+function parseBlockKey(key) {
+    const cached = worldState.blockCoordsByKey.get(key);
+    if (cached) return cached;
+    const [q, r, h] = key.split(',').map(Number);
+    const parsed = { q, r, h };
+    worldState.blockCoordsByKey.set(key, parsed);
+    return parsed;
+}
+
+function addMeshIndexes(mesh) {
+    worldState.worldBlockList.push(mesh);
+    mesh.userData.worldListIndex = worldState.worldBlockList.length - 1;
+    if (isSolidTypeIndex(mesh.userData.typeIndex)) {
+        worldState.collidableBlocks.add(mesh);
+        worldState.collidableBlockList.push(mesh);
+        mesh.userData.collidableListIndex = worldState.collidableBlockList.length - 1;
+    }
+}
+
+function removeMeshIndexes(mesh) {
+    const worldListIndex = mesh.userData.worldListIndex;
+    if (worldListIndex !== undefined) {
+        const last = worldState.worldBlockList.pop();
+        if (worldListIndex < worldState.worldBlockList.length) {
+            worldState.worldBlockList[worldListIndex] = last;
+            last.userData.worldListIndex = worldListIndex;
+        }
+    }
+
+    if (!worldState.collidableBlocks.has(mesh)) return;
+    worldState.collidableBlocks.delete(mesh);
+    const collidableIndex = mesh.userData.collidableListIndex;
+    const lastCollidable = worldState.collidableBlockList.pop();
+    if (collidableIndex !== undefined && collidableIndex < worldState.collidableBlockList.length) {
+        worldState.collidableBlockList[collidableIndex] = lastCollidable;
+        lastCollidable.userData.collidableListIndex = collidableIndex;
+    }
+}
 const FACE_GEOMETRY = [
     {
         direction: [1, 0, 0],
@@ -307,7 +348,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
     const visited = new Set();
 
     for (const key of blockKeys) {
-        const [q, r, h] = key.split(',').map(Number);
+        const { q, r, h } = parseBlockKey(key);
         const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
 
         for (const [targetQ, targetR, targetH] of targets) {
@@ -328,9 +369,17 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     const pos = axialToWorld(q, r, h);
     mesh.position.copy(pos);
     mesh.userData = { q, r, h, key, isPermanent, typeIndex: safeTypeIndex };
+    worldState.blockCoordsByKey.set(key, { q, r, h });
 
     scene.add(mesh);
     worldState.worldBlocks.set(key, mesh);
+    addMeshIndexes(mesh);
+
+    const chunkKey = getChunkKey(q, r);
+    if (!worldState.chunkBlocks.has(chunkKey)) worldState.chunkBlocks.set(chunkKey, new Set());
+    worldState.chunkBlocks.get(chunkKey).add(key);
+
+    updateTopSolidHeightOnAdd(q, r, h, safeTypeIndex);
 
     if (trackDirty) {
         markChunkAndNeighborsDirty(q, r);
@@ -358,6 +407,17 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         scene.remove(mesh);
         worldState.worldBlocks.delete(key);
+        removeMeshIndexes(mesh);
+
+        const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
+        const chunkBlockSet = worldState.chunkBlocks.get(chunkKey);
+        if (chunkBlockSet) {
+            chunkBlockSet.delete(key);
+            if (chunkBlockSet.size === 0) worldState.chunkBlocks.delete(chunkKey);
+        }
+
+        updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, mesh.userData.typeIndex);
+        worldState.blockCoordsByKey.delete(key);
 
         if (trackDirty) {
             markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
@@ -369,7 +429,6 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         if (mesh.userData.isPermanent && !preservePermanent) {
             worldState.permanentBlocks.delete(key);
-            const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
             const chunkPermanentBlocks = worldState.permanentBlocksByChunk.get(chunkKey);
             if (chunkPermanentBlocks) {
                 chunkPermanentBlocks.delete(key);

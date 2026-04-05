@@ -61,6 +61,21 @@ const megaHexMaterial = new THREE.MeshLambertMaterial({ color: 0x6d8f5f });
 const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
 let lastStreamChunkKey = null;
+let chunkTick = 0;
+const STREAM_INTERVAL_TICKS = 3;
+const FRUSTUM_INTERVAL_TICKS = 1;
+const LOD_INTERVAL_TICKS = 2;
+
+const reusableOcclusionQueries = [];
+
+
+const CHUNK_LOCAL_AXIALS = [];
+for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
+    for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
+        if (Math.abs(q + r) > CHUNK_SIZE) continue;
+        CHUNK_LOCAL_AXIALS.push([q, r]);
+    }
+}
 
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
@@ -76,6 +91,8 @@ function ensureChunkMeta(cq, cr) {
 
     const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
     worldState.chunkMeta.set(chunkKey, {
+        cq,
+        cr,
         dirty: false,
         neighbors,
         frustumVisible: true,
@@ -92,7 +109,9 @@ function recomputeChunkBounds(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
 
-    const [cq, cr] = chunkKey.split(',').map(Number);
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    const cq = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
+    const cr = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
 
@@ -101,10 +120,7 @@ function recomputeChunkBounds(chunkKey) {
     let minZ = Infinity;
     let maxZ = -Infinity;
 
-    for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
-        for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
-            if (Math.abs(q + r) > CHUNK_SIZE) continue;
-
+    for (const [q, r] of CHUNK_LOCAL_AXIALS) {
             const worldPos = axialToWorld(centerQ + q, centerR + r, 0);
             for (const offset of HEX_CORNER_OFFSETS_XZ) {
                 const cornerX = worldPos.x + offset.x;
@@ -114,7 +130,6 @@ function recomputeChunkBounds(chunkKey) {
                 minZ = Math.min(minZ, cornerZ);
                 maxZ = Math.max(maxZ, cornerZ);
             }
-        }
     }
 
     let minH = Infinity;
@@ -291,8 +306,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     }
 
     if (chunkMeta.occlusionQuery) {
-        const gl = renderer.getContext();
-        gl.deleteQuery(chunkMeta.occlusionQuery);
+        reusableOcclusionQueries.push(chunkMeta.occlusionQuery);
         chunkMeta.occlusionQuery = null;
     }
 
@@ -378,9 +392,10 @@ export function runChunkOcclusionCulling() {
         if (!available) continue;
 
         const isVisible = !!gl.getQueryParameter(chunkMeta.occlusionQuery, gl.QUERY_RESULT);
-        gl.deleteQuery(chunkMeta.occlusionQuery);
+        reusableOcclusionQueries.push(chunkMeta.occlusionQuery);
         chunkMeta.occlusionQuery = null;
 
+        chunkMeta.lastOcclusionResult = isVisible;
         if (chunkMeta.occlusionVisible !== isVisible) {
             chunkMeta.occlusionVisible = isVisible;
             updateChunkMeshVisibility(chunkKey);
@@ -390,7 +405,7 @@ export function runChunkOcclusionCulling() {
         const proxy = chunkMeta.occlusionProxy;
         if (!proxy || chunkMeta.occlusionQuery) continue;
 
-        chunkMeta.occlusionQuery = gl.createQuery();
+        chunkMeta.occlusionQuery = reusableOcclusionQueries.pop() ?? gl.createQuery();
         if (!chunkMeta.occlusionQuery) continue;
 
         proxy.userData.activeQuery = chunkMeta.occlusionQuery;
@@ -416,7 +431,7 @@ export function runChunkOcclusionCulling() {
         const proxy = chunkMeta.occlusionProxy;
         if (!proxy || chunkMeta.occlusionQuery) continue;
 
-        chunkMeta.occlusionQuery = gl.createQuery();
+        chunkMeta.occlusionQuery = reusableOcclusionQueries.pop() ?? gl.createQuery();
         if (!chunkMeta.occlusionQuery) continue;
 
         proxy.userData.activeQuery = chunkMeta.occlusionQuery;
@@ -520,32 +535,23 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
 function applyDirtyChunks() {
     if (worldState.dirtyChunks.size === 0) return;
 
-    const rebuiltChunkBlocks = new Map();
     for (const chunkKey of worldState.dirtyChunks) {
         if (!worldState.loadedChunks.has(chunkKey)) {
             worldState.chunkBlocks.delete(chunkKey);
             continue;
         }
 
-        rebuiltChunkBlocks.set(chunkKey, new Set());
-    }
-
-    for (const [blockKey, mesh] of worldState.worldBlocks) {
-        const chunkKey = `${Math.round(mesh.userData.q / CHUNK_SIZE)},${Math.round(mesh.userData.r / CHUNK_SIZE)}`;
-        if (!rebuiltChunkBlocks.has(chunkKey)) continue;
-
-        rebuiltChunkBlocks.get(chunkKey).add(blockKey);
-    }
-
-    for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
+        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
         recomputeChunkGreedyFaceQuads(chunkKey);
+
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) {
             chunk.dirty = false;
             chunk.bounds = recomputeChunkBounds(chunkKey);
             if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
+
         updateChunkMeshVisibility(chunkKey);
     }
 
@@ -626,7 +632,6 @@ export function generateChunk(cq, cr) {
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
-        }
     }
 
     const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
@@ -691,10 +696,12 @@ function enqueueChunkGeneration(cq, cr) {
 function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
 
-    for (let i = -RENDER_DIST; i <= RENDER_DIST; i++) {
-        for (let j = -RENDER_DIST; j <= RENDER_DIST; j++) {
-            const visibleCq = cq + i;
-            const visibleCr = cr + j;
+    for (let dq = -RENDER_DIST; dq <= RENDER_DIST; dq++) {
+        for (let dr = -RENDER_DIST; dr <= RENDER_DIST; dr++) {
+            const ds = -dq - dr;
+            if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > RENDER_DIST) continue;
+            const visibleCq = cq + dq;
+            const visibleCr = cr + dr;
             const chunkKey = `${visibleCq},${visibleCr}`;
             visibleChunkKeys.add(chunkKey);
             enqueueChunkGeneration(visibleCq, visibleCr);
@@ -704,7 +711,9 @@ function rebuildStreamingQueue(cq, cr) {
     for (const chunkKey of Array.from(worldState.loadedChunks)) {
         if (visibleChunkKeys.has(chunkKey)) continue;
 
-        const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
+        const chunkMeta = worldState.chunkMeta.get(chunkKey);
+        const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
+        const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
         unloadChunk(chunkQ, chunkR);
     }
 
@@ -715,7 +724,13 @@ function rebuildStreamingQueue(cq, cr) {
         pendingChunkGenerationQueue.splice(i, 1);
     }
 
-    pendingChunkGenerationQueue.sort((a, b) => axialChunkDistance(a.cq, a.cr, cq, cr) - axialChunkDistance(b.cq, b.cr, cq, cr));
+    const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
+    for (const queued of pendingChunkGenerationQueue) {
+        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
+        distanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+    }
+    pendingChunkGenerationQueue.length = 0;
+    for (const bucket of distanceBuckets) pendingChunkGenerationQueue.push(...bucket);
 }
 
 function flushChunkGenerationBudget() {
@@ -729,27 +744,28 @@ function flushChunkGenerationBudget() {
 }
 
 export function updateChunks() {
+    chunkTick++;
     applyDirtyChunks();
 
-    const current = worldToAxial(camera.position);
+    const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
     const cr = Math.round(current.r / CHUNK_SIZE);
     const currentChunkKey = `${cq},${cr}`;
     const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged) {
+    if (chunkChanged || (chunkTick % STREAM_INTERVAL_TICKS) === 0) {
         rebuildStreamingQueue(cq, cr);
         lastStreamChunkKey = currentChunkKey;
     }
 
     flushChunkGenerationBudget();
 
-    if (chunkChanged) {
+    if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
         const lodChangedChunks = updateChunkLodLevels(cq, cr);
         for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
     }
 
-    applyChunkFrustumCulling();
-
-    for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
+    if ((chunkTick % FRUSTUM_INTERVAL_TICKS) === 0) {
+        applyChunkFrustumCulling();
+    }
 }
