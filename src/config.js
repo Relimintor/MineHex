@@ -13,11 +13,14 @@ const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
 const useUltraLowChunkProfile = isCeleronOverride || (isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
+const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
-export const ENABLE_ANTIALIAS = !useLowEndChunkProfile;
+export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
+export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = false;
+export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
