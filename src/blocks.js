@@ -67,10 +67,14 @@ function occupancyAt(q, r, h) {
 
 function isFaceVisible(q, r, h, [dq, dr, dh]) {
     // F(i, d) = O(i) * (1 - O(i + d))
+    // A face belongs to the boundary only when current voxel is solid
+    // and the neighboring voxel in direction d is empty.
     return occupancyAt(q, r, h) * (1 - occupancyAt(q + dq, r + dr, h + dh));
 }
 
 function hasExposedFace(q, r, h) {
+    // Surface extraction: ∂S = {(i, d) | i in S, i + d not in S}
+    // where S is the set of solid voxels.
     for (const direction of FACE_DIRECTIONS) {
         if (isFaceVisible(q, r, h, direction)) return true;
     }
