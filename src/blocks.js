@@ -38,6 +38,62 @@ const FACE_DIRECTIONS = [
     [0, 0, 1],
     [0, 0, -1]
 ];
+const FACE_GEOMETRY = [
+    {
+        direction: [1, 0, 0],
+        offsets: [
+            [1, 0, 0],
+            [1, 1, 0],
+            [1, 1, 1],
+            [1, 0, 1]
+        ]
+    },
+    {
+        direction: [-1, 0, 0],
+        offsets: [
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 1, 1],
+            [0, 1, 0]
+        ]
+    },
+    {
+        direction: [0, 1, 0],
+        offsets: [
+            [0, 1, 0],
+            [0, 1, 1],
+            [1, 1, 1],
+            [1, 1, 0]
+        ]
+    },
+    {
+        direction: [0, -1, 0],
+        offsets: [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 0, 1],
+            [0, 0, 1]
+        ]
+    },
+    {
+        direction: [0, 0, 1],
+        offsets: [
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1]
+        ]
+    },
+    {
+        direction: [0, 0, -1],
+        offsets: [
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0],
+            [1, 0, 0]
+        ]
+    }
+];
 
 function getNeighborChunkKeys(cq, cr) {
     const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
@@ -82,11 +138,25 @@ function hasExposedFace(q, r, h) {
     return false;
 }
 
+function getVisibleFaces(q, r, h) {
+    const faces = [];
+    for (const { direction, offsets } of FACE_GEOMETRY) {
+        if (!isFaceVisible(q, r, h, direction)) continue;
+        const vertices = offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz]);
+        faces.push({ direction, vertices });
+    }
+
+    return faces;
+}
+
 function updateBlockVisibilityAt(q, r, h) {
     const key = `${q},${r},${h}`;
     const block = worldState.worldBlocks.get(key);
     if (!block) return;
-    block.visible = hasExposedFace(q, r, h);
+
+    const visibleFaces = getVisibleFaces(q, r, h);
+    block.visible = visibleFaces.length > 0;
+    block.userData.visibleFaces = visibleFaces;
 }
 
 function updateVisibilityAround(q, r, h) {
