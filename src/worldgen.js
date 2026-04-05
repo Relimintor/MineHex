@@ -767,11 +767,10 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
         const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
         recomputeChunkGreedyFaceQuads(chunkKey);
-        rebuildChunkInstancedLodMeshes(chunkKey);
 
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) {
-            chunk.dirty = false;
+            chunk.dirty = true;
             chunk.bounds = recomputeChunkBounds(chunkKey);
             if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
@@ -783,7 +782,7 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
 
     for (const chunkKey of processedChunkKeys) {
         const chunk = worldState.chunkMeta.get(chunkKey);
-        if (chunk) chunk.dirty = false;
+        if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
         worldState.dirtyChunks.delete(chunkKey);
     }
 }
