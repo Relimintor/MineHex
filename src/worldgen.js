@@ -115,6 +115,8 @@ function ensureChunkMeta(cq, cr) {
         occlusionProxy: null,
         lodLevel: 0,
         megaHexMesh: null,
+        detailedChunkGroup: null,
+        detailedChunkMeshes: [],
         instancedLodGroup: null,
         instancedLodMeshes: [],
         bounds: null
@@ -193,6 +195,72 @@ function ensureMegaHexMesh(chunkKey) {
     scene.add(mesh);
     chunkMeta.megaHexMesh = mesh;
     return mesh;
+}
+
+function disposeDetailedChunkMeshes(chunkMeta) {
+    if (!chunkMeta?.detailedChunkGroup) return;
+    scene.remove(chunkMeta.detailedChunkGroup);
+    for (const mesh of chunkMeta.detailedChunkMeshes ?? []) mesh.geometry.dispose();
+    chunkMeta.detailedChunkMeshes = [];
+    chunkMeta.detailedChunkGroup = null;
+}
+
+function rebuildChunkDetailedMeshes(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta) return;
+
+    disposeDetailedChunkMeshes(chunkMeta);
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
+
+    const perTypeInstances = new Map();
+    for (const blockKey of chunkBlockKeys) {
+        const mesh = worldState.worldBlocks.get(blockKey);
+        if (!mesh) continue;
+        const visibleFaces = mesh.userData.visibleFaces;
+        const hasVisibleFaces = !Array.isArray(visibleFaces) || visibleFaces.length > 0;
+        if (!hasVisibleFaces) continue;
+
+        const typeIndex = mesh.userData.typeIndex ?? 0;
+        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
+        perTypeInstances.get(typeIndex).push(mesh);
+    }
+
+    if (perTypeInstances.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
+
+    const group = new THREE.Group();
+    group.visible = false;
+    const createdMeshes = [];
+
+    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
+        const geometry = new THREE.InstancedBufferGeometry().copy(sourceMeshes[0].geometry);
+        const instanced = new THREE.InstancedMesh(geometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+
+        for (let i = 0; i < sourceMeshes.length; i++) {
+            const sourceMesh = sourceMeshes[i];
+            chunkInstanceDummy.position.copy(sourceMesh.position);
+            chunkInstanceDummy.rotation.copy(sourceMesh.rotation);
+            chunkInstanceDummy.scale.copy(sourceMesh.scale);
+            chunkInstanceDummy.updateMatrix();
+            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+        }
+
+        instanced.instanceMatrix.needsUpdate = true;
+        group.add(instanced);
+        createdMeshes.push(instanced);
+    }
+
+    scene.add(group);
+    chunkMeta.detailedChunkGroup = group;
+    chunkMeta.detailedChunkMeshes = createdMeshes;
+    chunkMeta.dirty = false;
 }
 
 function disposeInstancedLodMeshes(chunkMeta) {
@@ -304,6 +372,7 @@ function updateChunkMeshVisibility(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
 
     if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = false;
+    if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = false;
 
     if (chunkMeta.lodLevel === 2 && chunkVisible) {
         syncMegaHexTransform(chunkKey);
@@ -327,6 +396,9 @@ function updateChunkMeshVisibility(chunkKey) {
         }
         return;
     }
+
+    if (!chunkMeta.detailedChunkGroup || chunkMeta.dirty) rebuildChunkDetailedMeshes(chunkKey);
+    if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = chunkVisible;
 
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
@@ -387,6 +459,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     if (!chunkMeta) return;
 
     if (!ENABLE_OCCLUSION_CULLING) {
+        disposeDetailedChunkMeshes(chunkMeta);
         disposeInstancedLodMeshes(chunkMeta);
         if (chunkMeta.megaHexMesh) {
             scene.remove(chunkMeta.megaHexMesh);
@@ -408,6 +481,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     }
 
     disposeInstancedLodMeshes(chunkMeta);
+    disposeDetailedChunkMeshes(chunkMeta);
 
     if (chunkMeta.megaHexMesh) {
         scene.remove(chunkMeta.megaHexMesh);
