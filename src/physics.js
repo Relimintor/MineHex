@@ -17,7 +17,7 @@ import {
 import { collectChunkRaycastCandidates } from './blocks.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
-import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
+import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
 import { inputState, worldState } from './state.js';
 import { isKeyDown } from './input.js';
 
@@ -28,6 +28,14 @@ const moveDir = new THREE.Vector3();
 const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const localGroundCandidates = [];
 const GROUND_RAYCAST_CHUNK_RADIUS = 1;
+
+function getColumnTopGroundDistance() {
+    const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
+    if (topSolidH === undefined) return null;
+    if (!isSolidBlockAt(q, r, topSolidH)) return null;
+    return camera.position.y - (topSolidH * HEX_HEIGHT);
+}
 
 function getGroundHit() {
     const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
@@ -41,13 +49,14 @@ function getGroundHit() {
 
 function resolveGroundCollision() {
     const groundHit = getGroundHit();
-    if (!groundHit) {
+    const fallbackDistanceToGround = groundHit ? null : getColumnTopGroundDistance();
+    if (!groundHit && fallbackDistanceToGround === null) {
         inputState.canJump = false;
         return;
     }
 
     const standingDistance = PLAYER_HEIGHT;
-    const distanceToGround = groundHit.distance;
+    const distanceToGround = groundHit ? groundHit.distance : fallbackDistanceToGround;
     const isInsideGround = distanceToGround < standingDistance;
     const shouldStickToGround = distanceToGround <= standingDistance + GROUND_STICK_DISTANCE && inputState.velocity.y <= 0;
 

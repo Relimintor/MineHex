@@ -730,7 +730,7 @@ function getBiomeAt(climateBiome, height) {
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = `${q},${r},${h}`;
-    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
+    if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
 
@@ -863,17 +863,17 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             if (h === height) blockType = topBlockType;
             else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
 
-            if (!worldState.permanentBlocks.has(blockKey)) addBlock(q, r, h, blockType, false, false, false);
+            if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(q, r, h, blockType, false, false, false);
             if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
         const nethrockKey = `${q},${r},${NETHROCK_LEVEL_HEX}`;
-        if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
+        if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
         if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
         if (addSurfaceFluid) {
             const waterKey = `${q},${r},${SEA_LEVEL}`;
-            if (!worldState.permanentBlocks.has(waterKey)) addBlock(q, r, SEA_LEVEL, surfaceFluidType, false, false, false);
+            if (!worldState.permanentBlocks.has(waterKey) && !worldState.removedBlocks.has(waterKey)) addBlock(q, r, SEA_LEVEL, surfaceFluidType, false, false, false);
             if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
         }
 
@@ -938,18 +938,18 @@ export function generateChunk(cq, cr) {
                     if (h === height) blockType = topBlockType;
                     else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
 
-                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
+                    if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
                 const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
-                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
+                if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
-                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false, false);
+                    if (!worldState.permanentBlocks.has(waterKey) && !worldState.removedBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false, false);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
                 }
 
@@ -985,7 +985,7 @@ export function unloadChunk(cq, cr) {
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
     for (const key of chunkBlockKeys) {
-        removeBlock(key, { preservePermanent: true, force: true, trackDirty: false });
+        removeBlock(key, { preservePermanent: true, force: true, trackDirty: false, trackRemoval: false });
     }
 
     worldState.chunkBlocks.delete(chunkKey);
