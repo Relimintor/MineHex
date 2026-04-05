@@ -106,30 +106,43 @@ function recomputeChunkBounds(chunkKey) {
     );
 }
 
-function isAABBOutsidePlane(plane, bounds) {
-    const vx = plane.x >= 0 ? bounds.max.x : bounds.min.x;
-    const vy = plane.y >= 0 ? bounds.max.y : bounds.min.y;
-    const vz = plane.z >= 0 ? bounds.max.z : bounds.min.z;
-    return ((plane.x * vx) + (plane.y * vy) + (plane.z * vz) + plane.w) < 0;
+function isChunkVisible(aabb, frustumPlanes) {
+    for (const plane of frustumPlanes) {
+        const vp = {
+            x: plane.nx > 0 ? aabb.max.x : aabb.min.x,
+            y: plane.ny > 0 ? aabb.max.y : aabb.min.y,
+            z: plane.nz > 0 ? aabb.max.z : aabb.min.z
+        };
+
+        const dist = (plane.nx * vp.x) + (plane.ny * vp.y) + (plane.nz * vp.z) + plane.d;
+        if (dist < 0) return false;
+    }
+
+    return true;
 }
 
 function applyChunkFrustumCulling() {
     const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     const elements = viewProjection.elements;
 
-    const planes = [
-        new THREE.Vector4(elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]),
-        new THREE.Vector4(elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]),
-        new THREE.Vector4(elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]),
-        new THREE.Vector4(elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]),
-        new THREE.Vector4(elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]),
-        new THREE.Vector4(elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14])
+    const rawPlanes = [
+        [elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]],
+        [elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]],
+        [elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]],
+        [elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]],
+        [elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]],
+        [elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]]
     ];
 
-    for (const plane of planes) {
-        const invLength = 1 / Math.hypot(plane.x, plane.y, plane.z);
-        plane.multiplyScalar(invLength);
-    }
+    const frustumPlanes = rawPlanes.map(([nx, ny, nz, d]) => {
+        const invLength = 1 / Math.hypot(nx, ny, nz);
+        return {
+            nx: nx * invLength,
+            ny: ny * invLength,
+            nz: nz * invLength,
+            d: d * invLength
+        };
+    });
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -138,15 +151,7 @@ function applyChunkFrustumCulling() {
         if (!chunkMeta.bounds) chunkMeta.bounds = recomputeChunkBounds(chunkKey);
         const bounds = chunkMeta.bounds;
 
-        let isVisible = true;
-        if (bounds) {
-            for (const plane of planes) {
-                if (isAABBOutsidePlane(plane, bounds)) {
-                    isVisible = false;
-                    break;
-                }
-            }
-        }
+        const isVisible = bounds ? isChunkVisible(bounds, frustumPlanes) : true;
 
         if (chunkMeta.frustumVisible === isVisible) continue;
         chunkMeta.frustumVisible = isVisible;
