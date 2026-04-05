@@ -20,14 +20,13 @@ function chooseControlMode() {
     if (!modeScreen) return Promise.resolve('pc');
     const savedProfile = localStorage.getItem(PERFORMANCE_PROFILE_KEY);
     const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
-    if (savedProfile === 'celeron_cb' && (savedMode === 'pc' || savedMode === 'celeron_cb')) {
-        localStorage.setItem(CONTROL_MODE_KEY, 'celeron_cb');
-        modeScreen.classList.add('hidden');
-        return Promise.resolve('celeron_cb');
-    }
-
     return new Promise((resolve) => {
         const buttons = modeScreen.querySelectorAll('[data-mode]');
+        if (savedMode) {
+            for (const button of buttons) {
+                button.classList.toggle('active', button.dataset.mode === savedMode);
+            }
+        }
 
         buttons.forEach((button) => {
             button.addEventListener('click', () => {
@@ -45,8 +44,14 @@ function chooseControlMode() {
                     return;
                 }
 
+                const wasCeleronProfile = savedProfile === 'celeron_cb';
                 localStorage.removeItem(PERFORMANCE_PROFILE_KEY);
                 localStorage.setItem(CONTROL_MODE_KEY, mode);
+
+                if (wasCeleronProfile) {
+                    window.location.reload();
+                    return;
+                }
 
                 modeScreen.classList.add('hidden');
                 resolve(mode);
