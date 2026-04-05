@@ -22,36 +22,35 @@ const getChunkKey = (q, r) => {
     return `${cq},${cr}`;
 };
 
-function markChunkAndNeighborsDirty(q, r) {
-    const { cq, cr } = getChunkCoords(q, r);
-    const centerQ = cq * CHUNK_SIZE;
-    const centerR = cr * CHUNK_SIZE;
-    const localQ = q - centerQ;
-    const localR = r - centerR;
+const NEIGHBOR_OFFSETS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, -1],
+    [-1, 1]
+];
 
-    worldState.dirtyChunks.add(`${cq},${cr}`);
-
-    // Only propagate to neighbors when edits touch a chunk boundary.
-    if (localQ === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq + 1},${cr}`);
-    if (localQ === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq - 1},${cr}`);
-    if (localR === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq},${cr + 1}`);
-    if (localR === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq},${cr - 1}`);
-    if ((localQ + localR) === CHUNK_SIZE) worldState.dirtyChunks.add(`${cq + 1},${cr - 1}`);
-    if ((localQ + localR) === -CHUNK_SIZE) worldState.dirtyChunks.add(`${cq - 1},${cr + 1}`);
+function getNeighborChunkKeys(cq, cr) {
+    const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
+    if (chunk?.neighbors?.length) return chunk.neighbors;
+    return NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
 }
 
-function markDirtyCell(q, r, h) {
+function markChunkAndNeighborsDirty(q, r) {
     const { cq, cr } = getChunkCoords(q, r);
-    const chunkKey = `${cq},${cr}`;
-    const centerQ = cq * CHUNK_SIZE;
-    const centerR = cr * CHUNK_SIZE;
-    const localCellKey = `${q - centerQ},${r - centerR},${h}`;
 
-    if (!worldState.dirtyChunkCells.has(chunkKey)) {
-        worldState.dirtyChunkCells.set(chunkKey, new Set());
+    const selfChunkKey = `${cq},${cr}`;
+    worldState.dirtyChunks.add(selfChunkKey);
+    const selfChunk = worldState.chunkMeta.get(selfChunkKey);
+    if (selfChunk) selfChunk.dirty = true;
+
+    for (const neighborChunkKey of getNeighborChunkKeys(cq, cr)) {
+        worldState.dirtyChunks.add(neighborChunkKey);
+
+        const neighborChunk = worldState.chunkMeta.get(neighborChunkKey);
+        if (neighborChunk) neighborChunk.dirty = true;
     }
-
-    worldState.dirtyChunkCells.get(chunkKey).add(localCellKey);
 }
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true) {
@@ -69,7 +68,6 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
 
     if (trackDirty) {
         markChunkAndNeighborsDirty(q, r);
-        markDirtyCell(q, r, h);
     }
 
     if (isPermanent) {
@@ -93,7 +91,6 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
         if (trackDirty) {
             markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
-            markDirtyCell(mesh.userData.q, mesh.userData.r, mesh.userData.h);
         }
 
         if (mesh.userData.isPermanent && !preservePermanent) {

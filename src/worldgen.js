@@ -28,6 +28,26 @@ const BLOCK_INDEX = {
     ice: 9
 };
 
+const CHUNK_NEIGHBOR_OFFSETS = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, -1],
+    [-1, 1]
+];
+
+function ensureChunkMeta(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (worldState.chunkMeta.has(chunkKey)) return;
+
+    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+    worldState.chunkMeta.set(chunkKey, {
+        dirty: false,
+        neighbors
+    });
+}
+
 function getHeight(q, r) {
     const continent = CONTINENT_AMPLITUDE * worldState.simplex.noise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY) - CONTINENT_OFFSET;
     const terrain = (TERRAIN_MID_AMPLITUDE * worldState.simplex.noise2D(q * TERRAIN_MID_FREQUENCY, r * TERRAIN_MID_FREQUENCY))
@@ -132,11 +152,13 @@ function applyDirtyChunks() {
 
     for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
-        worldState.dirtyChunkCells.delete(chunkKey);
+        const chunk = worldState.chunkMeta.get(chunkKey);
+        if (chunk) chunk.dirty = false;
     }
 
     for (const chunkKey of worldState.dirtyChunks) {
-        worldState.dirtyChunkCells.delete(chunkKey);
+        const chunk = worldState.chunkMeta.get(chunkKey);
+        if (chunk) chunk.dirty = false;
     }
 
     worldState.dirtyChunks.clear();
@@ -161,6 +183,7 @@ function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.loadedChunks.has(chunkKey)) return;
+    ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
     worldState.chunkBlocks.set(chunkKey, new Set());
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
@@ -235,7 +258,9 @@ export function unloadChunk(cq, cr) {
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
-    worldState.dirtyChunkCells.delete(chunkKey);
+
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    if (chunk) chunk.dirty = false;
 }
 
 
