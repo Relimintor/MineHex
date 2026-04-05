@@ -376,7 +376,6 @@ function updateChunkMeshVisibility(chunkKey) {
 
     const gpuVisible = gpuVisibilityMask.get(chunkKey);
     const chunkVisible = (gpuVisible ?? chunkMeta.frustumVisible) && chunkMeta.occlusionVisible;
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
 
     if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = false;
     if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = false;
@@ -384,11 +383,6 @@ function updateChunkMeshVisibility(chunkKey) {
     if (chunkMeta.lodLevel === 2 && chunkVisible) {
         syncMegaHexTransform(chunkKey);
         if (chunkMeta.megaHexMesh) chunkMeta.megaHexMesh.visible = true;
-
-        for (const blockKey of chunkBlockKeys) {
-            const mesh = worldState.worldBlocks.get(blockKey);
-            if (mesh) mesh.visible = true;
-        }
         return;
     }
 
@@ -397,21 +391,11 @@ function updateChunkMeshVisibility(chunkKey) {
     if (chunkMeta.lodLevel === 1) {
         if (!chunkMeta.instancedLodGroup || chunkMeta.dirty) rebuildChunkInstancedLodMeshes(chunkKey);
         if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = chunkVisible;
-        for (const blockKey of chunkBlockKeys) {
-            const mesh = worldState.worldBlocks.get(blockKey);
-            if (mesh) mesh.visible = true;
-        }
         return;
     }
 
     if (!chunkMeta.detailedChunkGroup || chunkMeta.dirty) rebuildChunkDetailedMeshes(chunkKey);
     if (chunkMeta.detailedChunkGroup) chunkMeta.detailedChunkGroup.visible = chunkVisible;
-
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        mesh.visible = true;
-    }
 }
 
 function ensureOcclusionProxy(chunkKey) {

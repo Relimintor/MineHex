@@ -36,9 +36,12 @@ function chooseControlMode() {
 
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
-const CHUNK_STREAM_INTERVAL_FRAMES = 3;
-const CHUNK_VISIBILITY_INTERVAL_FRAMES = 2;
+const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = 2;
+const CHUNK_APPLY_INTERVAL_FRAMES = 2;
+const CHUNK_STREAM_INTERVAL_FRAMES = 4;
+const CHUNK_VISIBILITY_INTERVAL_FRAMES = 3;
 const coordinatesHud = document.getElementById('coordinates');
+let governorElapsedMs = 0;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -58,8 +61,12 @@ function animate(now = performance.now()) {
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
-        updateChunkBudgetGovernor(deltaTimeSeconds * 1000);
-        tickChunkApplyBudget();
+        governorElapsedMs += deltaTimeSeconds * 1000;
+        if ((worldState.frame % CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES) === 0) {
+            updateChunkBudgetGovernor(governorElapsedMs);
+            governorElapsedMs = 0;
+        }
+        if ((worldState.frame % CHUNK_APPLY_INTERVAL_FRAMES) === 0) tickChunkApplyBudget();
         if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
         if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
     }
