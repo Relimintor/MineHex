@@ -14,6 +14,7 @@ import {
     SWIM_UP_FORCE,
     VOID_RESPAWN_BUFFER_HEX
 } from './config.js';
+import { collectChunkRaycastCandidates } from './blocks.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
@@ -25,12 +26,16 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 const groundRaycaster = new THREE.Raycaster();
 const moveDir = new THREE.Vector3();
 const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const localGroundCandidates = [];
+const GROUND_RAYCAST_CHUNK_RADIUS = 1;
 
 function getGroundHit() {
-    if (worldState.collidableBlockList.length === 0) return null;
+    const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, GROUND_RAYCAST_CHUNK_RADIUS, localGroundCandidates, { collidableOnly: true });
+    if (localGroundCandidates.length === 0) return null;
     groundRaycaster.set(camera.position, DOWN);
     groundRaycaster.far = PLAYER_HEIGHT + 1;
-    const intersections = groundRaycaster.intersectObjects(worldState.collidableBlockList, false);
+    const intersections = groundRaycaster.intersectObjects(localGroundCandidates, false);
     return intersections[0] ?? null;
 }
 

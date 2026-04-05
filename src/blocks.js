@@ -443,3 +443,27 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 export function getBlockMaterial(typeIndex) {
     return blockMaterials[typeIndex] ?? blockMaterials[0];
 }
+
+export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, outCandidates, { collidableOnly = false } = {}) {
+    if (!Array.isArray(outCandidates)) return;
+    outCandidates.length = 0;
+
+    const { cq: centerChunkQ, cr: centerChunkR } = getChunkCoords(centerQ, centerR);
+    for (let dq = -chunkRadius; dq <= chunkRadius; dq++) {
+        for (let dr = -chunkRadius; dr <= chunkRadius; dr++) {
+            const ds = -dq - dr;
+            if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > chunkRadius) continue;
+
+            const chunkKey = `${centerChunkQ + dq},${centerChunkR + dr}`;
+            const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+            if (!chunkBlockKeys || chunkBlockKeys.size === 0) continue;
+
+            for (const blockKey of chunkBlockKeys) {
+                const mesh = worldState.worldBlocks.get(blockKey);
+                if (!mesh) continue;
+                if (collidableOnly && !isSolidTypeIndex(mesh.userData.typeIndex)) continue;
+                outCandidates.push(mesh);
+            }
+        }
+    }
+}
