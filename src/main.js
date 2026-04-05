@@ -4,7 +4,7 @@ import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING } from './config.js';
+import { ENABLE_OCCLUSION_CULLING, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
@@ -36,10 +36,10 @@ function chooseControlMode() {
 
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
-const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = 2;
-const CHUNK_APPLY_INTERVAL_FRAMES = 2;
-const CHUNK_STREAM_INTERVAL_FRAMES = 4;
-const CHUNK_VISIBILITY_INTERVAL_FRAMES = 3;
+const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
+const CHUNK_APPLY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 3 : 2;
+const CHUNK_STREAM_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 6 : 4;
+const CHUNK_VISIBILITY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 3;
 const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
 

@@ -2,11 +2,16 @@ export const HEX_RADIUS = 1;
 export const HEX_HEIGHT = HEX_RADIUS * 1.6;
 
 const runtimeNavigator = typeof navigator === 'undefined' ? null : navigator;
-const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(runtimeNavigator?.userAgent ?? '');
+const runtimeUserAgent = runtimeNavigator?.userAgent ?? '';
+const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(runtimeUserAgent);
+const isChromebook = /CrOS/i.test(runtimeUserAgent);
+const isCeleronUserAgent = /Celeron/i.test(runtimeUserAgent);
 const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
-const useLowEndChunkProfile = isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
+const useUltraLowChunkProfile = isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory);
+const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
 
+export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const ENABLE_ANTIALIAS = !useLowEndChunkProfile;
 export const ENABLE_SHADOW_MAP = false;
@@ -14,8 +19,8 @@ export const ENABLE_SHADOW_MAP = false;
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
 // - desktop/high-end: 16-ish footprint lowers draw-call pressure.
-export const CHUNK_SIZE = useLowEndChunkProfile ? 8 : 16;
-export const RENDER_DIST = useLowEndChunkProfile ? 3 : 2;
+export const CHUNK_SIZE = useUltraLowChunkProfile ? 6 : (useLowEndChunkProfile ? 8 : 16);
+export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 3 : 2);
 export const CHUNK_CREATION_BUDGET = 1;
 export const CHUNK_APPLY_BUDGET = 1;
 export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
