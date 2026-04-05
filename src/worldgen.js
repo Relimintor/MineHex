@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
-import { axialToWorld, worldToAxial } from './coords.js';
+import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
@@ -31,14 +31,7 @@ const BLOCK_INDEX = {
     ice: 9
 };
 
-const CHUNK_NEIGHBOR_OFFSETS = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-    [1, -1],
-    [-1, 1]
-];
+const CHUNK_NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
 
 const CHUNK_AABB_MARGIN = 0.08;
 
@@ -1023,10 +1016,7 @@ export function unloadChunk(cq, cr) {
 
 
 function axialChunkDistance(cqA, crA, cqB, crB) {
-    const dq = cqA - cqB;
-    const dr = crA - crB;
-    const ds = -dq - dr;
-    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
+    return axialDistance(cqA, crA, cqB, crB);
 }
 
 function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
