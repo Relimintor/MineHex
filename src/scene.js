@@ -1,3 +1,4 @@
+import { ENABLE_ANTIALIAS, ENABLE_SHADOW_MAP } from './config.js';
 const THREE = window.THREE;
 
 export const scene = new THREE.Scene();
@@ -9,9 +10,9 @@ export const occlusionScene = new THREE.Scene();
 
 export const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-export const renderer = new THREE.WebGLRenderer({ antialias: true });
+export const renderer = new THREE.WebGLRenderer({ antialias: ENABLE_ANTIALIAS });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = ENABLE_SHADOW_MAP;
 document.body.appendChild(renderer.domElement);
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);

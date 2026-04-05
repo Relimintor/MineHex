@@ -1,7 +1,6 @@
 const THREE = window.THREE;
 
 import {
-    BLOCK_TYPES,
     GRAVITY,
     HEX_HEIGHT,
     JUMP_FORCE,
@@ -19,19 +18,19 @@ import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { enforceSpawnOnSolidBlock, isCameraInLiquid } from './rules.js';
 import { inputState, worldState } from './state.js';
+import { isKeyDown } from './input.js';
 
 const GROUND_STICK_DISTANCE = 0.08;
 const DOWN = new THREE.Vector3(0, -1, 0);
 const groundRaycaster = new THREE.Raycaster();
+const moveDir = new THREE.Vector3();
+const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 function getGroundHit() {
+    if (worldState.collidableBlockList.length === 0) return null;
     groundRaycaster.set(camera.position, DOWN);
     groundRaycaster.far = PLAYER_HEIGHT + 1;
-    const collidableBlocks = Array.from(worldState.worldBlocks.values()).filter((mesh) => {
-        const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
-        return !blockType?.isLiquid;
-    });
-    const intersections = groundRaycaster.intersectObjects(collidableBlocks, false);
+    const intersections = groundRaycaster.intersectObjects(worldState.collidableBlockList, false);
     return intersections[0] ?? null;
 }
 
@@ -60,14 +59,18 @@ function resolveGroundCollision() {
 export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
-    const moveDir = new THREE.Vector3();
-    if (inputState.keys.KeyW) moveDir.z -= 1;
-    if (inputState.keys.KeyS) moveDir.z += 1;
-    if (inputState.keys.KeyA) moveDir.x -= 1;
-    if (inputState.keys.KeyD) moveDir.x += 1;
+
+    moveDir.set(0, 0, 0);
+    if (isKeyDown('KeyW')) moveDir.z -= 1;
+    if (isKeyDown('KeyS')) moveDir.z += 1;
+    if (isKeyDown('KeyA')) moveDir.x -= 1;
+    if (isKeyDown('KeyD')) moveDir.x += 1;
 
     const hasMovementInput = moveDir.lengthSq() > 0;
-    if (hasMovementInput) moveDir.applyEuler(new THREE.Euler(0, inputState.yaw, 0, 'YXZ')).normalize();
+    if (hasMovementInput) {
+        moveEuler.y = inputState.yaw;
+        moveDir.applyEuler(moveEuler).normalize();
+    }
 
     const moveSpeed = isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED;
     const targetVelocityX = hasMovementInput ? moveDir.x * moveSpeed : 0;
@@ -84,16 +87,16 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     }
 
     if (isInLiquid) {
-        if (inputState.keys.Space) {
+        if (isKeyDown('Space')) {
             inputState.velocity.y += SWIM_UP_FORCE * frameScale;
         }
-        if (inputState.keys.ShiftLeft || inputState.keys.ShiftRight) {
+        if (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight')) {
             inputState.velocity.y -= SWIM_UP_FORCE * frameScale;
         }
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (inputState.keys.Space && inputState.canJump) {
+    } else if (isKeyDown('Space') && inputState.canJump) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
     } else {
@@ -108,7 +111,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
 
     const worldEndY = (NETHROCK_LEVEL_HEX - VOID_RESPAWN_BUFFER_HEX) * HEX_HEIGHT;
     if (camera.position.y < worldEndY) {
-        const currentAxial = worldToAxial(camera.position);
+        const currentAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
         const didRespawnNearby = enforceSpawnOnSolidBlock(currentAxial.q, currentAxial.r);
         if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
