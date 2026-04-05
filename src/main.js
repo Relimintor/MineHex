@@ -3,7 +3,7 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { handlePhysics } from './physics.js';
-import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility } from './worldgen.js';
+import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial } from './coords.js';
@@ -49,6 +49,7 @@ function animate(now = performance.now()) {
 
     if (inputState.isLocked) {
         handlePhysics(deltaTimeSeconds);
+        updateChunkBudgetGovernor(deltaTimeSeconds * 1000);
         tickChunkApplyBudget();
         if ((worldState.frame % CHUNK_STREAM_INTERVAL_FRAMES) === 0) tickChunkStreaming();
         if ((worldState.frame % CHUNK_VISIBILITY_INTERVAL_FRAMES) === 0) tickChunkVisibility();
@@ -69,6 +70,7 @@ chooseControlMode().then((mode) => {
         registerDesktopInputHandlers();
     }
 
+    updateChunkBudgetGovernor(16.7);
     tickChunkStreaming();
     tickChunkApplyBudget();
     tickChunkVisibility();

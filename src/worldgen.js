@@ -82,6 +82,19 @@ const pendingChunkApplySet = new Set();
 const recycledChunkBlockSets = [];
 let chunkGenerationWorker = null;
 
+const FRAME_TIME_TARGET_MS = 16.7;
+const FRAME_TIME_SPIKE_MS = 24;
+const FRAME_TIME_STABLE_MS = 14;
+const FRAME_TIME_EMA_ALPHA = 0.14;
+const FRAME_TIME_RECOVERY_FRAMES = 18;
+const adaptiveChunkBudget = {
+    emaFrameTimeMs: FRAME_TIME_TARGET_MS,
+    stableFrames: 0,
+    createBudget: CHUNK_CREATION_BUDGET,
+    applyBudget: CHUNK_APPLY_BUDGET,
+    maxInFlight: MAX_WORLDGEN_IN_FLIGHT
+};
+
 
 const CHUNK_LOCAL_AXIALS = [];
 for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
@@ -1107,11 +1120,11 @@ function rebuildStreamingQueue(cq, cr) {
 }
 
 function flushChunkGenerationBudget() {
-    let budget = CHUNK_CREATION_BUDGET;
+    let budget = adaptiveChunkBudget.createBudget;
     while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
         const nextChunk = pendingChunkGenerationQueue.shift();
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
-        if (chunkGenerationWorker && pendingChunkGenerationInFlight.size < MAX_WORLDGEN_IN_FLIGHT) {
+        if (chunkGenerationWorker && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
             pendingChunkGenerationInFlight.add(nextChunk.chunkKey);
             chunkGenerationWorker.postMessage({
                 type: 'generate',
@@ -1146,7 +1159,7 @@ function flushChunkUnloadBudget() {
 }
 
 function flushChunkApplyBudget() {
-    let budget = CHUNK_APPLY_BUDGET;
+    let budget = adaptiveChunkBudget.applyBudget;
     while (budget > 0 && pendingChunkApplyQueue.length > 0) {
         const nextChunk = pendingChunkApplyQueue.shift();
         pendingChunkApplySet.delete(nextChunk.chunkKey);
@@ -1155,6 +1168,36 @@ function flushChunkApplyBudget() {
         applyGeneratedChunkColumns(nextChunk.cq, nextChunk.cr, nextChunk.columns);
         budget--;
     }
+}
+
+export function updateChunkBudgetGovernor(frameTimeMs) {
+    if (!Number.isFinite(frameTimeMs) || frameTimeMs <= 0) return;
+
+    const prevEma = adaptiveChunkBudget.emaFrameTimeMs;
+    adaptiveChunkBudget.emaFrameTimeMs = prevEma + ((frameTimeMs - prevEma) * FRAME_TIME_EMA_ALPHA);
+
+    if (frameTimeMs >= FRAME_TIME_SPIKE_MS || adaptiveChunkBudget.emaFrameTimeMs >= FRAME_TIME_SPIKE_MS) {
+        adaptiveChunkBudget.createBudget = Math.max(0, adaptiveChunkBudget.createBudget - 1);
+        adaptiveChunkBudget.applyBudget = Math.max(1, adaptiveChunkBudget.applyBudget - 1);
+        adaptiveChunkBudget.maxInFlight = Math.max(1, adaptiveChunkBudget.maxInFlight - 1);
+        adaptiveChunkBudget.stableFrames = 0;
+        return;
+    }
+
+    if (adaptiveChunkBudget.emaFrameTimeMs <= FRAME_TIME_STABLE_MS) {
+        adaptiveChunkBudget.stableFrames++;
+        if (adaptiveChunkBudget.stableFrames < FRAME_TIME_RECOVERY_FRAMES) return;
+        adaptiveChunkBudget.stableFrames = 0;
+
+        const maxCreateBudget = Math.max(1, CHUNK_CREATION_BUDGET * 2);
+        const maxApplyBudget = Math.max(1, CHUNK_APPLY_BUDGET * 2);
+        adaptiveChunkBudget.createBudget = Math.min(maxCreateBudget, adaptiveChunkBudget.createBudget + 1);
+        adaptiveChunkBudget.applyBudget = Math.min(maxApplyBudget, adaptiveChunkBudget.applyBudget + 1);
+        adaptiveChunkBudget.maxInFlight = Math.min(MAX_WORLDGEN_IN_FLIGHT, adaptiveChunkBudget.maxInFlight + 1);
+        return;
+    }
+
+    adaptiveChunkBudget.stableFrames = 0;
 }
 
 function getCurrentChunkCoords() {
