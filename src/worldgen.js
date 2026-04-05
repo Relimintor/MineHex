@@ -65,10 +65,7 @@ let chunkTick = 0;
 const STREAM_INTERVAL_TICKS = 3;
 const FRUSTUM_INTERVAL_TICKS = 2;
 const LOD_INTERVAL_TICKS = 2;
-const MIN_CHUNK_UNLOAD_BUDGET = 1;
-const MAX_CHUNK_UNLOAD_BUDGET = 3;
-const MIN_CHUNK_CREATE_BUDGET = 1;
-const MAX_CHUNK_CREATE_BUDGET = Math.max(CHUNK_CREATION_BUDGET, 4);
+const CHUNK_UNLOAD_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
@@ -875,7 +872,7 @@ function rebuildStreamingQueue(cq, cr) {
 }
 
 function flushChunkGenerationBudget() {
-    let budget = worldState.performance.dynamicChunkGenerationBudget ?? CHUNK_CREATION_BUDGET;
+    let budget = CHUNK_CREATION_BUDGET;
     while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
         const nextChunk = pendingChunkGenerationQueue.shift();
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
@@ -885,42 +882,13 @@ function flushChunkGenerationBudget() {
 }
 
 function flushChunkUnloadBudget() {
-    let budget = worldState.performance.dynamicChunkUnloadBudget ?? MIN_CHUNK_UNLOAD_BUDGET;
+    let budget = CHUNK_UNLOAD_BUDGET;
     while (budget > 0 && pendingChunkUnloadQueue.length > 0) {
         const nextChunk = pendingChunkUnloadQueue.shift();
         pendingChunkUnloadSet.delete(nextChunk.chunkKey);
         unloadChunk(nextChunk.cq, nextChunk.cr);
         budget--;
     }
-}
-
-export function updateDynamicChunkWorkload(frameTimeEmaMs) {
-    if (!Number.isFinite(frameTimeEmaMs)) return;
-
-    if (frameTimeEmaMs > 20) {
-        worldState.performance.dynamicChunkGenerationBudget = MIN_CHUNK_CREATE_BUDGET;
-        worldState.performance.dynamicChunkUnloadBudget = MIN_CHUNK_UNLOAD_BUDGET;
-        worldState.performance.dynamicOcclusionIntervalFrames = 4;
-        return;
-    }
-
-    if (frameTimeEmaMs > 16.7) {
-        worldState.performance.dynamicChunkGenerationBudget = Math.max(MIN_CHUNK_CREATE_BUDGET, CHUNK_CREATION_BUDGET);
-        worldState.performance.dynamicChunkUnloadBudget = MIN_CHUNK_UNLOAD_BUDGET;
-        worldState.performance.dynamicOcclusionIntervalFrames = 3;
-        return;
-    }
-
-    if (frameTimeEmaMs < 14) {
-        worldState.performance.dynamicChunkGenerationBudget = MAX_CHUNK_CREATE_BUDGET;
-        worldState.performance.dynamicChunkUnloadBudget = MAX_CHUNK_UNLOAD_BUDGET;
-        worldState.performance.dynamicOcclusionIntervalFrames = 2;
-        return;
-    }
-
-    worldState.performance.dynamicChunkGenerationBudget = Math.min(MAX_CHUNK_CREATE_BUDGET, CHUNK_CREATION_BUDGET + 1);
-    worldState.performance.dynamicChunkUnloadBudget = 2;
-    worldState.performance.dynamicOcclusionIntervalFrames = 2;
 }
 
 export function updateChunks() {
