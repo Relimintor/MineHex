@@ -33,6 +33,7 @@ export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
 export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
 export const ENABLE_WORLDGEN_WORKER = true;
 export const MAX_WORLDGEN_IN_FLIGHT = useUltraLowChunkProfile ? 1 : 2;
+export const FORCE_BATCHED_CHUNK_RENDERING = useUltraLowChunkProfile;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
