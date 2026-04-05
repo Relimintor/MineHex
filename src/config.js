@@ -13,23 +13,26 @@ const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
 const useUltraLowChunkProfile = isCeleronOverride || (isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
+const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
-export const ENABLE_ANTIALIAS = !useLowEndChunkProfile;
+export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
+export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = false;
+export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
 // - desktop/high-end: 16-ish footprint lowers draw-call pressure.
 export const CHUNK_SIZE = useUltraLowChunkProfile ? 4 : (useLowEndChunkProfile ? 8 : 16);
 export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 3 : 2);
-export const CHUNK_CREATION_BUDGET = 1;
-export const CHUNK_APPLY_BUDGET = 1;
+export const CHUNK_CREATION_BUDGET = useUltraLowChunkProfile ? 1 : 2;
+export const CHUNK_APPLY_BUDGET = useUltraLowChunkProfile ? 1 : 2;
 export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
 export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
 export const ENABLE_WORLDGEN_WORKER = true;
-export const MAX_WORLDGEN_IN_FLIGHT = 1;
+export const MAX_WORLDGEN_IN_FLIGHT = useUltraLowChunkProfile ? 1 : 2;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
