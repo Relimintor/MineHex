@@ -96,7 +96,30 @@ function recomputeChunkBounds(chunkKey) {
 
 function applyChunkFrustumCulling() {
     const viewProjection = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const frustum = new THREE.Frustum().setFromProjectionMatrix(viewProjection);
+    const elements = viewProjection.elements;
+
+    // Frustum plane model:
+    // p : n·x + d = 0
+    // inside test (sphere): n·x + d >= -radius
+    const planes = [
+        // left
+        new THREE.Vector4(elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]),
+        // right
+        new THREE.Vector4(elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]),
+        // bottom
+        new THREE.Vector4(elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]),
+        // top
+        new THREE.Vector4(elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]),
+        // near
+        new THREE.Vector4(elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]),
+        // far
+        new THREE.Vector4(elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14])
+    ];
+
+    for (const plane of planes) {
+        const invLength = 1 / Math.hypot(plane.x, plane.y, plane.z);
+        plane.multiplyScalar(invLength);
+    }
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -104,7 +127,16 @@ function applyChunkFrustumCulling() {
 
         if (!chunkMeta.bounds) chunkMeta.bounds = recomputeChunkBounds(chunkKey);
         const bounds = chunkMeta.bounds;
-        const isVisible = bounds ? frustum.intersectsSphere(new THREE.Sphere(bounds.center, bounds.radius)) : true;
+        let isVisible = true;
+        if (bounds) {
+            for (const plane of planes) {
+                const signedDistance = (plane.x * bounds.center.x) + (plane.y * bounds.center.y) + (plane.z * bounds.center.z) + plane.w;
+                if (signedDistance < -bounds.radius) {
+                    isVisible = false;
+                    break;
+                }
+            }
+        }
 
         if (chunkMeta.frustumVisible === isVisible) continue;
         chunkMeta.frustumVisible = isVisible;
