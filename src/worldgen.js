@@ -319,6 +319,31 @@ function applyChunkFrustumCulling() {
     setPlane(4, elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]);
     setPlane(5, elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]);
 
+    return true;
+}
+
+// Runtime cost remains linear in loaded chunks for the culling pass,
+// but only chunks passing visibility keep their meshes renderable.
+function applyChunkFrustumCulling() {
+    frustumViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const elements = frustumViewProjection.elements;
+
+    const setPlane = (index, nx, ny, nz, d) => {
+        const invLength = 1 / Math.hypot(nx, ny, nz);
+        const plane = frustumPlanes[index];
+        plane.nx = nx * invLength;
+        plane.ny = ny * invLength;
+        plane.nz = nz * invLength;
+        plane.d = d * invLength;
+    };
+
+    setPlane(0, elements[3] + elements[0], elements[7] + elements[4], elements[11] + elements[8], elements[15] + elements[12]);
+    setPlane(1, elements[3] - elements[0], elements[7] - elements[4], elements[11] - elements[8], elements[15] - elements[12]);
+    setPlane(2, elements[3] + elements[1], elements[7] + elements[5], elements[11] + elements[9], elements[15] + elements[13]);
+    setPlane(3, elements[3] - elements[1], elements[7] - elements[5], elements[11] - elements[9], elements[15] - elements[13]);
+    setPlane(4, elements[3] + elements[2], elements[7] + elements[6], elements[11] + elements[10], elements[15] + elements[14]);
+    setPlane(5, elements[3] - elements[2], elements[7] - elements[6], elements[11] - elements[10], elements[15] - elements[14]);
+
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta) continue;
@@ -356,6 +381,18 @@ export function runChunkOcclusionCulling() {
             chunkMeta.occlusionVisible = isVisible;
             updateChunkMeshVisibility(chunkKey);
         }
+
+        syncOcclusionProxyTransform(chunkKey);
+        const proxy = chunkMeta.occlusionProxy;
+        if (!proxy || chunkMeta.occlusionQuery) continue;
+
+        chunkMeta.occlusionQuery = gl.createQuery();
+        if (!chunkMeta.occlusionQuery) continue;
+
+        proxy.userData.activeQuery = chunkMeta.occlusionQuery;
+        proxy.userData.queryTarget = queryTarget;
+        proxy.visible = true;
+        occlusionProxiesToTest.push(proxy);
     }
 
     occlusionProxiesToTest.length = 0;
