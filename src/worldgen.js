@@ -2,7 +2,7 @@ import { CHUNK_SIZE, NETHROCK_LEVEL_HEX, RENDER_DIST } from './config.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
-import { addBlock, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
+import { addBlock, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -152,6 +152,7 @@ function applyDirtyChunks() {
 
     for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+        recomputeChunkGreedyFaceQuads(chunkKey);
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) chunk.dirty = false;
     }
@@ -246,6 +247,7 @@ export function generateChunk(cq, cr) {
     }
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
+    recomputeChunkGreedyFaceQuads(chunkKey);
 }
 
 export function unloadChunk(cq, cr) {
@@ -258,6 +260,7 @@ export function unloadChunk(cq, cr) {
     }
 
     worldState.chunkBlocks.delete(chunkKey);
+    worldState.chunkFaceQuads.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
 

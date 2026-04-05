@@ -169,6 +169,140 @@ function updateVisibilityAround(q, r, h) {
     }
 }
 
+function buildFaceCell(blockMesh, direction) {
+    const { q, r, h, typeIndex } = blockMesh.userData;
+    const [dx, dy, dz] = direction;
+
+    if (dx !== 0) {
+        return {
+            plane: 'x',
+            planeValue: q + (dx > 0 ? 1 : 0),
+            u: r,
+            v: h,
+            direction,
+            typeIndex
+        };
+    }
+
+    if (dy !== 0) {
+        return {
+            plane: 'y',
+            planeValue: r + (dy > 0 ? 1 : 0),
+            u: q,
+            v: h,
+            direction,
+            typeIndex
+        };
+    }
+
+    return {
+        plane: 'z',
+        planeValue: h + (dz > 0 ? 1 : 0),
+        u: q,
+        v: r,
+        direction,
+        typeIndex
+    };
+}
+
+function greedyMergeCells(cells, direction, plane, planeValue, typeIndex) {
+    const byU = new Map();
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+
+    for (const cell of cells) {
+        if (!byU.has(cell.u)) byU.set(cell.u, new Set());
+        byU.get(cell.u).add(cell.v);
+        minU = Math.min(minU, cell.u);
+        maxU = Math.max(maxU, cell.u);
+        minV = Math.min(minV, cell.v);
+        maxV = Math.max(maxV, cell.v);
+    }
+
+    const visited = new Set();
+    const quads = [];
+    const keyOf = (u, v) => `${u},${v}`;
+
+    for (let u = minU; u <= maxU; u++) {
+        for (let v = minV; v <= maxV; v++) {
+            if (!byU.get(u)?.has(v)) continue;
+            const startKey = keyOf(u, v);
+            if (visited.has(startKey)) continue;
+
+            let width = 1;
+            while (byU.get(u + width)?.has(v) && !visited.has(keyOf(u + width, v))) width++;
+
+            let height = 1;
+            let canExtend = true;
+            while (canExtend) {
+                const nextV = v + height;
+                for (let du = 0; du < width; du++) {
+                    const testU = u + du;
+                    if (!byU.get(testU)?.has(nextV) || visited.has(keyOf(testU, nextV))) {
+                        canExtend = false;
+                        break;
+                    }
+                }
+                if (canExtend) height++;
+            }
+
+            for (let du = 0; du < width; du++) {
+                for (let dv = 0; dv < height; dv++) {
+                    visited.add(keyOf(u + du, v + dv));
+                }
+            }
+
+            quads.push({
+                direction,
+                plane,
+                planeValue,
+                origin: [u, v],
+                span: [width, height],
+                typeIndex,
+                uvRepeat: [width, height]
+            });
+        }
+    }
+
+    return quads;
+}
+
+export function recomputeChunkGreedyFaceQuads(chunkKey) {
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        worldState.chunkFaceQuads.delete(chunkKey);
+        return;
+    }
+
+    const faceGroups = new Map();
+
+    for (const blockKey of chunkBlockKeys) {
+        const blockMesh = worldState.worldBlocks.get(blockKey);
+        if (!blockMesh || !Array.isArray(blockMesh.userData.visibleFaces)) continue;
+
+        for (const face of blockMesh.userData.visibleFaces) {
+            const cell = buildFaceCell(blockMesh, face.direction);
+            const groupKey = `${cell.plane}:${cell.planeValue}:${cell.direction.join(',')}:${cell.typeIndex}`;
+            if (!faceGroups.has(groupKey)) faceGroups.set(groupKey, []);
+            faceGroups.get(groupKey).push(cell);
+        }
+    }
+
+    const mergedQuads = [];
+    for (const [groupKey, cells] of faceGroups) {
+        if (cells.length === 0) continue;
+        const [plane, planeValueRaw] = groupKey.split(':');
+        const { direction, typeIndex } = cells[0];
+        const planeValue = Number(planeValueRaw);
+        const quads = greedyMergeCells(cells, direction, plane, planeValue, typeIndex);
+        mergedQuads.push(...quads);
+    }
+
+    worldState.chunkFaceQuads.set(chunkKey, mergedQuads);
+}
+
 export function refreshBlockVisibilityForKeys(blockKeys) {
     const visited = new Set();
 
