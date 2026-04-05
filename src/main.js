@@ -38,8 +38,16 @@ function chooseControlMode() {
                 }
 
                 if (mode === 'celeron_cb') {
+                    const isAlreadyCeleron = savedProfile === 'celeron_cb' && savedMode === 'celeron_cb';
                     localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
                     localStorage.setItem(CONTROL_MODE_KEY, 'celeron_cb');
+
+                    if (isAlreadyCeleron) {
+                        modeScreen.classList.add('hidden');
+                        resolve('celeron_cb');
+                        return;
+                    }
+
                     window.location.reload();
                     return;
                 }
