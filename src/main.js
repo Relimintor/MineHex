@@ -11,6 +11,9 @@ import { worldState } from './state.js';
 
 camera.position.set(0, 10, 0);
 
+const PERFORMANCE_PROFILE_KEY = 'minehexPerformanceProfile';
+const CONTROL_MODE_KEY = 'minehexControlMode';
+
 function chooseControlMode() {
     const modeScreen = document.getElementById('mode-select');
     if (!modeScreen) return Promise.resolve('pc');
@@ -26,6 +29,16 @@ function chooseControlMode() {
                     if (status) status.textContent = 'Console controls are coming next.';
                     return;
                 }
+
+                if (mode === 'celeron_cb') {
+                    localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
+                    localStorage.setItem(CONTROL_MODE_KEY, 'pc');
+                    window.location.reload();
+                    return;
+                }
+
+                localStorage.removeItem(PERFORMANCE_PROFILE_KEY);
+                localStorage.setItem(CONTROL_MODE_KEY, mode);
 
                 modeScreen.classList.add('hidden');
                 resolve(mode);

@@ -2,13 +2,16 @@ export const HEX_RADIUS = 1;
 export const HEX_HEIGHT = HEX_RADIUS * 1.6;
 
 const runtimeNavigator = typeof navigator === 'undefined' ? null : navigator;
+const runtimeStorage = typeof localStorage === 'undefined' ? null : localStorage;
 const runtimeUserAgent = runtimeNavigator?.userAgent ?? '';
 const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(runtimeUserAgent);
 const isChromebook = /CrOS/i.test(runtimeUserAgent);
 const isCeleronUserAgent = /Celeron/i.test(runtimeUserAgent);
+const performanceProfileOverride = runtimeStorage?.getItem('minehexPerformanceProfile');
+const isCeleronOverride = performanceProfileOverride === 'celeron_cb';
 const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
-const useUltraLowChunkProfile = isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory);
+const useUltraLowChunkProfile = isCeleronOverride || (isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
 
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
