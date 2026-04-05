@@ -84,7 +84,7 @@ let chunkGenerationWorker = null;
 
 const FRAME_TIME_TARGET_MS = 16.7;
 const FRAME_TIME_SPIKE_MS = 24;
-const FRAME_TIME_STABLE_MS = 14;
+const FRAME_TIME_STABLE_MS = 18;
 const FRAME_TIME_EMA_ALPHA = 0.14;
 const FRAME_TIME_RECOVERY_FRAMES = 18;
 const adaptiveChunkBudget = {
@@ -393,7 +393,7 @@ function updateChunkMeshVisibility(chunkKey) {
 
         for (const blockKey of chunkBlockKeys) {
             const mesh = worldState.worldBlocks.get(blockKey);
-            if (mesh) mesh.visible = false;
+            if (mesh) mesh.visible = true;
         }
         return;
     }
@@ -405,7 +405,7 @@ function updateChunkMeshVisibility(chunkKey) {
         if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = chunkVisible;
         for (const blockKey of chunkBlockKeys) {
             const mesh = worldState.worldBlocks.get(blockKey);
-            if (mesh) mesh.visible = false;
+            if (mesh) mesh.visible = true;
         }
         return;
     }
@@ -416,9 +416,7 @@ function updateChunkMeshVisibility(chunkKey) {
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
         if (!mesh) continue;
-
-        const hasVisibleFaces = !Array.isArray(mesh.userData.visibleFaces) || mesh.userData.visibleFaces.length > 0;
-        mesh.visible = chunkVisible && hasVisibleFaces;
+        mesh.visible = true;
     }
 }
 
@@ -1195,7 +1193,7 @@ export function updateChunkBudgetGovernor(frameTimeMs) {
     adaptiveChunkBudget.emaFrameTimeMs = prevEma + ((frameTimeMs - prevEma) * FRAME_TIME_EMA_ALPHA);
 
     if (frameTimeMs >= FRAME_TIME_SPIKE_MS || adaptiveChunkBudget.emaFrameTimeMs >= FRAME_TIME_SPIKE_MS) {
-        adaptiveChunkBudget.createBudget = Math.max(0, adaptiveChunkBudget.createBudget - 1);
+        adaptiveChunkBudget.createBudget = Math.max(1, adaptiveChunkBudget.createBudget - 1);
         adaptiveChunkBudget.applyBudget = Math.max(1, adaptiveChunkBudget.applyBudget - 1);
         adaptiveChunkBudget.maxInFlight = Math.max(1, adaptiveChunkBudget.maxInFlight - 1);
         adaptiveChunkBudget.stableFrames = 0;
