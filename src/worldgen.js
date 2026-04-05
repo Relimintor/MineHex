@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, HEX_HEIGHT, HEX_RADIUS, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
@@ -60,11 +60,13 @@ const megaHexMaterial = new THREE.MeshLambertMaterial({ color: 0x6d8f5f });
 
 const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
+const pendingChunkGenerationInFlight = new Set();
 let lastStreamChunkKey = null;
 let chunkTick = 0;
 const STREAM_INTERVAL_TICKS = 3;
-const FRUSTUM_INTERVAL_TICKS = 1;
+const FRUSTUM_INTERVAL_TICKS = 2;
 const LOD_INTERVAL_TICKS = 2;
+const CHUNK_UNLOAD_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
@@ -74,6 +76,9 @@ const hizCenter = new THREE.Vector3();
 const HIZ_SECTORS_X = 32;
 const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
+const pendingChunkUnloadQueue = [];
+const pendingChunkUnloadSet = new Set();
+let chunkGenerationWorker = null;
 
 
 const CHUNK_LOCAL_AXIALS = [];
@@ -698,6 +703,96 @@ function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
     addGeneratedBlock(chunkBlockKeys, q, r - 1, groundHeight + 2, BLOCK_INDEX.oakLeaves);
 }
 
+function isChunkWithinRenderDistance(cq, cr) {
+    const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const currentCq = Math.round(current.q / CHUNK_SIZE);
+    const currentCr = Math.round(current.r / CHUNK_SIZE);
+    return axialChunkDistance(cq, cr, currentCq, currentCr) <= RENDER_DIST;
+}
+
+function initChunkGenerationWorker() {
+    if (!ENABLE_WORLDGEN_WORKER || chunkGenerationWorker) return;
+    if (typeof Worker === 'undefined') return;
+
+    try {
+        chunkGenerationWorker = new Worker(new URL('./workers/chunkWorker.js', import.meta.url), { type: 'module' });
+    } catch (error) {
+        console.warn('Falling back to main-thread chunk generation.', error);
+        chunkGenerationWorker = null;
+        return;
+    }
+
+    chunkGenerationWorker.addEventListener('message', (event) => {
+        const { chunkKey, cq, cr, columns } = event.data ?? {};
+        if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
+        pendingChunkGenerationInFlight.delete(chunkKey);
+        if (!isChunkWithinRenderDistance(cq, cr)) return;
+        if (worldState.loadedChunks.has(chunkKey)) return;
+        applyGeneratedChunkColumns(cq, cr, columns);
+    });
+
+    chunkGenerationWorker.addEventListener('error', (error) => {
+        console.warn('Chunk generation worker crashed, using main-thread generation fallback.', error);
+        chunkGenerationWorker?.terminate();
+        chunkGenerationWorker = null;
+        pendingChunkGenerationInFlight.clear();
+    });
+}
+
+function applyGeneratedChunkColumns(cq, cr, columns) {
+    const chunkKey = `${cq},${cr}`;
+    ensureChunkMeta(cq, cr);
+    worldState.loadedChunks.add(chunkKey);
+    worldState.chunkBlocks.set(chunkKey, new Set());
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+
+    for (const column of columns) {
+        const { q, r, height, topBlockType, addSurfaceFluid, surfaceFluidType, addTree } = column;
+
+        for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
+            const blockKey = `${q},${r},${h}`;
+            let blockType = BLOCK_INDEX.stone;
+            if (h === height) blockType = topBlockType;
+            else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
+
+            if (!worldState.permanentBlocks.has(blockKey)) addBlock(q, r, h, blockType, false, false, false);
+            if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
+        }
+
+        const nethrockKey = `${q},${r},${NETHROCK_LEVEL_HEX}`;
+        if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
+        if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+
+        if (addSurfaceFluid) {
+            const waterKey = `${q},${r},${SEA_LEVEL}`;
+            if (!worldState.permanentBlocks.has(waterKey)) addBlock(q, r, SEA_LEVEL, surfaceFluidType, false, false, false);
+            if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
+        }
+
+        if (addTree) maybeAddTree(chunkBlockKeys, q, r, height, addTree === 'snow' ? 'snowy_forest' : 'forest');
+    }
+
+    const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
+    for (const key of permanentChunkKeys) {
+        const permanentBlock = worldState.permanentBlocks.get(key);
+        if (!permanentBlock) continue;
+
+        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true, false, false);
+        chunkBlockKeys.add(key);
+    }
+
+    refreshBlockVisibilityForKeys(chunkBlockKeys);
+    recomputeChunkGreedyFaceQuads(chunkKey);
+    rebuildChunkInstancedLodMeshes(chunkKey);
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    if (chunk) {
+        chunk.bounds = recomputeChunkBounds(chunkKey);
+        chunk.occlusionVisible = true;
+        if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
+    }
+    updateChunkMeshVisibility(chunkKey);
+}
+
 export function generateChunk(cq, cr) {
     const chunkKey = `${cq},${cr}`;
     if (worldState.loadedChunks.has(chunkKey)) return;
@@ -751,6 +846,7 @@ export function generateChunk(cq, cr) {
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
+        }
     }
 
     const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
@@ -808,9 +904,16 @@ function axialChunkDistance(cqA, crA, cqB, crB) {
 
 function enqueueChunkGeneration(cq, cr) {
     const chunkKey = `${cq},${cr}`;
-    if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey)) return;
+    if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey) || pendingChunkGenerationInFlight.has(chunkKey)) return;
     pendingChunkGenerationSet.add(chunkKey);
     pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
+}
+
+function enqueueChunkUnload(cq, cr) {
+    const chunkKey = `${cq},${cr}`;
+    if (!worldState.loadedChunks.has(chunkKey) || pendingChunkUnloadSet.has(chunkKey)) return;
+    pendingChunkUnloadSet.add(chunkKey);
+    pendingChunkUnloadQueue.push({ cq, cr, chunkKey });
 }
 
 function rebuildStreamingQueue(cq, cr) {
@@ -834,7 +937,14 @@ function rebuildStreamingQueue(cq, cr) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
         const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
-        unloadChunk(chunkQ, chunkR);
+        enqueueChunkUnload(chunkQ, chunkR);
+    }
+
+    for (let i = pendingChunkUnloadQueue.length - 1; i >= 0; i--) {
+        const queued = pendingChunkUnloadQueue[i];
+        if (!visibleChunkKeys.has(queued.chunkKey)) continue;
+        pendingChunkUnloadSet.delete(queued.chunkKey);
+        pendingChunkUnloadQueue.splice(i, 1);
     }
 
     for (let i = pendingChunkGenerationQueue.length - 1; i >= 0; i--) {
@@ -842,6 +952,11 @@ function rebuildStreamingQueue(cq, cr) {
         if (visibleChunkKeys.has(queued.chunkKey)) continue;
         pendingChunkGenerationSet.delete(queued.chunkKey);
         pendingChunkGenerationQueue.splice(i, 1);
+    }
+
+    for (const chunkKey of Array.from(pendingChunkGenerationInFlight)) {
+        if (visibleChunkKeys.has(chunkKey)) continue;
+        pendingChunkGenerationInFlight.delete(chunkKey);
     }
 
     const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
@@ -858,12 +973,42 @@ function flushChunkGenerationBudget() {
     while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
         const nextChunk = pendingChunkGenerationQueue.shift();
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
+        if (chunkGenerationWorker && pendingChunkGenerationInFlight.size < MAX_WORLDGEN_IN_FLIGHT) {
+            pendingChunkGenerationInFlight.add(nextChunk.chunkKey);
+            chunkGenerationWorker.postMessage({
+                type: 'generate',
+                cq: nextChunk.cq,
+                cr: nextChunk.cr,
+                chunkSize: CHUNK_SIZE,
+                nethrockLevel: NETHROCK_LEVEL_HEX,
+                seaLevel: SEA_LEVEL
+            });
+            budget--;
+            continue;
+        }
+
+        if (chunkGenerationWorker) {
+            pendingChunkGenerationQueue.unshift(nextChunk);
+            break;
+        }
+
         generateChunk(nextChunk.cq, nextChunk.cr);
         budget--;
     }
 }
 
+function flushChunkUnloadBudget() {
+    let budget = CHUNK_UNLOAD_BUDGET;
+    while (budget > 0 && pendingChunkUnloadQueue.length > 0) {
+        const nextChunk = pendingChunkUnloadQueue.shift();
+        pendingChunkUnloadSet.delete(nextChunk.chunkKey);
+        unloadChunk(nextChunk.cq, nextChunk.cr);
+        budget--;
+    }
+}
+
 export function updateChunks() {
+    initChunkGenerationWorker();
     chunkTick++;
     applyDirtyChunks();
 
@@ -878,6 +1023,7 @@ export function updateChunks() {
         lastStreamChunkKey = currentChunkKey;
     }
 
+    flushChunkUnloadBudget();
     flushChunkGenerationBudget();
 
     if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {

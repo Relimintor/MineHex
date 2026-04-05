@@ -16,9 +16,11 @@ export const ENABLE_SHADOW_MAP = false;
 // - desktop/high-end: 16-ish footprint lowers draw-call pressure.
 export const CHUNK_SIZE = useLowEndChunkProfile ? 8 : 16;
 export const RENDER_DIST = useLowEndChunkProfile ? 3 : 2;
-export const CHUNK_CREATION_BUDGET = useLowEndChunkProfile ? 1 : 3;
+export const CHUNK_CREATION_BUDGET = 1;
 export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
 export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
+export const ENABLE_WORLDGEN_WORKER = true;
+export const MAX_WORLDGEN_IN_FLIGHT = useLowEndChunkProfile ? 1 : 2;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
