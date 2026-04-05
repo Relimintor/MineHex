@@ -73,6 +73,8 @@ const gpuVisibilityMask = new Map();
 const chunkInstanceDummy = new THREE.Object3D();
 const projectedChunkCenter = new THREE.Vector3();
 const hizCenter = new THREE.Vector3();
+const cameraForwardXZ = new THREE.Vector3();
+const chunkPriorityVector = new THREE.Vector3();
 const HIZ_SECTORS_X = 32;
 const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
@@ -80,6 +82,7 @@ const pendingChunkUnloadQueue = [];
 const pendingChunkUnloadSet = new Set();
 const pendingChunkApplyQueue = [];
 const pendingChunkApplySet = new Set();
+const recycledChunkBlockSets = [];
 let chunkGenerationWorker = null;
 
 
@@ -210,7 +213,10 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     disposeInstancedLodMeshes(chunkMeta);
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) return;
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
 
     const perTypeInstances = new Map();
     for (const blockKey of chunkBlockKeys) {
@@ -225,7 +231,10 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
         perTypeInstances.get(typeIndex).push(mesh);
     }
 
-    if (perTypeInstances.size === 0) return;
+    if (perTypeInstances.size === 0) {
+        chunkMeta.dirty = false;
+        return;
+    }
 
     const group = new THREE.Group();
     group.visible = false;
@@ -252,6 +261,7 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     scene.add(group);
     chunkMeta.instancedLodGroup = group;
     chunkMeta.instancedLodMeshes = createdMeshes;
+    chunkMeta.dirty = false;
 }
 
 function syncMegaHexTransform(chunkKey) {
@@ -749,8 +759,9 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
     const chunkKey = `${cq},${cr}`;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
-    worldState.chunkBlocks.set(chunkKey, new Set());
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
+    chunkBlockKeys.clear();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
 
     for (const column of columns) {
         const { q, r, height, topBlockType, addSurfaceFluid, surfaceFluidType, addTree } = column;
@@ -789,9 +800,9 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
-    rebuildChunkInstancedLodMeshes(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
     if (chunk) {
+        chunk.dirty = true;
         chunk.bounds = recomputeChunkBounds(chunkKey);
         chunk.occlusionVisible = true;
         if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
@@ -804,8 +815,9 @@ export function generateChunk(cq, cr) {
     if (worldState.loadedChunks.has(chunkKey)) return;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
-    worldState.chunkBlocks.set(chunkKey, new Set());
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
+    chunkBlockKeys.clear();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
 
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
@@ -866,9 +878,9 @@ export function generateChunk(cq, cr) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
-    rebuildChunkInstancedLodMeshes(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
     if (chunk) {
+        chunk.dirty = true;
         chunk.bounds = recomputeChunkBounds(chunkKey);
         chunk.occlusionVisible = true;
         if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
@@ -886,6 +898,8 @@ export function unloadChunk(cq, cr) {
     }
 
     worldState.chunkBlocks.delete(chunkKey);
+    if (chunkBlockKeys.size > 0) chunkBlockKeys.clear();
+    if (recycledChunkBlockSets.length < 128) recycledChunkBlockSets.push(chunkBlockKeys);
     worldState.chunkFaceQuads.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
@@ -906,6 +920,21 @@ function axialChunkDistance(cqA, crA, cqB, crB) {
     const dr = crA - crB;
     const ds = -dq - dr;
     return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
+}
+
+function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
+    const distance = axialChunkDistance(chunkQ, chunkR, cameraChunkQ, cameraChunkR);
+    camera.getWorldDirection(cameraForwardXZ);
+    cameraForwardXZ.y = 0;
+    if (cameraForwardXZ.lengthSq() > 0.00001) cameraForwardXZ.normalize();
+
+    const chunkWorld = axialToWorld(chunkQ * CHUNK_SIZE, chunkR * CHUNK_SIZE, 0);
+    chunkPriorityVector.set(chunkWorld.x - camera.position.x, 0, chunkWorld.z - camera.position.z);
+    if (chunkPriorityVector.lengthSq() > 0.00001) chunkPriorityVector.normalize();
+
+    const forwardDot = cameraForwardXZ.dot(chunkPriorityVector);
+    // Lower score is higher priority. Front-facing chunks (dot -> 1) get a stronger boost.
+    return distance - (forwardDot * 0.35);
 }
 
 function enqueueChunkGeneration(cq, cr) {
@@ -975,18 +1004,28 @@ function rebuildStreamingQueue(cq, cr) {
     const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
     for (const queued of pendingChunkGenerationQueue) {
         const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
-        distanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+        const bucket = distanceBuckets[Math.min(RENDER_DIST, distance)];
+        queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
+        bucket.push(queued);
     }
     pendingChunkGenerationQueue.length = 0;
-    for (const bucket of distanceBuckets) pendingChunkGenerationQueue.push(...bucket);
+    for (const bucket of distanceBuckets) {
+        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
+        pendingChunkGenerationQueue.push(...bucket);
+    }
 
     const applyDistanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
     for (const queued of pendingChunkApplyQueue) {
         const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
-        applyDistanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+        const bucket = applyDistanceBuckets[Math.min(RENDER_DIST, distance)];
+        queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
+        bucket.push(queued);
     }
     pendingChunkApplyQueue.length = 0;
-    for (const bucket of applyDistanceBuckets) pendingChunkApplyQueue.push(...bucket);
+    for (const bucket of applyDistanceBuckets) {
+        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
+        pendingChunkApplyQueue.push(...bucket);
+    }
 }
 
 function flushChunkGenerationBudget() {
