@@ -4,7 +4,7 @@ import { CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION
 import { axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
-import { addBlock, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
+import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -61,6 +61,28 @@ const megaHexMaterial = new THREE.MeshLambertMaterial({ color: 0x6d8f5f });
 const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
 let lastStreamChunkKey = null;
+let chunkTick = 0;
+const STREAM_INTERVAL_TICKS = 3;
+const FRUSTUM_INTERVAL_TICKS = 1;
+const LOD_INTERVAL_TICKS = 2;
+
+const reusableOcclusionQueries = [];
+const gpuVisibilityMask = new Map();
+const chunkInstanceDummy = new THREE.Object3D();
+const projectedChunkCenter = new THREE.Vector3();
+const hizCenter = new THREE.Vector3();
+const HIZ_SECTORS_X = 32;
+const HIZ_SECTORS_Y = 18;
+const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
+
+
+const CHUNK_LOCAL_AXIALS = [];
+for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
+    for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
+        if (Math.abs(q + r) > CHUNK_SIZE) continue;
+        CHUNK_LOCAL_AXIALS.push([q, r]);
+    }
+}
 
 const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
     const angle = (Math.PI / 3) * i + (Math.PI / 6);
@@ -76,6 +98,8 @@ function ensureChunkMeta(cq, cr) {
 
     const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
     worldState.chunkMeta.set(chunkKey, {
+        cq,
+        cr,
         dirty: false,
         neighbors,
         frustumVisible: true,
@@ -84,6 +108,8 @@ function ensureChunkMeta(cq, cr) {
         occlusionProxy: null,
         lodLevel: 0,
         megaHexMesh: null,
+        instancedLodGroup: null,
+        instancedLodMeshes: [],
         bounds: null
     });
 }
@@ -92,7 +118,9 @@ function recomputeChunkBounds(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
 
-    const [cq, cr] = chunkKey.split(',').map(Number);
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    const cq = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
+    const cr = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
 
@@ -101,10 +129,7 @@ function recomputeChunkBounds(chunkKey) {
     let minZ = Infinity;
     let maxZ = -Infinity;
 
-    for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
-        for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
-            if (Math.abs(q + r) > CHUNK_SIZE) continue;
-
+    for (const [q, r] of CHUNK_LOCAL_AXIALS) {
             const worldPos = axialToWorld(centerQ + q, centerR + r, 0);
             for (const offset of HEX_CORNER_OFFSETS_XZ) {
                 const cornerX = worldPos.x + offset.x;
@@ -114,7 +139,6 @@ function recomputeChunkBounds(chunkKey) {
                 minZ = Math.min(minZ, cornerZ);
                 maxZ = Math.max(maxZ, cornerZ);
             }
-        }
     }
 
     let minH = Infinity;
@@ -164,6 +188,65 @@ function ensureMegaHexMesh(chunkKey) {
     return mesh;
 }
 
+function disposeInstancedLodMeshes(chunkMeta) {
+    if (!chunkMeta?.instancedLodGroup) return;
+    scene.remove(chunkMeta.instancedLodGroup);
+    for (const mesh of chunkMeta.instancedLodMeshes ?? []) mesh.geometry.dispose();
+    chunkMeta.instancedLodMeshes = [];
+    chunkMeta.instancedLodGroup = null;
+}
+
+function rebuildChunkInstancedLodMeshes(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (!chunkMeta) return;
+
+    disposeInstancedLodMeshes(chunkMeta);
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    if (!chunkBlockKeys || chunkBlockKeys.size === 0) return;
+
+    const perTypeInstances = new Map();
+    for (const blockKey of chunkBlockKeys) {
+        const mesh = worldState.worldBlocks.get(blockKey);
+        if (!mesh) continue;
+        const visibleFaces = mesh.userData.visibleFaces;
+        const hasVisibleFaces = !Array.isArray(visibleFaces) || visibleFaces.length > 0;
+        if (!hasVisibleFaces || !hasTopFace(mesh)) continue;
+
+        const typeIndex = mesh.userData.typeIndex ?? 0;
+        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
+        perTypeInstances.get(typeIndex).push(mesh);
+    }
+
+    if (perTypeInstances.size === 0) return;
+
+    const group = new THREE.Group();
+    group.visible = false;
+    const createdMeshes = [];
+
+    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
+        const geometry = new THREE.InstancedBufferGeometry().copy(sourceMeshes[0].geometry);
+        const instanced = new THREE.InstancedMesh(geometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+
+        for (let i = 0; i < sourceMeshes.length; i++) {
+            const sourceMesh = sourceMeshes[i];
+            chunkInstanceDummy.position.copy(sourceMesh.position);
+            chunkInstanceDummy.rotation.copy(sourceMesh.rotation);
+            chunkInstanceDummy.scale.copy(sourceMesh.scale);
+            chunkInstanceDummy.updateMatrix();
+            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+        }
+
+        instanced.instanceMatrix.needsUpdate = true;
+        group.add(instanced);
+        createdMeshes.push(instanced);
+    }
+
+    scene.add(group);
+    chunkMeta.instancedLodGroup = group;
+    chunkMeta.instancedLodMeshes = createdMeshes;
+}
+
 function syncMegaHexTransform(chunkKey) {
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta?.bounds) return;
@@ -202,8 +285,11 @@ function updateChunkMeshVisibility(chunkKey) {
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta) return;
 
-    const chunkVisible = chunkMeta.frustumVisible && chunkMeta.occlusionVisible;
+    const gpuVisible = gpuVisibilityMask.get(chunkKey);
+    const chunkVisible = (gpuVisible ?? chunkMeta.frustumVisible) && chunkMeta.occlusionVisible;
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+
+    if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = false;
 
     if (chunkMeta.lodLevel === 2 && chunkVisible) {
         syncMegaHexTransform(chunkKey);
@@ -218,16 +304,21 @@ function updateChunkMeshVisibility(chunkKey) {
 
     if (chunkMeta.megaHexMesh) chunkMeta.megaHexMesh.visible = false;
 
+    if (chunkMeta.lodLevel === 1) {
+        if (!chunkMeta.instancedLodGroup || chunkMeta.dirty) rebuildChunkInstancedLodMeshes(chunkKey);
+        if (chunkMeta.instancedLodGroup) chunkMeta.instancedLodGroup.visible = chunkVisible;
+        for (const blockKey of chunkBlockKeys) {
+            const mesh = worldState.worldBlocks.get(blockKey);
+            if (mesh) mesh.visible = false;
+        }
+        return;
+    }
+
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
         if (!mesh) continue;
 
         const hasVisibleFaces = !Array.isArray(mesh.userData.visibleFaces) || mesh.userData.visibleFaces.length > 0;
-        if (chunkMeta.lodLevel === 1) {
-            mesh.visible = chunkVisible && hasVisibleFaces && hasTopFace(mesh);
-            continue;
-        }
-
         mesh.visible = chunkVisible && hasVisibleFaces;
     }
 }
@@ -282,6 +373,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     if (!chunkMeta) return;
 
     if (!ENABLE_OCCLUSION_CULLING) {
+        disposeInstancedLodMeshes(chunkMeta);
         if (chunkMeta.megaHexMesh) {
             scene.remove(chunkMeta.megaHexMesh);
             chunkMeta.megaHexMesh.geometry.dispose();
@@ -291,8 +383,7 @@ function disposeChunkOcclusionState(chunkMeta) {
     }
 
     if (chunkMeta.occlusionQuery) {
-        const gl = renderer.getContext();
-        gl.deleteQuery(chunkMeta.occlusionQuery);
+        reusableOcclusionQueries.push(chunkMeta.occlusionQuery);
         chunkMeta.occlusionQuery = null;
     }
 
@@ -301,6 +392,8 @@ function disposeChunkOcclusionState(chunkMeta) {
         chunkMeta.occlusionProxy.geometry.dispose();
         chunkMeta.occlusionProxy = null;
     }
+
+    disposeInstancedLodMeshes(chunkMeta);
 
     if (chunkMeta.megaHexMesh) {
         scene.remove(chunkMeta.megaHexMesh);
@@ -354,11 +447,35 @@ function applyChunkFrustumCulling() {
         const bounds = chunkMeta.bounds;
 
         const isVisible = bounds ? isChunkVisible(bounds, frustumPlanes) : true;
+        gpuVisibilityMask.set(chunkKey, isVisible);
 
         if (chunkMeta.frustumVisible === isVisible) continue;
         chunkMeta.frustumVisible = isVisible;
         updateChunkMeshVisibility(chunkKey);
     }
+}
+
+function projectChunkToHiZSector(bounds) {
+    bounds.getCenter(projectedChunkCenter);
+    hizCenter.copy(projectedChunkCenter).project(camera);
+    if (hizCenter.z < -1 || hizCenter.z > 1) return null;
+
+    const sx = Math.max(0, Math.min(HIZ_SECTORS_X - 1, Math.floor(((hizCenter.x + 1) * 0.5) * HIZ_SECTORS_X)));
+    const sy = Math.max(0, Math.min(HIZ_SECTORS_Y - 1, Math.floor((1 - ((hizCenter.y + 1) * 0.5)) * HIZ_SECTORS_Y)));
+    const depth = (hizCenter.z + 1) * 0.5;
+    return { sector: (sy * HIZ_SECTORS_X) + sx, depth };
+}
+
+function passHierarchicalZOcclusion(chunkMeta) {
+    if (!chunkMeta?.bounds) return true;
+    const projected = projectChunkToHiZSector(chunkMeta.bounds);
+    if (!projected) return true;
+
+    const nearestDepth = hiZDepthSectors[projected.sector];
+    if (projected.depth > nearestDepth + 0.02) return false;
+
+    hiZDepthSectors[projected.sector] = Math.min(nearestDepth, projected.depth);
+    return true;
 }
 
 export function runChunkOcclusionCulling() {
@@ -369,6 +486,7 @@ export function runChunkOcclusionCulling() {
 
     const queryTarget = gl[OCCLUSION_QUERY_TARGET] ?? gl.ANY_SAMPLES_PASSED;
     if (!queryTarget) return;
+    hiZDepthSectors.fill(1);
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -378,19 +496,26 @@ export function runChunkOcclusionCulling() {
         if (!available) continue;
 
         const isVisible = !!gl.getQueryParameter(chunkMeta.occlusionQuery, gl.QUERY_RESULT);
-        gl.deleteQuery(chunkMeta.occlusionQuery);
+        reusableOcclusionQueries.push(chunkMeta.occlusionQuery);
         chunkMeta.occlusionQuery = null;
 
+        chunkMeta.lastOcclusionResult = isVisible;
         if (chunkMeta.occlusionVisible !== isVisible) {
             chunkMeta.occlusionVisible = isVisible;
             updateChunkMeshVisibility(chunkKey);
+        }
+
+        if (!passHierarchicalZOcclusion(chunkMeta)) {
+            chunkMeta.occlusionVisible = false;
+            updateChunkMeshVisibility(chunkKey);
+            continue;
         }
 
         syncOcclusionProxyTransform(chunkKey);
         const proxy = chunkMeta.occlusionProxy;
         if (!proxy || chunkMeta.occlusionQuery) continue;
 
-        chunkMeta.occlusionQuery = gl.createQuery();
+        chunkMeta.occlusionQuery = reusableOcclusionQueries.pop() ?? gl.createQuery();
         if (!chunkMeta.occlusionQuery) continue;
 
         proxy.userData.activeQuery = chunkMeta.occlusionQuery;
@@ -412,11 +537,19 @@ export function runChunkOcclusionCulling() {
             continue;
         }
 
+        if (!passHierarchicalZOcclusion(chunkMeta)) {
+            if (chunkMeta.occlusionVisible) {
+                chunkMeta.occlusionVisible = false;
+                updateChunkMeshVisibility(chunkKey);
+            }
+            continue;
+        }
+
         syncOcclusionProxyTransform(chunkKey);
         const proxy = chunkMeta.occlusionProxy;
         if (!proxy || chunkMeta.occlusionQuery) continue;
 
-        chunkMeta.occlusionQuery = gl.createQuery();
+        chunkMeta.occlusionQuery = reusableOcclusionQueries.pop() ?? gl.createQuery();
         if (!chunkMeta.occlusionQuery) continue;
 
         proxy.userData.activeQuery = chunkMeta.occlusionQuery;
@@ -520,32 +653,24 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
 function applyDirtyChunks() {
     if (worldState.dirtyChunks.size === 0) return;
 
-    const rebuiltChunkBlocks = new Map();
     for (const chunkKey of worldState.dirtyChunks) {
         if (!worldState.loadedChunks.has(chunkKey)) {
             worldState.chunkBlocks.delete(chunkKey);
             continue;
         }
 
-        rebuiltChunkBlocks.set(chunkKey, new Set());
-    }
-
-    for (const [blockKey, mesh] of worldState.worldBlocks) {
-        const chunkKey = `${Math.round(mesh.userData.q / CHUNK_SIZE)},${Math.round(mesh.userData.r / CHUNK_SIZE)}`;
-        if (!rebuiltChunkBlocks.has(chunkKey)) continue;
-
-        rebuiltChunkBlocks.get(chunkKey).add(blockKey);
-    }
-
-    for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
+        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
         worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
         recomputeChunkGreedyFaceQuads(chunkKey);
+        rebuildChunkInstancedLodMeshes(chunkKey);
+
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk) {
             chunk.dirty = false;
             chunk.bounds = recomputeChunkBounds(chunkKey);
             if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
+
         updateChunkMeshVisibility(chunkKey);
     }
 
@@ -626,7 +751,6 @@ export function generateChunk(cq, cr) {
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
             }
-        }
     }
 
     const permanentChunkKeys = worldState.permanentBlocksByChunk.get(chunkKey) ?? new Set();
@@ -640,6 +764,7 @@ export function generateChunk(cq, cr) {
 
     refreshBlockVisibilityForKeys(chunkBlockKeys);
     recomputeChunkGreedyFaceQuads(chunkKey);
+    rebuildChunkInstancedLodMeshes(chunkKey);
     const chunk = worldState.chunkMeta.get(chunkKey);
     if (chunk) {
         chunk.bounds = recomputeChunkBounds(chunkKey);
@@ -691,10 +816,12 @@ function enqueueChunkGeneration(cq, cr) {
 function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
 
-    for (let i = -RENDER_DIST; i <= RENDER_DIST; i++) {
-        for (let j = -RENDER_DIST; j <= RENDER_DIST; j++) {
-            const visibleCq = cq + i;
-            const visibleCr = cr + j;
+    for (let dq = -RENDER_DIST; dq <= RENDER_DIST; dq++) {
+        for (let dr = -RENDER_DIST; dr <= RENDER_DIST; dr++) {
+            const ds = -dq - dr;
+            if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > RENDER_DIST) continue;
+            const visibleCq = cq + dq;
+            const visibleCr = cr + dr;
             const chunkKey = `${visibleCq},${visibleCr}`;
             visibleChunkKeys.add(chunkKey);
             enqueueChunkGeneration(visibleCq, visibleCr);
@@ -704,7 +831,9 @@ function rebuildStreamingQueue(cq, cr) {
     for (const chunkKey of Array.from(worldState.loadedChunks)) {
         if (visibleChunkKeys.has(chunkKey)) continue;
 
-        const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
+        const chunkMeta = worldState.chunkMeta.get(chunkKey);
+        const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
+        const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
         unloadChunk(chunkQ, chunkR);
     }
 
@@ -715,7 +844,13 @@ function rebuildStreamingQueue(cq, cr) {
         pendingChunkGenerationQueue.splice(i, 1);
     }
 
-    pendingChunkGenerationQueue.sort((a, b) => axialChunkDistance(a.cq, a.cr, cq, cr) - axialChunkDistance(b.cq, b.cr, cq, cr));
+    const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
+    for (const queued of pendingChunkGenerationQueue) {
+        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
+        distanceBuckets[Math.min(RENDER_DIST, distance)].push(queued);
+    }
+    pendingChunkGenerationQueue.length = 0;
+    for (const bucket of distanceBuckets) pendingChunkGenerationQueue.push(...bucket);
 }
 
 function flushChunkGenerationBudget() {
@@ -729,27 +864,28 @@ function flushChunkGenerationBudget() {
 }
 
 export function updateChunks() {
+    chunkTick++;
     applyDirtyChunks();
 
-    const current = worldToAxial(camera.position);
+    const current = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
     const cr = Math.round(current.r / CHUNK_SIZE);
     const currentChunkKey = `${cq},${cr}`;
     const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged) {
+    if (chunkChanged || (chunkTick % STREAM_INTERVAL_TICKS) === 0) {
         rebuildStreamingQueue(cq, cr);
         lastStreamChunkKey = currentChunkKey;
     }
 
     flushChunkGenerationBudget();
 
-    if (chunkChanged) {
+    if (chunkChanged || (chunkTick % LOD_INTERVAL_TICKS) === 0) {
         const lodChangedChunks = updateChunkLodLevels(cq, cr);
         for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
     }
 
-    applyChunkFrustumCulling();
-
-    for (const chunkKey of worldState.loadedChunks) updateChunkMeshVisibility(chunkKey);
+    if ((chunkTick % FRUSTUM_INTERVAL_TICKS) === 0) {
+        applyChunkFrustumCulling();
+    }
 }

@@ -7,6 +7,10 @@ const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
 const useLowEndChunkProfile = isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
 
+export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
+export const ENABLE_ANTIALIAS = !useLowEndChunkProfile;
+export const ENABLE_SHADOW_MAP = false;
+
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
 // - desktop/high-end: 16-ish footprint lowers draw-call pressure.

@@ -15,9 +15,7 @@ function createHexGeometry() {
 
     const extrudeSettings = {
         depth: HEX_HEIGHT,
-        bevelEnabled: true,
-        bevelThickness: 0.05,
-        bevelSize: 0.05
+        bevelEnabled: false
     };
 
     const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
