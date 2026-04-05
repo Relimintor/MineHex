@@ -7,6 +7,7 @@ const SEARCH_RADIUS = 12;
 const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
 const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
+const WATER_TYPE_INDEX = BLOCK_TYPES.findIndex((blockType) => blockType?.name?.toLowerCase() === 'water');
 
 function getBlockAt(q, r, h) {
     return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
@@ -56,18 +57,25 @@ export function isLiquidBlockAt(q, r, h) {
     return !isSolidTypeIndex(block.userData.typeIndex);
 }
 
+function isWaterBlockAt(q, r, h) {
+    if (WATER_TYPE_INDEX < 0) return false;
+    const block = getBlockAt(q, r, h);
+    if (!block) return false;
+    return block.userData.typeIndex === WATER_TYPE_INDEX;
+}
+
 export function isCameraInLiquid() {
     const { q, r, h } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     return isLiquidBlockAt(q, r, h) || isLiquidBlockAt(q, r, h - 1);
 }
 
 function findSpawnHeight(q, r) {
-    const cachedTopSolid = worldState.topSolidHeightByColumn.get(getColumnKey(q, r));
-    if (cachedTopSolid !== undefined && !isSolidBlockAt(q, r, cachedTopSolid + 1)) return cachedTopSolid;
-
     for (let h = SEARCH_HEIGHT_TOP; h >= SEARCH_HEIGHT_BOTTOM; h--) {
         if (!isSolidBlockAt(q, r, h)) continue;
-        if (!isSolidBlockAt(q, r, h + 1)) return h;
+        if (isWaterBlockAt(q, r, h)) continue;
+        if (isLiquidBlockAt(q, r, h + 1)) continue;
+        if (isLiquidBlockAt(q, r, h + 2)) continue;
+        return h;
     }
     return null;
 }
