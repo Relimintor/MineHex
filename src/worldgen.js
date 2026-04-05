@@ -106,8 +106,40 @@ function getBiomeAt(climateBiome, height) {
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = `${q},${r},${h}`;
-    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex);
+    if (!worldState.permanentBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
+}
+
+function applyDirtyChunks() {
+    if (worldState.dirtyChunks.size === 0) return;
+
+    const rebuiltChunkBlocks = new Map();
+    for (const chunkKey of worldState.dirtyChunks) {
+        if (!worldState.loadedChunks.has(chunkKey)) {
+            worldState.chunkBlocks.delete(chunkKey);
+            continue;
+        }
+
+        rebuiltChunkBlocks.set(chunkKey, new Set());
+    }
+
+    for (const [blockKey, mesh] of worldState.worldBlocks) {
+        const chunkKey = `${Math.round(mesh.userData.q / CHUNK_SIZE)},${Math.round(mesh.userData.r / CHUNK_SIZE)}`;
+        if (!rebuiltChunkBlocks.has(chunkKey)) continue;
+
+        rebuiltChunkBlocks.get(chunkKey).add(blockKey);
+    }
+
+    for (const [chunkKey, chunkBlockKeys] of rebuiltChunkBlocks) {
+        worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+        worldState.dirtyChunkCells.delete(chunkKey);
+    }
+
+    for (const chunkKey of worldState.dirtyChunks) {
+        worldState.dirtyChunkCells.delete(chunkKey);
+    }
+
+    worldState.dirtyChunks.clear();
 }
 
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
@@ -161,18 +193,18 @@ export function generateChunk(cq, cr) {
                     if (h === height) blockType = topBlockType;
                     else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
 
-                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType);
+                    if (!worldState.permanentBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false);
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
                 const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
-                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock);
+                if (!worldState.permanentBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
                     const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
-                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType);
+                    if (!worldState.permanentBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false);
                     if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
                 }
 
@@ -186,7 +218,7 @@ export function generateChunk(cq, cr) {
         const permanentBlock = worldState.permanentBlocks.get(key);
         if (!permanentBlock) continue;
 
-        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true);
+        addBlock(permanentBlock.q, permanentBlock.r, permanentBlock.h, permanentBlock.typeIndex, true, false);
         chunkBlockKeys.add(key);
     }
 }
@@ -197,15 +229,19 @@ export function unloadChunk(cq, cr) {
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
     for (const key of chunkBlockKeys) {
-        removeBlock(key, { preservePermanent: true, force: true });
+        removeBlock(key, { preservePermanent: true, force: true, trackDirty: false });
     }
 
     worldState.chunkBlocks.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
+    worldState.dirtyChunks.delete(chunkKey);
+    worldState.dirtyChunkCells.delete(chunkKey);
 }
 
 
 export function updateChunks() {
+    applyDirtyChunks();
+
     const current = worldToAxial(camera.position);
     const cq = Math.round(current.q / CHUNK_SIZE);
     const cr = Math.round(current.r / CHUNK_SIZE);
