@@ -10,9 +10,6 @@ const useLowEndChunkProfile = isMobileUserAgent || hasLimitedCpu || hasLimitedMe
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const ENABLE_ANTIALIAS = !useLowEndChunkProfile;
 export const ENABLE_SHADOW_MAP = false;
-export const CAMERA_FAR_PLANE = useLowEndChunkProfile ? 320 : 420;
-export const FOG_NEAR_DISTANCE = Math.round(CAMERA_FAR_PLANE * 0.4);
-export const FOG_FAR_DISTANCE = Math.round(CAMERA_FAR_PLANE * 0.92);
 
 // Chunking Goldilocks profile:
 // - low-end/mobile: 8-ish footprint reduces remesh spikes.
