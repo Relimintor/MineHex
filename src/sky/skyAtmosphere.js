@@ -42,6 +42,15 @@ float stars(vec3 dir, float night, float t) {
     float twinkle = 0.75 + 0.25 * sin(t * 1.7 + dir.x * 91.0 + dir.z * 57.0);
     return star * night * twinkle;
 }
+
+
+float aurora(vec3 dir, float time) {
+    float wave = sin(dir.x * 10.0 + time * 2.0);
+    float noise = fract(sin(wave * 123.4) * 43758.5);
+    float band = smoothstep(0.4, 0.6, noise);
+    float horizonFade = 1.0 - abs(dir.y);
+    return band * horizonFade;
+}
 float sun_disc(vec3 dir, vec3 sunDir) {
     float d = dot(dir, sunDir);
     return smoothstep(0.999, 1.0, d);
@@ -76,8 +85,11 @@ void main() {
     float starMask = stars(dir, night, uTime);
     vec3 starColor = vec3(0.88, 0.92, 1.0) * starMask;
 
+    float auroraMask = aurora(dir, uTime) * smoothstep(0.2, 1.0, uNightFactor) * uAuroraFactor;
+    vec3 auroraColor = vec3(0.20, 0.95, 0.75) * auroraMask * 0.35;
+
     float nightLift = 0.85 + 0.15 * uNightFactor;
-    vec3 finalSky = (baseSky * (0.35 + 0.65 * height) * nightLift) + sunColor + starColor;
+    vec3 finalSky = (baseSky * (0.35 + 0.65 * height) * nightLift) + sunColor + starColor + auroraColor;
 
     gl_FragColor = vec4(clamp(finalSky, 0.0, 1.0), 1.0);
 }

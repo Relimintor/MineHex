@@ -89,7 +89,7 @@ pub fn sky_color_hex(time_seconds: f32) -> u32 {
 pub fn sky_color_hex_for_direction(time_seconds: f32, dir_x: f32, dir_y: f32, dir_z: f32) -> u32 {
     let direction = Vec3::new(dir_x, dir_y, dir_z).normalize();
     let params = sky_params_internal(time_seconds);
-    let color = sample_sky_gradient(direction, params).clamp01();
+    let color = sample_sky_gradient(direction, params, time_seconds).clamp01();
     pack_hex(color)
 }
 
@@ -142,7 +142,7 @@ fn sky_params_internal(time_seconds: f32) -> SkyParams {
 }
 
 /// Core gradient: branch-free, no texture lookups, based on dir/sun/height.
-fn sample_sky_gradient(direction: Vec3, params: SkyParams) -> Vec3 {
+fn sample_sky_gradient(direction: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
     let height = smoothstep(direction.y * 0.5 + 0.5);
     let sun_dot = direction.dot(params.sun_dir).clamp(0.0, 1.0);
 
@@ -164,9 +164,22 @@ fn sample_sky_gradient(direction: Vec3, params: SkyParams) -> Vec3 {
     let star_mask = stars_mask(direction, night, params.day_factor);
     let star_color = Vec3::new(0.88, 0.92, 1.0) * star_mask;
 
-    (base * (0.35 + 0.65 * height * params.sky_tint)) + sun_color + star_color
+    let aurora_mask = aurora_mask(direction, time_seconds) * smoothstep((1.0 - params.day_factor - 0.2) / 0.8);
+    let aurora_color = Vec3::new(0.20, 0.95, 0.75) * (aurora_mask * 0.35);
+
+    (base * (0.35 + 0.65 * height * params.sky_tint)) + sun_color + star_color + aurora_color
 }
 
+
+
+fn aurora_mask(direction: Vec3, time_seconds: f32) -> f32 {
+    let wave = (direction.x * 10.0 + time_seconds * 2.0).sin();
+    let noise = (wave * 123.4).sin() * 43_758.5;
+    let noise = noise.fract().abs();
+    let band = smoothstep((noise - 0.4) / 0.2);
+    let horizon_fade = 1.0 - direction.y.abs();
+    band * horizon_fade.clamp(0.0, 1.0)
+}
 
 fn hash3(v: Vec3) -> f32 {
     ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()
