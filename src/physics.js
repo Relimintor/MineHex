@@ -29,7 +29,8 @@ const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const localGroundCandidates = [];
 const GROUND_RAYCAST_CHUNK_RADIUS = 1;
 const collisionProbePoint = new THREE.Vector3();
-const PLAYER_FEET_OFFSET = PLAYER_HEIGHT * 0.9;
+const PLAYER_HEAD_OFFSET = 0.1;
+const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
 
 function isSolidAtWorldPosition(x, y, z) {
@@ -39,8 +40,8 @@ function isSolidAtWorldPosition(x, y, z) {
 }
 
 function collidesAtCameraPosition(x, y, z) {
-    if (isSolidAtWorldPosition(x, y, z)) return true;
-    return isSolidAtWorldPosition(x, y - PLAYER_FEET_OFFSET, z);
+    if (isSolidAtWorldPosition(x, y - PLAYER_HEAD_OFFSET, z)) return true;
+    return isSolidAtWorldPosition(x, y - PLAYER_TORSO_OFFSET, z);
 }
 
 function getFallbackGroundDistanceFromTopSolidColumn() {
