@@ -200,6 +200,7 @@ canvas { display: block; }
 }
 
 .inventory-hex-slot {
+    --slot-tilt: 0deg;
     width: 48px;
     height: 52px;
     background: rgba(255, 255, 255, 0.16);
@@ -207,6 +208,7 @@ canvas { display: block; }
     clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
     display: grid;
     place-items: center;
+    transform: rotate(var(--slot-tilt));
 }
 
 .inventory-hex-slot.is-hotbar {
@@ -215,7 +217,7 @@ canvas { display: block; }
 }
 
 .inventory-hex-slot.is-hotbar.active {
-    transform: translateY(-3px);
+    transform: translateY(-3px) rotate(var(--slot-tilt));
     border-color: #fff;
     box-shadow: 0 0 14px rgba(255, 255, 255, 0.8);
 }
@@ -223,6 +225,23 @@ canvas { display: block; }
 .inventory-hex-slot .block-preview {
     width: 22px;
     height: 22px;
+    transform: rotate(calc(var(--slot-tilt) * -1));
+}
+
+.inventory-honeycomb .inventory-row:nth-child(odd) .inventory-hex-slot:nth-child(odd) {
+    --slot-tilt: -7deg;
+}
+
+.inventory-honeycomb .inventory-row:nth-child(odd) .inventory-hex-slot:nth-child(even) {
+    --slot-tilt: 4deg;
+}
+
+.inventory-honeycomb .inventory-row:nth-child(even) .inventory-hex-slot:nth-child(odd) {
+    --slot-tilt: 7deg;
+}
+
+.inventory-honeycomb .inventory-row:nth-child(even) .inventory-hex-slot:nth-child(even) {
+    --slot-tilt: -4deg;
 }
 
 #inventory {
