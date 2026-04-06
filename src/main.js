@@ -1,4 +1,4 @@
-import { camera, renderer, scene } from './scene.js';
+import { camera, renderer, scene, skyController } from './scene.js';
 import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
@@ -118,6 +118,7 @@ function animate(now = performance.now()) {
     }
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
+    skyController?.update(now * 0.001);
     renderer.render(scene, camera);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
