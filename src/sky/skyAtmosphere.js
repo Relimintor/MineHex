@@ -48,51 +48,41 @@ float sun_disc(vec3 dir, vec3 sunDir) {
     return smoothstep(0.999, 1.0, d);
 }
 
-float sun_glow(vec3 dir, vec3 sunDir) {
-    float d = max(dot(dir, sunDir), 0.0);
-    return smoothstep(0.94, 1.0, d);
-}
+vec3 atmospheric_scatter(vec3 viewDir, vec3 sunDir, float dayFactor, float nightFactor) {
+    float sunAmount = max(dot(viewDir, sunDir), 0.0);
+    float up = clamp(viewDir.y * 0.5 + 0.5, 0.0, 1.0);
 
-vec3 sky_color(vec3 dir, vec3 sunDir, float height, float dayFactor, float nightFactor) {
-    vec3 dayTop = vec3(0.20, 0.50, 1.0);
-    vec3 dayHorizon = vec3(0.72, 0.86, 1.0);
-    vec3 nightTop = vec3(0.02, 0.02, 0.05);
-    vec3 nightHorizon = vec3(0.05, 0.07, 0.14);
+    vec3 rayleighBlue = vec3(0.18, 0.42, 0.95);
+    vec3 rayleigh = rayleighBlue * (0.25 + 0.75 * up);
 
-    vec3 dayGradient = mix(dayHorizon, dayTop, height);
-    vec3 nightGradient = mix(nightHorizon, nightTop, height);
-    vec3 baseSky = mix(nightGradient, dayGradient, dayFactor);
+    float miePhase = pow(sunAmount, 10.0);
+    vec3 mie = vec3(1.0, 0.63, 0.36) * miePhase * (0.30 + 0.70 * dayFactor);
 
-    vec3 dawnTint = vec3(1.0, 0.56, 0.28);
-    vec3 duskTint = vec3(1.0, 0.45, 0.68);
-    vec3 twilightTint = mix(dawnTint, duskTint, step(0.0, sunDir.x));
-    float twilightBand = 1.0 - smoothstep(0.0, 0.45, abs(sunDir.y));
-    float twilightTime = 1.0 - smoothstep(0.05, 0.85, dayFactor);
-    float horizonBlend = (1.0 - height) * 0.8;
-    float twilightStrength = twilightBand * twilightTime * horizonBlend;
-    baseSky = mix(baseSky, twilightTint, twilightStrength);
+    float horizon = pow(1.0 - up, 2.1);
+    vec3 haze = vec3(0.95, 0.74, 0.58) * horizon * (0.18 + 0.45 * (1.0 - dayFactor));
 
-    float nightLift = 0.85 + 0.15 * nightFactor;
-    return baseSky * (0.35 + 0.65 * height) * nightLift;
+    float lowSun = 1.0 - smoothstep(0.0, 0.48, abs(sunDir.y));
+    vec3 sunset = vec3(1.0, 0.42, 0.30) * lowSun * horizon * 0.65;
+
+    vec3 nightBase = vec3(0.02, 0.03, 0.07) * (0.35 + 0.65 * up);
+    vec3 dayBase = rayleigh + haze + mie + sunset;
+    return mix(nightBase, dayBase, dayFactor) * (0.90 + 0.10 * (1.0 - nightFactor));
 }
 
 vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
-    float height = smoothstep(0.0, 1.0, dir.y * 0.5 + 0.5);
     float dayFactor = smoothstep(0.0, 1.0, (sunDir.y + 0.12) / 0.62);
     float nightFactor = 1.0 - dayFactor;
     float sunEnergy = smoothstep(0.0, 1.0, (sunDir.y + 0.08) / 0.52);
 
-    vec3 sky = sky_color(dir, sunDir, height, dayFactor, nightFactor);
+    vec3 sky = atmospheric_scatter(dir, sunDir, dayFactor, nightFactor);
 
-    vec3 dayGradient = mix(vec3(0.72, 0.86, 1.0), vec3(0.20, 0.50, 1.0), height);
-    vec3 sunTint = mix(vec3(1.0, 0.92, 0.72), dayGradient, 0.35);
+    vec3 sunTint = vec3(1.0, 0.93, 0.78);
     float disc = sun_disc(dir, sunDir);
-    float glow = sun_glow(dir, sunDir);
-    float sunVal = (disc * (0.85 + 0.15 * sunEnergy)) + (glow * 0.35 * sunEnergy);
+    float sunVal = disc * (0.95 + 0.05 * sunEnergy);
 
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
-    sky += sunTint * sunVal;
+    sky += sunTint * sunVal * 1.6;
     sky += vec3(1.0) * starVal;
     return sky;
 }
