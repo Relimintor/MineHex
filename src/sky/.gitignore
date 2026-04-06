@@ -1,0 +1,7 @@
+/target
+/assets/noise/*
+/assets/sky_presets/*
+
+!/assets/sky_presets/default.ron
+!/assets/sky_presets/purple.ron
+Cargo.lock
