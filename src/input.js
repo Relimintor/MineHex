@@ -14,6 +14,8 @@ const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
 const localInteractionCandidates = [];
 const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
+let hotbarSlotsCache = null;
+let activeHotbarIndex = 0;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -38,8 +40,21 @@ export function isKeyDown(code) {
 }
 
 export function updateSelectedBlock(index) {
+    if (!hotbarSlotsCache || hotbarSlotsCache.length === 0) {
+        hotbarSlotsCache = Array.from(document.querySelectorAll('.slot'));
+    }
+
+    if (hotbarSlotsCache.length > 0) {
+        const maxIndex = hotbarSlotsCache.length - 1;
+        const clampedIndex = Math.max(0, Math.min(maxIndex, index));
+        hotbarSlotsCache[activeHotbarIndex]?.classList.remove('active');
+        hotbarSlotsCache[clampedIndex]?.classList.add('active');
+        activeHotbarIndex = clampedIndex;
+        worldState.selectedBlockIndex = clampedIndex;
+        return;
+    }
+
     worldState.selectedBlockIndex = index;
-    document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
 }
 
 function getCenterIntersection() {
@@ -79,13 +94,20 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 }
 
 export function registerDesktopInputHandlers() {
+    document.querySelectorAll('.slot').forEach((slot) => {
+        slot.addEventListener('click', () => {
+            const index = Number(slot.dataset.index);
+            if (Number.isInteger(index)) updateSelectedBlock(index);
+        });
+    });
+
     document.addEventListener('keydown', (event) => {
         setKeyState(event.code, true);
         if (event.code === 'KeyC' && !event.repeat) {
             toggleCameraPerspective();
             return;
         }
-        if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
+        if (event.key >= '1' && event.key <= '9') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 
     document.addEventListener('keyup', (event) => {
