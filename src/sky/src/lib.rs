@@ -174,10 +174,28 @@ fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, time_seconds: f
     let night = smoothstep((night_factor - 0.1) / 0.8);
     let star_val = stars_mask(direction, night, time_seconds);
     sky = sky + sun_value(direction, sun_dir, params);
+    sky = sky + moon_color(direction, sun_dir, time_seconds);
     sky + (Vec3::new(1.0, 1.0, 1.0) * star_val)
 }
 
 
+
+
+fn moon_color(direction: Vec3, sun_dir: Vec3, time_seconds: f32) -> Vec3 {
+    let cycle = (time_seconds / DAY_LENGTH_SECONDS) * (2.0 * PI) + (PI * 0.5);
+    let moon_angle = cycle * 1.6;
+    let moon_dir = Vec3::new(moon_angle.cos(), moon_angle.sin(), 0.05).normalize();
+
+    let moon_disc = smoothstep((direction.dot(moon_dir).clamp(0.0, 1.0) - 0.99925) / 0.00075);
+    let opposite = smoothstep((-sun_dir.dot(moon_dir) - 0.985) / 0.015);
+
+    let normal_moon = Vec3::new(0.88, 0.90, 0.96);
+    let blood_moon = Vec3::new(0.90, 0.10, 0.08);
+    let tint = mix(normal_moon, blood_moon, opposite);
+    let night_boost = 0.55 + 0.45 * (1.0 - smoothstep(sun_dir.y / 0.2));
+
+    tint * moon_disc * night_boost
+}
 
 fn hash3(v: Vec3) -> f32 {
     ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()

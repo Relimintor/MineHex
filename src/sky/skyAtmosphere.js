@@ -26,6 +26,7 @@ varying vec3 vWorldDir;
 
 uniform float uTime;
 uniform vec3 uSunDir;
+uniform sampler2D uBloodMoonTex;
 
 
 float hash3(vec3 p) {
@@ -69,6 +70,27 @@ vec3 atmospheric_scatter(vec3 viewDir, vec3 sunDir, float dayFactor, float night
     return mix(nightBase, dayBase, dayFactor) * (0.90 + 0.10 * (1.0 - nightFactor));
 }
 
+
+
+vec3 moon_color(vec3 dir, vec3 sunDir, float time) {
+    float cycle = (time / 120.0) * 6.2831853 + 1.5707963;
+    float moonAngle = cycle * 1.6;
+    vec3 moonDir = normalize(vec3(cos(moonAngle), sin(moonAngle), 0.05));
+
+    float moonDisc = smoothstep(0.99925, 1.0, dot(dir, moonDir));
+
+    vec3 upAxis = vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(upAxis, moonDir) + vec3(1.0e-5, 0.0, 0.0));
+    vec3 moonUp = normalize(cross(moonDir, right));
+    vec2 local = vec2(dot(dir, right), dot(dir, moonUp));
+    vec2 uv = local * 22.0 + 0.5;
+    vec4 tex = texture2D(uBloodMoonTex, uv);
+
+    float opposite = smoothstep(0.985, 1.0, -dot(sunDir, moonDir));
+    vec3 moonBase = mix(vec3(0.88, 0.90, 0.96), vec3(0.9, 0.1, 0.08), opposite);
+    vec3 moonLit = mix(moonBase, tex.rgb, tex.a * 0.9);
+    return moonLit * moonDisc * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.2, sunDir.y)));
+}
 vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float dayFactor = smoothstep(0.0, 1.0, (sunDir.y + 0.12) / 0.62);
     float nightFactor = 1.0 - dayFactor;
@@ -83,6 +105,7 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
     sky += sunTint * sunVal * 1.6;
+    sky += moon_color(dir, sunDir, time);
     sky += vec3(1.0) * starVal;
     return sky;
 }
@@ -199,9 +222,15 @@ function resolveFogColor(timeSeconds) {
 }
 
 export function applySkyAtmosphere(scene, lightingBridge) {
+    const bloodMoonTexture = new THREE.TextureLoader().load(new URL('../../assets/sky/bloodmoon.png', import.meta.url).href);
+    bloodMoonTexture.colorSpace = THREE.SRGBColorSpace;
+    bloodMoonTexture.wrapS = THREE.ClampToEdgeWrapping;
+    bloodMoonTexture.wrapT = THREE.ClampToEdgeWrapping;
+
     const uniforms = {
         uTime: { value: 0 },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uBloodMoonTex: { value: bloodMoonTexture },
     };
 
     const material = new THREE.ShaderMaterial({
