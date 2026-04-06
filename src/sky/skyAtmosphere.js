@@ -119,10 +119,14 @@ function makeFallbackUniforms(timeSeconds) {
     const cycle = ((timeSeconds % period) + period) % period / period;
     const angle = cycle * Math.PI * 2.0 - Math.PI * 0.5;
     const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0.15).normalize();
-    const day = THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.45, 0, 1);
-    const aurora = THREE.MathUtils.smoothstep((-sunDir.y - 0.15) / 0.35, 0, 1);
-    const energy = THREE.MathUtils.smoothstep((sunDir.y + 0.12) / 0.65, 0, 1);
+    const skyTint = THREE.MathUtils.smoothstep((Math.sin(angle) + 0.12) / 0.62, 0, 1);
+    const day = skyTint;
+    const aurora = Math.pow(1 - day, 1.4);
+    const energy = THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1);
     return {
+        timeOfDay: cycle,
+        sunAngle: angle,
+        skyTint,
         sunDir,
         sunEnergy: energy,
         dayFactor: day,
@@ -176,20 +180,46 @@ async function ensureWasmSkyLoaded() {
     }
 }
 
-function resolveSkyUniformValues(timeSeconds) {
-    if (!wasmSkyModule || typeof wasmSkyModule.sky_uniforms !== 'function') {
+
+function resolveTimeBackbone(timeSeconds) {
+    if (!wasmSkyModule || typeof wasmSkyModule.sky_time_state !== 'function') {
         return makeFallbackUniforms(timeSeconds);
+    }
+    const t = wasmSkyModule.sky_time_state(timeSeconds);
+    if (!Array.isArray(t) || t.length < 6) {
+        return makeFallbackUniforms(timeSeconds);
+    }
+    const sunDir = new THREE.Vector3(t[2], t[3], t[4]).normalize();
+    const skyTint = t[5];
+    return {
+        timeOfDay: t[0],
+        sunAngle: t[1],
+        skyTint,
+        sunDir,
+        dayFactor: skyTint,
+        nightFactor: 1 - skyTint,
+        sunEnergy: THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1),
+        auroraFactor: Math.pow(1 - skyTint, 1.4),
+    };
+}
+
+function resolveSkyUniformValues(timeSeconds) {
+    const backbone = resolveTimeBackbone(timeSeconds);
+    if (!wasmSkyModule || typeof wasmSkyModule.sky_uniforms !== 'function') {
+        return backbone;
     }
     const u = wasmSkyModule.sky_uniforms(timeSeconds);
-    if (!Array.isArray(u) || u.length < 7) {
-        return makeFallbackUniforms(timeSeconds);
+    if (!Array.isArray(u) || u.length < 8) {
+        return backbone;
     }
     return {
+        ...backbone,
         sunDir: new THREE.Vector3(u[0], u[1], u[2]).normalize(),
         sunEnergy: u[3],
         dayFactor: u[4],
         nightFactor: u[5],
         auroraFactor: u[6],
+        skyTint: u[7],
     };
 }
 

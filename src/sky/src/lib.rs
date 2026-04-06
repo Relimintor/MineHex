@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 const PI: f32 = core::f32::consts::PI;
+const DAY_LENGTH_SECONDS: f32 = 120.0;
 
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
@@ -47,14 +48,6 @@ impl core::ops::Add for Vec3 {
     }
 }
 
-impl core::ops::Sub for Vec3 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
-    }
-}
-
 impl core::ops::Mul<f32> for Vec3 {
     type Output = Self;
 
@@ -80,6 +73,23 @@ const NIGHT_HORIZON: Vec3 = Vec3::new(0.07, 0.10, 0.20);
 const STAR_COLOR: Vec3 = Vec3::new(0.85, 0.9, 1.0);
 const AURORA_COLOR: Vec3 = Vec3::new(0.12, 0.9, 0.55);
 
+#[derive(Clone, Copy)]
+struct TimeState {
+    time_of_day: f32,
+    sun_angle: f32,
+    sun_dir: Vec3,
+    sky_tint: f32,
+}
+
+#[derive(Clone, Copy)]
+struct SkyParams {
+    sun_dir: Vec3,
+    day_factor: f32,
+    sun_energy: f32,
+    aurora_factor: f32,
+    sky_tint: f32,
+}
+
 /// Computes a smooth sky color and returns it as a packed 0xRRGGBB integer.
 ///
 /// This helper samples the sky at zenith (`direction = up`) so existing JS call sites
@@ -90,10 +100,6 @@ pub fn sky_color_hex(time_seconds: f32) -> u32 {
 }
 
 /// Direction-aware sky sampler for fullscreen shader usage.
-///
-/// Inputs:
-/// - `time_seconds`: world time in seconds.
-/// - `dir_*`: view direction vector components in world-space.
 #[wasm_bindgen]
 pub fn sky_color_hex_for_direction(time_seconds: f32, dir_x: f32, dir_y: f32, dir_z: f32) -> u32 {
     let direction = Vec3::new(dir_x, dir_y, dir_z).normalize();
@@ -102,10 +108,17 @@ pub fn sky_color_hex_for_direction(time_seconds: f32, dir_x: f32, dir_y: f32, di
     pack_hex(color)
 }
 
-/// Returns compact time uniforms for a fullscreen sky shader.
-///
+/// Compact time backbone state.
+/// Layout: `[time_of_day, sun_angle, sun_dir_x, sun_dir_y, sun_dir_z, sky_tint]`
+#[wasm_bindgen]
+pub fn sky_time_state(time_seconds: f32) -> Vec<f32> {
+    let s = time_state(time_seconds);
+    vec![s.time_of_day, s.sun_angle, s.sun_dir.x, s.sun_dir.y, s.sun_dir.z, s.sky_tint]
+}
+
+/// Shader uniforms derived from time state.
 /// Layout:
-/// `[sun_dir_x, sun_dir_y, sun_dir_z, sun_energy, day_factor, night_factor, aurora_factor]`
+/// `[sun_dir_x, sun_dir_y, sun_dir_z, sun_energy, day_factor, night_factor, aurora_factor, sky_tint]`
 #[wasm_bindgen]
 pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
     let params = sky_params_internal(time_seconds);
@@ -117,32 +130,36 @@ pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
         params.day_factor,
         1.0 - params.day_factor,
         params.aurora_factor,
+        params.sky_tint,
     ]
 }
 
-#[derive(Clone, Copy)]
-struct SkyParams {
-    sun_dir: Vec3,
-    day_factor: f32,
-    sun_energy: f32,
-    aurora_factor: f32,
+fn time_state(time_seconds: f32) -> TimeState {
+    let time_of_day = time_seconds.rem_euclid(DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS;
+    let sun_angle = time_of_day * 2.0 * PI;
+    let sun_dir = Vec3::new(sun_angle.cos(), sun_angle.sin().max(0.0), 0.2).normalize();
+    let sky_tint = smoothstep((sun_angle.sin() + 0.12) / 0.62);
+
+    TimeState {
+        time_of_day,
+        sun_angle,
+        sun_dir,
+        sky_tint,
+    }
 }
 
 fn sky_params_internal(time_seconds: f32) -> SkyParams {
-    let period_seconds = 120.0;
-    let cycle = time_seconds.rem_euclid(period_seconds) / period_seconds;
-    let angle = (cycle * 2.0 * PI) - (PI * 0.5);
-
-    let sun_dir = Vec3::new(angle.cos(), angle.sin(), 0.15).normalize();
-    let day_factor = smoothstep((sun_dir.y + 0.08) / 0.45);
-    let sun_energy = smoothstep((sun_dir.y + 0.12) / 0.65);
-    let aurora_factor = smoothstep((-sun_dir.y - 0.15) / 0.35);
+    let state = time_state(time_seconds);
+    let day_factor = state.sky_tint;
+    let sun_energy = smoothstep((state.sun_dir.y + 0.08) / 0.52);
+    let aurora_factor = (1.0 - day_factor).powf(1.4);
 
     SkyParams {
-        sun_dir,
+        sun_dir: state.sun_dir,
         day_factor,
         sun_energy,
         aurora_factor,
+        sky_tint: state.sky_tint,
     }
 }
 
@@ -154,23 +171,22 @@ fn sample_sky(direction: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
     let twilight_base = mix(DAWN, DUSK, ((params.sun_dir.x + 1.0) * 0.5).clamp(0.0, 1.0));
     let night_base = mix(NIGHT_ZENITH, NIGHT_HORIZON, horizon_factor);
 
-    let twilight_blend = 1.0 - (params.day_factor * (1.0 - params.aurora_factor));
     let atmospheric = mix(
-        mix(night_base, twilight_base, twilight_blend),
+        mix(night_base, twilight_base, (1.0 - params.day_factor) * 0.8),
         day_base,
         params.day_factor,
     );
 
     let sun_amount = direction.dot(params.sun_dir).clamp(0.0, 1.0);
-    let sun_disk = sun_amount.powf(320.0) * (0.35 + params.sun_energy * 1.15);
-    let sun_halo = sun_amount.powf(20.0) * 0.18 * params.sun_energy;
+    let sun_disk = sun_amount.powf(280.0) * (0.24 + params.sun_energy * 1.1);
+    let sun_halo = sun_amount.powf(18.0) * 0.15 * params.sun_energy;
     let sun_color = Vec3::new(1.0, 0.93, 0.76) * (sun_disk + sun_halo);
 
-    let stars = star_field(direction, time_seconds) * (1.0 - params.day_factor).powf(2.2);
+    let stars = star_field(direction, time_seconds) * (1.0 - params.day_factor).powf(2.0);
 
     let aurora_wave = ((direction.x * 18.0) + (direction.z * 12.0) + (time_seconds * 0.35)).sin();
-    let aurora_band = smoothstep(0.25 + 0.45 * aurora_wave - direction.y.abs());
-    let aurora = AURORA_COLOR * (aurora_band * 0.22 * params.aurora_factor);
+    let aurora_band = smoothstep(0.2 + 0.4 * aurora_wave - direction.y.abs());
+    let aurora = AURORA_COLOR * (aurora_band * 0.26 * params.aurora_factor);
 
     atmospheric + sun_color + stars + aurora
 }
@@ -224,8 +240,16 @@ mod tests {
     #[test]
     fn uniforms_shape_is_stable() {
         let uniforms = sky_uniforms(12.5);
-        assert_eq!(uniforms.len(), 7);
+        assert_eq!(uniforms.len(), 8);
         assert!(uniforms[3].is_finite());
+    }
+
+    #[test]
+    fn time_state_has_expected_shape() {
+        let state = sky_time_state(7.0);
+        assert_eq!(state.len(), 6);
+        assert!((0.0..=1.0).contains(&state[0]));
+        assert!((0.0..=1.0).contains(&state[5]));
     }
 
     #[test]
