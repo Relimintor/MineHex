@@ -53,7 +53,7 @@ float sun_glow(vec3 dir, vec3 sunDir) {
     return smoothstep(0.94, 1.0, d);
 }
 
-vec3 sky_color(vec3 dir, float height, float dayFactor, float nightFactor) {
+vec3 sky_color(vec3 dir, vec3 sunDir, float height, float dayFactor, float nightFactor) {
     vec3 dayTop = vec3(0.20, 0.50, 1.0);
     vec3 dayHorizon = vec3(0.72, 0.86, 1.0);
     vec3 nightTop = vec3(0.02, 0.02, 0.05);
@@ -62,6 +62,16 @@ vec3 sky_color(vec3 dir, float height, float dayFactor, float nightFactor) {
     vec3 dayGradient = mix(dayHorizon, dayTop, height);
     vec3 nightGradient = mix(nightHorizon, nightTop, height);
     vec3 baseSky = mix(nightGradient, dayGradient, dayFactor);
+
+    vec3 dawnTint = vec3(1.0, 0.56, 0.28);
+    vec3 duskTint = vec3(1.0, 0.45, 0.68);
+    vec3 twilightTint = mix(dawnTint, duskTint, step(0.0, sunDir.x));
+    float twilightBand = 1.0 - smoothstep(0.0, 0.45, abs(sunDir.y));
+    float twilightTime = 1.0 - smoothstep(0.05, 0.85, dayFactor);
+    float horizonBlend = (1.0 - height) * 0.8;
+    float twilightStrength = twilightBand * twilightTime * horizonBlend;
+    baseSky = mix(baseSky, twilightTint, twilightStrength);
+
     float nightLift = 0.85 + 0.15 * nightFactor;
     return baseSky * (0.35 + 0.65 * height) * nightLift;
 }
@@ -72,7 +82,7 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float nightFactor = 1.0 - dayFactor;
     float sunEnergy = smoothstep(0.0, 1.0, (sunDir.y + 0.08) / 0.52);
 
-    vec3 sky = sky_color(dir, height, dayFactor, nightFactor);
+    vec3 sky = sky_color(dir, sunDir, height, dayFactor, nightFactor);
 
     vec3 dayGradient = mix(vec3(0.72, 0.86, 1.0), vec3(0.20, 0.50, 1.0), height);
     vec3 sunTint = mix(vec3(1.0, 0.92, 0.72), dayGradient, 0.35);
