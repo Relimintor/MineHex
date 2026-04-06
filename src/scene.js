@@ -1,9 +1,10 @@
 import { ENABLE_ANTIALIAS, ENABLE_SHADOW_MAP, MAX_DEVICE_PIXEL_RATIO, USE_STRICT_LOW_END_RENDERING } from './config.js';
-import { applySceneAtmosphere, applySceneLighting } from './shaders/sceneLighting.js';
+import { applySceneLighting } from './shaders/sceneLighting.js';
+import { applySkyAtmosphere } from './sky/skyAtmosphere.js';
 const THREE = window.THREE;
 
 export const scene = new THREE.Scene();
-applySceneAtmosphere(scene);
+applySkyAtmosphere(scene);
 
 // Separate scene for occlusion proxy boxes so queries can run after the main depth pass.
 export const occlusionScene = new THREE.Scene();
