@@ -42,18 +42,38 @@ function createHeadMaterials() {
         new THREE.MeshLambertMaterial({ map: left }),
         new THREE.MeshLambertMaterial({ map: top }),
         new THREE.MeshLambertMaterial({ map: top }),
-        new THREE.MeshLambertMaterial({ map: front }),
-        new THREE.MeshLambertMaterial({ map: top })
+        new THREE.MeshLambertMaterial({ map: top }),
+        new THREE.MeshLambertMaterial({ map: front })
     ];
 }
 
-function createUniformTextureMaterial(path) {
-    return new THREE.MeshLambertMaterial({ map: loadHeadTexture(path) });
+function createArmMaterials() {
+    const front = loadHeadTexture('assets/skin/arm/right_arm_front.png');
+    const topShoulder = loadHeadTexture('assets/skin/arm/right_top_shoulder.png');
+    const hand = loadHeadTexture('assets/skin/arm/hand.png');
+
+    return [
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: topShoulder }),
+        new THREE.MeshLambertMaterial({ map: hand }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
 }
 
-function createLimbMaterials(texturePath) {
-    const material = createUniformTextureMaterial(texturePath);
-    return [material, material, material, material, material, material];
+function createLegMaterials() {
+    const front = loadHeadTexture('assets/skin/leg/right_leg_front.png');
+    const feet = loadHeadTexture('assets/skin/leg/feet.png');
+
+    return [
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: feet }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
 }
 
 function createChestMaterials() {
@@ -65,8 +85,8 @@ function createChestMaterials() {
         new THREE.MeshLambertMaterial({ map: side }),
         new THREE.MeshLambertMaterial({ map: front }),
         new THREE.MeshLambertMaterial({ map: front }),
-        new THREE.MeshLambertMaterial({ map: front }),
-        new THREE.MeshLambertMaterial({ map: back })
+        new THREE.MeshLambertMaterial({ map: back }),
+        new THREE.MeshLambertMaterial({ map: front })
     ];
 }
 
@@ -82,8 +102,8 @@ function createAvatarMesh() {
     const limbWidth = 4 * unit;
     const limbDepth = 4 * unit;
 
-    const armMaterials = createLimbMaterials('assets/skin/arm/right_arm_front.png');
-    const legMaterials = createLimbMaterials('assets/skin/leg/right_leg_front.png');
+    const armMaterials = createArmMaterials();
+    const legMaterials = createLegMaterials();
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth), createChestMaterials());
     torso.position.y = legHeight + (torsoHeight * 0.5);
