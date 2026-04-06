@@ -23,6 +23,20 @@ MineHex FPS is a Minecraft-like prototype with a **first-person camera on a flat
 - **Left click**: break player-placed blocks
 - **Shift + Left click**: break terrain blocks
 
+## Build Rust/WASM sky module (optional but recommended)
+
+The sky system can run with a JS fallback color, but to enable the Rust-powered sky gradient in browser builds:
+
+1. Install Rust (via `rustup`) and `wasm-pack`.
+2. Build the wasm-bindgen package:
+
+```bash
+cd src/sky
+wasm-pack build --target web --release --out-dir pkg
+```
+
+This generates `src/sky/pkg/bevy_sky_gradient.js` + `.wasm`, which `src/sky/skyAtmosphere.js` will auto-load.
+
 ## Run
 
 Open `index.html` in a modern browser (requires internet for Three.js CDN import).
