@@ -1,12 +1,13 @@
 const THREE = window.THREE;
 
-import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
 import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
+import { createChunkWorkerPool } from './workers/chunkWorkerPool.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -74,7 +75,13 @@ const pendingChunkUnloadSet = new Set();
 const pendingChunkApplyQueue = [];
 const pendingChunkApplySet = new Set();
 const recycledChunkBlockSets = [];
-let chunkGenerationWorker = null;
+let chunkGenerationWorkerPool = null;
+const CHUNK_WORKER_SCRIPT_URLS = [
+    new URL('./workers/chunkWorker.js', import.meta.url),
+    new URL('./workers/chunkWorkerSecondary.js', import.meta.url),
+    new URL('./workers/chunkWorkerTertiary.js', import.meta.url)
+];
+
 
 const FRAME_TIME_TARGET_MS = 16.7;
 const FRAME_TIME_SPIKE_MS = 24;
@@ -776,46 +783,80 @@ function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusi
     }
 }
 
+function getChunkCoordsFromKey(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (chunkMeta) return { cq: chunkMeta.cq, cr: chunkMeta.cr, chunkMeta };
+    const [cqRaw, crRaw] = chunkKey.split(',');
+    return { cq: Number(cqRaw), cr: Number(crRaw), chunkMeta: null };
+}
+
+function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
+    const { cq, cr, chunkMeta } = getChunkCoordsFromKey(chunkKey);
+    const distance = axialChunkDistance(cq, cr, cameraChunkQ, cameraChunkR);
+    const frustumVisible = chunkMeta?.frustumVisible ?? true;
+    const closeToCamera = distance <= 1;
+    const highDetailLod = (chunkMeta?.lodLevel ?? 0) === 0;
+    return (closeToCamera || frustumVisible || highDetailLod) ? 'hot' : 'cold';
+}
+
+function processDirtyChunk(chunkKey) {
+    if (!worldState.loadedChunks.has(chunkKey)) {
+        worldState.chunkBlocks.delete(chunkKey);
+        worldState.dirtyChunks.delete(chunkKey);
+        worldState.dirtyChunkOps.delete(chunkKey);
+        return true;
+    }
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+    recomputeChunkGreedyFaceQuads(chunkKey);
+
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
+    if (chunk) {
+        chunk.dirty = true;
+        const usedIncrementalBounds = applyIncrementalChunkBoundsUpdate(chunk, dirtyOps);
+        if (!usedIncrementalBounds) {
+            chunk.bounds = recomputeChunkBounds(chunkKey);
+        }
+        if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
+    }
+
+    updateChunkMeshVisibility(chunkKey);
+    if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
+    worldState.dirtyChunks.delete(chunkKey);
+    worldState.dirtyChunkOps.delete(chunkKey);
+    return true;
+}
+
 function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
     if (budget <= 0) return;
 
-    let processed = 0;
-    const processedChunkKeys = [];
+    const { cq: cameraChunkQ, cr: cameraChunkR } = getCurrentChunkCoords();
+    const hotQueue = [];
+    const coldQueue = [];
+
     for (const chunkKey of worldState.dirtyChunks) {
-        if (processed >= budget) break;
-        if (!worldState.loadedChunks.has(chunkKey)) {
-            worldState.chunkBlocks.delete(chunkKey);
-            processedChunkKeys.push(chunkKey);
-            processed++;
-            continue;
-        }
-
-        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
-        worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
-        recomputeChunkGreedyFaceQuads(chunkKey);
-
-        const chunk = worldState.chunkMeta.get(chunkKey);
-        const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
-        if (chunk) {
-            chunk.dirty = true;
-            const usedIncrementalBounds = applyIncrementalChunkBoundsUpdate(chunk, dirtyOps);
-            if (!usedIncrementalBounds) {
-                chunk.bounds = recomputeChunkBounds(chunkKey);
-            }
-            if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
-        }
-
-        updateChunkMeshVisibility(chunkKey);
-        processedChunkKeys.push(chunkKey);
-        processed++;
+        const priority = classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR);
+        if (priority === 'hot') hotQueue.push(chunkKey);
+        else coldQueue.push(chunkKey);
     }
 
-    for (const chunkKey of processedChunkKeys) {
-        const chunk = worldState.chunkMeta.get(chunkKey);
-        if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
-        worldState.dirtyChunks.delete(chunkKey);
-        worldState.dirtyChunkOps.delete(chunkKey);
+    const processQueue = (queue, remainingBudget) => {
+        let consumed = 0;
+        while (consumed < remainingBudget && queue.length > 0) {
+            const chunkKey = queue.shift();
+            if (!worldState.dirtyChunks.has(chunkKey)) continue;
+            if (processDirtyChunk(chunkKey)) consumed++;
+        }
+        return consumed;
+    };
+
+    const hotProcessed = processQueue(hotQueue, budget);
+    const remainingBudget = Math.max(0, budget - hotProcessed);
+    if (remainingBudget > 0) {
+        processQueue(coldQueue, remainingBudget);
     }
 }
 
@@ -843,36 +884,41 @@ function isChunkWithinRenderDistance(cq, cr) {
 }
 
 function initChunkGenerationWorker() {
-    if (!ENABLE_WORLDGEN_WORKER || chunkGenerationWorker) return;
+    if (!ENABLE_WORLDGEN_WORKER || chunkGenerationWorkerPool) return;
     if (typeof Worker === 'undefined') return;
 
     try {
-        chunkGenerationWorker = new Worker(new URL('./workers/chunkWorker.js', import.meta.url), { type: 'module' });
+        let workerScriptIndex = 0;
+        chunkGenerationWorkerPool = createChunkWorkerPool({
+            workerSize: WORLDGEN_WORKER_COUNT,
+            workerFactory: () => {
+                const scriptUrl = CHUNK_WORKER_SCRIPT_URLS[workerScriptIndex % CHUNK_WORKER_SCRIPT_URLS.length];
+                workerScriptIndex += 1;
+                return new Worker(scriptUrl, { type: 'module' });
+            },
+            onMessage: (event) => {
+                const { chunkKey, cq, cr, columns } = event.data ?? {};
+                if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
+                pendingChunkGenerationInFlight.delete(chunkKey);
+                if (!isChunkWithinRenderDistance(cq, cr)) return;
+                if (worldState.loadedChunks.has(chunkKey)) return;
+                if (pendingChunkApplySet.has(chunkKey)) return;
+                pendingChunkApplySet.add(chunkKey);
+                pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
+            },
+            onError: (error) => {
+                console.warn('Chunk generation worker pool crashed, using main-thread chunk generation fallback.', error);
+                chunkGenerationWorkerPool?.terminate();
+                chunkGenerationWorkerPool = null;
+                pendingChunkGenerationInFlight.clear();
+                pendingChunkApplyQueue.length = 0;
+                pendingChunkApplySet.clear();
+            }
+        });
     } catch (error) {
         console.warn('Falling back to main-thread chunk generation.', error);
-        chunkGenerationWorker = null;
-        return;
+        chunkGenerationWorkerPool = null;
     }
-
-    chunkGenerationWorker.addEventListener('message', (event) => {
-        const { chunkKey, cq, cr, columns } = event.data ?? {};
-        if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
-        pendingChunkGenerationInFlight.delete(chunkKey);
-        if (!isChunkWithinRenderDistance(cq, cr)) return;
-        if (worldState.loadedChunks.has(chunkKey)) return;
-        if (pendingChunkApplySet.has(chunkKey)) return;
-        pendingChunkApplySet.add(chunkKey);
-        pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
-    });
-
-    chunkGenerationWorker.addEventListener('error', (error) => {
-        console.warn('Chunk generation worker crashed, using main-thread generation fallback.', error);
-        chunkGenerationWorker?.terminate();
-        chunkGenerationWorker = null;
-        pendingChunkGenerationInFlight.clear();
-        pendingChunkApplyQueue.length = 0;
-        pendingChunkApplySet.clear();
-    });
 }
 
 function applyGeneratedChunkColumns(cq, cr, columns) {
@@ -1180,9 +1226,9 @@ function flushChunkGenerationBudget() {
     while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
         const nextChunk = pendingChunkGenerationQueue.shift();
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
-        if (chunkGenerationWorker && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
+        if (chunkGenerationWorkerPool && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
             pendingChunkGenerationInFlight.add(nextChunk.chunkKey);
-            chunkGenerationWorker.postMessage({
+            chunkGenerationWorkerPool.postMessage({
                 type: 'generate',
                 cq: nextChunk.cq,
                 cr: nextChunk.cr,
@@ -1194,7 +1240,7 @@ function flushChunkGenerationBudget() {
             continue;
         }
 
-        if (chunkGenerationWorker) {
+        if (chunkGenerationWorkerPool) {
             pendingChunkGenerationQueue.unshift(nextChunk);
             break;
         }
