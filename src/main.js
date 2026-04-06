@@ -118,7 +118,7 @@ function animate(now = performance.now()) {
     }
 
     camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
-    skyController?.update(now * 0.001);
+    skyController?.update(now * 0.001, camera);
     renderer.render(scene, camera);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
