@@ -79,6 +79,13 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 }
 
 export function registerDesktopInputHandlers() {
+    document.querySelectorAll('.slot').forEach((slot) => {
+        slot.addEventListener('click', () => {
+            const index = Number(slot.dataset.index);
+            if (Number.isInteger(index)) updateSelectedBlock(index);
+        });
+    });
+
     document.addEventListener('keydown', (event) => {
         setKeyState(event.code, true);
         if (event.code === 'KeyC' && !event.repeat) {
