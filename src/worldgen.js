@@ -291,11 +291,13 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     }
 
     const perTypeInstances = new Map();
+    const requireTopFaceForInstancedLod = !FORCE_BATCHED_CHUNK_RENDERING;
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
         if (!mesh) continue;
         const hasExposedFace = mesh.userData.hasExposedFace ?? true;
-        if (!hasExposedFace || !hasTopFace(mesh)) continue;
+        if (!hasExposedFace) continue;
+        if (requireTopFaceForInstancedLod && !hasTopFace(mesh)) continue;
 
         const typeIndex = mesh.userData.typeIndex ?? 0;
         if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
