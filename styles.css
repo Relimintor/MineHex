@@ -139,6 +139,11 @@ canvas { display: block; }
 .block-preview-dirt { background: #795548; }
 .block-preview-stone { background: #9e9e9e; }
 .block-preview-cloud { background: #e1e1e1; }
+.block-preview-water { background: #2196f3; }
+.block-preview-nethrock { background: #3b1f1f; }
+.block-preview-oak-wood { background: #8d6e63; }
+.block-preview-oak-leaves { background: #2e7d32; }
+.block-preview-snow { background: #f5f8ff; }
 
 .slot-label {
     position: absolute;
