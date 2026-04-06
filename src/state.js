@@ -11,6 +11,7 @@ export const worldState = {
     chunkFaceQuads: new Map(),
     chunkMeta: new Map(),
     dirtyChunks: new Set(),
+    dirtyChunkOps: new Map(),
     permanentBlocks: new Map(),
     permanentBlocksByChunk: new Map(),
     removedBlocks: new Set(),
