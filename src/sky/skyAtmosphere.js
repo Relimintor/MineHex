@@ -26,28 +26,17 @@ varying vec3 vWorldDir;
 
 uniform float uTime;
 uniform vec3 uSunDir;
-uniform float uSunEnergy;
-uniform float uDayFactor;
-uniform float uNightFactor;
-uniform float uAuroraFactor;
+
 
 float hash3(vec3 p) {
     return fract(sin(dot(p, vec3(12.3, 45.6, 78.9))) * 43758.5);
 }
 
 float stars(vec3 dir, float night, float t) {
-    float n = hash3(dir * 1000.0 + vec3(0.0, t * 0.02, 0.0));
+    float n = hash3(dir * 1000.0 + vec3(0.0, t * 0.002, 0.0));
     float star = step(0.995, n);
-    float twinkle = 0.75 + 0.25 * sin(t * 1.7 + dir.x * 91.0 + dir.z * 57.0);
+    float twinkle = 0.85 + 0.15 * sin(t * 0.25 + dir.x * 91.0 + dir.z * 57.0);
     return star * night * twinkle;
-}
-
-float aurora(vec3 dir, float time) {
-    float wave = sin(dir.x * 10.0 + time * 2.0);
-    float noise = fract(sin(wave * 123.4) * 43758.5);
-    float band = smoothstep(0.4, 0.6, noise);
-    float horizonFade = 1.0 - abs(dir.y);
-    return band * horizonFade;
 }
 
 float sun_disc(vec3 dir, vec3 sunDir) {
@@ -60,7 +49,7 @@ float sun_glow(vec3 dir, vec3 sunDir) {
     return smoothstep(0.94, 1.0, d);
 }
 
-vec3 sky_color(vec3 dir, float height) {
+vec3 sky_color(vec3 dir, float height, float dayFactor, float nightFactor) {
     vec3 dayTop = vec3(0.20, 0.50, 1.0);
     vec3 dayHorizon = vec3(0.72, 0.86, 1.0);
     vec3 nightTop = vec3(0.02, 0.02, 0.05);
@@ -68,28 +57,29 @@ vec3 sky_color(vec3 dir, float height) {
 
     vec3 dayGradient = mix(dayHorizon, dayTop, height);
     vec3 nightGradient = mix(nightHorizon, nightTop, height);
-    vec3 baseSky = mix(nightGradient, dayGradient, uDayFactor);
-    float nightLift = 0.85 + 0.15 * uNightFactor;
+    vec3 baseSky = mix(nightGradient, dayGradient, dayFactor);
+    float nightLift = 0.85 + 0.15 * nightFactor;
     return baseSky * (0.35 + 0.65 * height) * nightLift;
 }
 
 vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float height = smoothstep(0.0, 1.0, dir.y * 0.5 + 0.5);
-    vec3 sky = sky_color(dir, height);
+    float dayFactor = smoothstep(0.0, 1.0, (sunDir.y + 0.12) / 0.62);
+    float nightFactor = 1.0 - dayFactor;
+    float sunEnergy = smoothstep(0.0, 1.0, (sunDir.y + 0.08) / 0.52);
+
+    vec3 sky = sky_color(dir, height, dayFactor, nightFactor);
 
     vec3 dayGradient = mix(vec3(0.72, 0.86, 1.0), vec3(0.20, 0.50, 1.0), height);
     vec3 sunTint = mix(vec3(1.0, 0.92, 0.72), dayGradient, 0.35);
     float disc = sun_disc(dir, sunDir);
     float glow = sun_glow(dir, sunDir);
-    float sunVal = (disc * (0.85 + 0.15 * uSunEnergy)) + (glow * 0.35 * uSunEnergy);
+    float sunVal = (disc * (0.85 + 0.15 * sunEnergy)) + (glow * 0.35 * sunEnergy);
 
-    float night = smoothstep(0.1, 0.9, uNightFactor);
+    float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
-    float auroraVal = aurora(dir, time) * smoothstep(0.2, 1.0, uNightFactor) * uAuroraFactor;
-
     sky += sunTint * sunVal;
     sky += vec3(1.0) * starVal;
-    sky += vec3(0.1, 0.8, 0.4) * auroraVal;
     return sky;
 }
 
@@ -105,10 +95,9 @@ function makeFallbackUniforms(timeSeconds) {
     const period = 120.0;
     const cycle = ((timeSeconds % period) + period) % period / period;
     const angle = cycle * Math.PI * 2.0 - Math.PI * 0.5;
-    const sunDir = new THREE.Vector3(Math.cos(angle), Math.max(0, Math.sin(angle)), 0.2).normalize();
+    const sunDir = new THREE.Vector3(0.12, Math.sin(angle) * 0.55, Math.cos(angle)).normalize();
     const skyTint = THREE.MathUtils.smoothstep((Math.sin(angle) + 0.12) / 0.62, 0, 1);
     const day = skyTint;
-    const aurora = Math.pow(1 - day, 1.4);
     const energy = THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1);
     return {
         timeOfDay: cycle,
@@ -117,8 +106,6 @@ function makeFallbackUniforms(timeSeconds) {
         sunDir,
         sunEnergy: energy,
         dayFactor: day,
-        nightFactor: 1 - day,
-        auroraFactor: aurora,
     };
 }
 
@@ -186,29 +173,19 @@ function resolveTimeBackbone(timeSeconds) {
         dayFactor: skyTint,
         nightFactor: 1 - skyTint,
         sunEnergy: THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1),
-        auroraFactor: Math.pow(1 - skyTint, 1.4),
     };
 }
 
 function resolveSkyUniformValues(timeSeconds) {
-    const backbone = resolveTimeBackbone(timeSeconds);
-    if (!wasmSkyModule || typeof wasmSkyModule.sky_uniforms !== 'function') {
-        return backbone;
-    }
-    const u = wasmSkyModule.sky_uniforms(timeSeconds);
-    if (!Array.isArray(u) || u.length < 8) {
-        return backbone;
-    }
-    return {
-        ...backbone,
-        sunDir: new THREE.Vector3(u[0], u[1], u[2]).normalize(),
-        sunEnergy: u[3],
-        dayFactor: u[4],
-        nightFactor: u[5],
-        auroraFactor: u[6],
-        skyTint: u[7],
-    };
+    return resolveTimeBackbone(timeSeconds);
 }
+
+function deriveLightingInputs(sunDir) {
+    const dayFactor = THREE.MathUtils.smoothstep((sunDir.y + 0.12) / 0.62, 0, 1);
+    const sunEnergy = THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1);
+    return { sunDir, dayFactor, sunEnergy };
+}
+
 
 function resolveFogColor(timeSeconds) {
     if (!wasmSkyModule || typeof wasmSkyModule.sky_color_hex_for_direction !== 'function') {
@@ -221,10 +198,6 @@ export function applySkyAtmosphere(scene, lightingBridge) {
     const uniforms = {
         uTime: { value: 0 },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uSunEnergy: { value: 1 },
-        uDayFactor: { value: 1 },
-        uNightFactor: { value: 0 },
-        uAuroraFactor: { value: 0 },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -255,14 +228,10 @@ export function applySkyAtmosphere(scene, lightingBridge) {
 
             const skyValues = resolveSkyUniformValues(timeSeconds);
             uniforms.uSunDir.value.copy(skyValues.sunDir);
-            uniforms.uSunEnergy.value = skyValues.sunEnergy;
-            uniforms.uDayFactor.value = skyValues.dayFactor;
-            uniforms.uNightFactor.value = skyValues.nightFactor;
-            uniforms.uAuroraFactor.value = skyValues.auroraFactor;
 
             if (camera) mesh.position.copy(camera.position);
 
-            lightingBridge?.syncSun?.(skyValues);
+            lightingBridge?.syncSun?.(deriveLightingInputs(skyValues.sunDir));
 
             const fogHex = resolveFogColor(timeSeconds);
             if (fogHex !== null) {

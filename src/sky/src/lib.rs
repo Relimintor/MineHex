@@ -112,7 +112,7 @@ pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
         params.sun_energy,
         params.day_factor,
         1.0 - params.day_factor,
-        (1.0 - params.day_factor).powf(1.4),
+        0.0,
         params.sky_tint,
     ]
 }
@@ -120,7 +120,9 @@ pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
 fn time_state(time_seconds: f32) -> TimeState {
     let time_of_day = time_seconds.rem_euclid(DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS;
     let sun_angle = time_of_day * 2.0 * PI;
-    let sun_dir = Vec3::new(sun_angle.cos(), sun_angle.sin().max(0.0), 0.2).normalize();
+    let elevation = sun_angle.sin() * 0.55;
+    let depth = sun_angle.cos();
+    let sun_dir = Vec3::new(0.12, elevation, depth).normalize();
     let sky_tint = smoothstep((sun_angle.sin() + 0.12) / 0.62);
 
     TimeState {
@@ -165,29 +167,17 @@ fn sun_value(direction: Vec3, sun_dir: Vec3, params: SkyParams, height: f32) -> 
 }
 
 /// Final composition: gradient + sun + stars + aurora.
-fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
+fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, _time_seconds: f32) -> Vec3 {
     let height = smoothstep(direction.y * 0.5 + 0.5);
     let mut sky = sky_color(direction, params, height);
 
     let night = smoothstep((1.0 - params.day_factor - 0.1) / 0.8);
     let star_val = stars_mask(direction, night, params.day_factor);
-    let aurora_val = aurora_mask(direction, time_seconds) * smoothstep((1.0 - params.day_factor - 0.2) / 0.8);
-
     sky = sky + sun_value(direction, sun_dir, params, height);
-    sky = sky + (Vec3::new(1.0, 1.0, 1.0) * star_val);
-    sky + (Vec3::new(0.1, 0.8, 0.4) * aurora_val)
+    sky + (Vec3::new(1.0, 1.0, 1.0) * star_val)
 }
 
 
-
-fn aurora_mask(direction: Vec3, time_seconds: f32) -> f32 {
-    let wave = (direction.x * 10.0 + time_seconds * 2.0).sin();
-    let noise = (wave * 123.4).sin() * 43_758.5;
-    let noise = noise.fract().abs();
-    let band = smoothstep((noise - 0.4) / 0.2);
-    let horizon_fade = 1.0 - direction.y.abs();
-    band * horizon_fade.clamp(0.0, 1.0)
-}
 
 fn hash3(v: Vec3) -> f32 {
     ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()
