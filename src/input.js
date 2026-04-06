@@ -42,6 +42,9 @@ export function isKeyDown(code) {
 export function updateSelectedBlock(index) {
     worldState.selectedBlockIndex = index;
     document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
+    document
+        .querySelectorAll('.inventory-hex-slot.is-hotbar')
+        .forEach((slot) => slot.classList.toggle('active', Number(slot.dataset.slot) === index));
 }
 
 export function toggleInventoryScreen() {
