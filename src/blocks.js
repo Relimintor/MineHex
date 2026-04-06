@@ -127,13 +127,27 @@ function getNeighborChunkKeys(cq, cr) {
     return NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
 }
 
-function markChunkAndNeighborsDirty(q, r) {
+
+
+function recordDirtyChunkOp(chunkKey, op, h) {
+    if (!worldState.dirtyChunkOps.has(chunkKey)) {
+        worldState.dirtyChunkOps.set(chunkKey, {
+            addedHeights: new Set(),
+            removedHeights: new Set(),
+        });
+    }
+    const entry = worldState.dirtyChunkOps.get(chunkKey);
+    if (op === 'add') entry.addedHeights.add(h);
+    if (op === 'remove') entry.removedHeights.add(h);
+}
+function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
     const { cq, cr } = getChunkCoords(q, r);
 
     const selfChunkKey = `${cq},${cr}`;
     worldState.dirtyChunks.add(selfChunkKey);
     const selfChunk = worldState.chunkMeta.get(selfChunkKey);
     if (selfChunk) selfChunk.dirty = true;
+    if (op && Number.isFinite(h)) recordDirtyChunkOp(selfChunkKey, op, h);
 
     for (const neighborChunkKey of getNeighborChunkKeys(cq, cr)) {
         worldState.dirtyChunks.add(neighborChunkKey);
@@ -370,7 +384,7 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
     updateTopSolidHeightOnAdd(q, r, h, safeTypeIndex);
 
     if (trackDirty) {
-        markChunkAndNeighborsDirty(q, r);
+        markChunkAndNeighborsDirty(q, r, 'add', h);
     }
 
     if (refreshVisibility) {
@@ -407,7 +421,7 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
         worldState.blockCoordsByKey.delete(key);
 
         if (trackDirty) {
-            markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r);
+            markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r, 'remove', mesh.userData.h);
         }
 
         if (refreshVisibility) {

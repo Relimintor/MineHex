@@ -174,6 +174,42 @@ function recomputeChunkBounds(chunkKey) {
     );
 }
 
+
+
+function getChunkVerticalRangeFromBounds(bounds) {
+    const minH = Math.floor((bounds.min.y + CHUNK_AABB_MARGIN) / HEX_HEIGHT + 1.0e-4);
+    const maxH = Math.floor(((bounds.max.y - CHUNK_AABB_MARGIN) / HEX_HEIGHT) - 1.0001);
+    return { minH, maxH };
+}
+
+function applyIncrementalChunkBoundsUpdate(chunk, dirtyOps) {
+    if (!chunk?.bounds || !dirtyOps) return false;
+
+    const { minH, maxH } = getChunkVerticalRangeFromBounds(chunk.bounds);
+    let needsFullRecompute = false;
+
+    for (const removedH of dirtyOps.removedHeights) {
+        if (removedH === minH || removedH === maxH) {
+            needsFullRecompute = true;
+            break;
+        }
+    }
+
+    if (needsFullRecompute) return false;
+
+    let nextMinY = chunk.bounds.min.y;
+    let nextMaxY = chunk.bounds.max.y;
+    for (const addedH of dirtyOps.addedHeights) {
+        const blockMinY = (addedH * HEX_HEIGHT) - CHUNK_AABB_MARGIN;
+        const blockMaxY = ((addedH + 1) * HEX_HEIGHT) + CHUNK_AABB_MARGIN;
+        nextMinY = Math.min(nextMinY, blockMinY);
+        nextMaxY = Math.max(nextMaxY, blockMaxY);
+    }
+
+    chunk.bounds.min.y = nextMinY;
+    chunk.bounds.max.y = nextMaxY;
+    return true;
+}
 function getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR) {
     const dq = chunkQ - cameraChunkQ;
     const dr = chunkR - cameraChunkR;
@@ -760,9 +796,13 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
         recomputeChunkGreedyFaceQuads(chunkKey);
 
         const chunk = worldState.chunkMeta.get(chunkKey);
+        const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
         if (chunk) {
             chunk.dirty = true;
-            chunk.bounds = recomputeChunkBounds(chunkKey);
+            const usedIncrementalBounds = applyIncrementalChunkBoundsUpdate(chunk, dirtyOps);
+            if (!usedIncrementalBounds) {
+                chunk.bounds = recomputeChunkBounds(chunkKey);
+            }
             if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
         }
 
@@ -775,6 +815,7 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
         const chunk = worldState.chunkMeta.get(chunkKey);
         if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
         worldState.dirtyChunks.delete(chunkKey);
+        worldState.dirtyChunkOps.delete(chunkKey);
     }
 }
 
