@@ -5,6 +5,7 @@ import { HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
+import { toggleCameraPerspective } from './playerView.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -80,6 +81,10 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 export function registerDesktopInputHandlers() {
     document.addEventListener('keydown', (event) => {
         setKeyState(event.code, true);
+        if (event.code === 'KeyC' && !event.repeat) {
+            toggleCameraPerspective();
+            return;
+        }
         if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 

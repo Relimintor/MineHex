@@ -1,3 +1,5 @@
+const THREE = window.THREE;
+
 import { camera, renderer, scene, skyController } from './scene.js';
 import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
@@ -9,6 +11,7 @@ import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, USE_ULTRA_LOW_PROFILE
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
+import { updateCameraPerspective } from './playerView.js';
 
 camera.position.set(0, 48, 0);
 
@@ -68,6 +71,8 @@ function chooseControlMode() {
     });
 }
 
+const playerPosition = new THREE.Vector3().copy(camera.position);
+
 let lastFrameTime = performance.now();
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
 const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 2;
@@ -81,8 +86,8 @@ let coordinatesHudFrameInterval = 1;
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
-    const { q, r, h } = worldToAxial(camera.position);
-    const { x, y, z } = worldToCube(camera.position);
+    const { q, r, h } = worldToAxial(playerPosition);
+    const { x, y, z } = worldToCube(playerPosition);
     coordinatesHud.textContent = `Axial q:${q} r:${r} h:${h} | Cube x:${x} y:${y} z:${z}`;
 }
 
@@ -92,10 +97,11 @@ function animate(now = performance.now()) {
     lastFrameTime = now;
 
     worldState.frame += 1;
-    worldState.frameCameraAxial = worldToAxial(camera.position);
+    worldState.frameCameraAxial = worldToAxial(playerPosition);
     if ((worldState.frame % coordinatesHudFrameInterval) === 0) updateCoordinatesHud();
 
     if (inputState.isLocked) {
+        camera.position.copy(playerPosition);
         governorElapsedMs += deltaTimeSeconds * 1000;
         if ((worldState.frame % CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES) === 0) {
             updateChunkBudgetGovernor(governorElapsedMs);
@@ -115,9 +121,11 @@ function animate(now = performance.now()) {
         if (hasSpawnedInAllowedRange) {
             handlePhysics(deltaTimeSeconds);
         }
+
+        playerPosition.copy(camera.position);
     }
 
-    camera.rotation.set(inputState.pitch, inputState.yaw, 0, 'YXZ');
+    updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
     skyController?.update(now * 0.001, camera);
     renderer.render(scene, camera);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
@@ -141,6 +149,7 @@ chooseControlMode().then((mode) => {
     tickChunkApplyBudget();
     tickChunkVisibility();
     hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
+    playerPosition.copy(camera.position);
     animate();
 });
 
