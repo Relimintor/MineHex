@@ -91,6 +91,9 @@ struct SkyParams {
 }
 
 /// Computes a smooth sky color and returns it as a packed 0xRRGGBB integer.
+///
+/// This helper samples the sky at zenith (`direction = up`) so existing JS call sites
+/// can keep using a single color.
 #[wasm_bindgen]
 pub fn sky_color_hex(time_seconds: f32) -> u32 {
     sky_color_hex_for_direction(time_seconds, 0.0, 1.0, 0.0)
