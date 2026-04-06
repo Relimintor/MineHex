@@ -43,15 +43,7 @@ function collidesAtCameraPosition(x, y, z) {
     return isSolidAtWorldPosition(x, y - PLAYER_FEET_OFFSET, z);
 }
 
-function getColumnTopGroundDistance() {
-    const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
-    if (topSolidH === undefined) return null;
-    if (!isSolidBlockAt(q, r, topSolidH)) return null;
-    return camera.position.y - (topSolidH * HEX_HEIGHT);
-}
-
-function getColumnTopGroundDistance() {
+function getFallbackGroundDistanceFromTopSolidColumn() {
     const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
     if (topSolidH === undefined) return null;
@@ -71,7 +63,7 @@ function getGroundHit() {
 
 function resolveGroundCollision() {
     const groundHit = getGroundHit();
-    const fallbackDistanceToGround = groundHit ? null : getColumnTopGroundDistance();
+    const fallbackDistanceToGround = groundHit ? null : getFallbackGroundDistanceFromTopSolidColumn();
     if (!groundHit && fallbackDistanceToGround === null) {
         inputState.canJump = false;
         return;
