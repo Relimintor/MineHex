@@ -127,16 +127,19 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
 
-    vec2 cloudUV = (dir.xz / max(0.15, dir.y + 0.45)) * 1.4 + vec2(time * 0.003, time * 0.0015);
+    vec2 cloudUV = (dir.xz / max(0.15, dir.y + 0.45)) * 1.4 + vec2(time * 0.010, time * 0.004);
     float cloudMask = cloud_map(cloudUV);
-    float cloudFade = smoothstep(0.15, 0.9, dayFactor) * smoothstep(-0.15, 0.35, dir.y);
-    float cloudShade = 0.75 + 0.25 * max(dot(normalize(vec3(dir.x, 0.25, dir.z)), sunDir), 0.0);
-    vec3 cloudColor = vec3(0.95, 0.96, 0.98) * cloudMask * cloudFade * cloudShade * 0.8;
+    float cloudVerticalFade = smoothstep(-0.2, 0.4, dir.y);
+    float cloudDistanceFade = 1.0 - smoothstep(2.0, 4.5, length(cloudUV));
+    float cloudFade = cloudVerticalFade * cloudDistanceFade;
+    float cloudNightVisibility = 0.35 + (0.65 * dayFactor);
+    float cloudShade = mix(0.62, 1.0, max(dot(normalize(vec3(dir.x, 0.25, dir.z)), sunDir), 0.0));
+    vec3 cloudColor = vec3(0.95, 0.96, 0.98) * cloudMask * cloudFade * cloudNightVisibility * cloudShade;
 
     sky += sunTint * sunVal * 1.6;
     sky += moon_color(dir, sunDir, time);
     sky += vec3(1.0) * starVal;
-    sky = mix(sky, cloudColor + sky, cloudMask * cloudFade * 0.75);
+    sky = mix(sky, cloudColor + sky, cloudMask * cloudFade * cloudNightVisibility * 0.75);
     return sky;
 }
 
