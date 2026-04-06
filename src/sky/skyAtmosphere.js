@@ -24,101 +24,42 @@ precision mediump float;
 
 varying vec3 vWorldDir;
 
-uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uSunEnergy;
 uniform float uDayFactor;
 uniform float uNightFactor;
 uniform float uAuroraFactor;
 
-float hash13(vec3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.zyx + 31.32);
-    return fract((p.x + p.y) * p.z);
-}
-
-float valueNoise3(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    vec3 u = f * f * (3.0 - 2.0 * f);
-
-    float n000 = hash13(i + vec3(0.0, 0.0, 0.0));
-    float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
-    float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
-    float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
-    float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
-    float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
-    float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
-    float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
-
-    float nx00 = mix(n000, n100, u.x);
-    float nx10 = mix(n010, n110, u.x);
-    float nx01 = mix(n001, n101, u.x);
-    float nx11 = mix(n011, n111, u.x);
-    float nxy0 = mix(nx00, nx10, u.y);
-    float nxy1 = mix(nx01, nx11, u.y);
-    return mix(nxy0, nxy1, u.z);
-}
-
-float fbm(vec3 p) {
-    float value = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 3; i++) {
-        value += valueNoise3(p) * amp;
-        p *= 2.03;
-        amp *= 0.5;
-    }
-    return value;
-}
-
-vec3 computeAtmosphere(vec3 dir, float horizon) {
-    vec3 dayZenith = vec3(0.27, 0.57, 0.88);
-    vec3 dayHorizon = vec3(0.70, 0.86, 0.98);
-    vec3 dusk = vec3(0.98, 0.53, 0.34);
-    vec3 dawn = vec3(0.99, 0.66, 0.42);
-    vec3 nightZenith = vec3(0.03, 0.06, 0.13);
-    vec3 nightHorizon = vec3(0.07, 0.11, 0.22);
-
-    float duskShift = clamp((uSunDir.x + 1.0) * 0.5, 0.0, 1.0);
-    vec3 twilight = mix(dawn, dusk, duskShift);
-
-    vec3 dayBase = mix(dayZenith, dayHorizon, horizon);
-    vec3 nightBase = mix(nightZenith, nightHorizon, horizon);
-    vec3 nightToTwilight = mix(nightBase, twilight, 1.0 - uDayFactor);
-    return mix(nightToTwilight, dayBase, uDayFactor);
-}
-
 void main() {
     vec3 dir = normalize(vWorldDir);
-    float upness = clamp((dir.y + 1.0) * 0.5, 0.0, 1.0);
-    float horizon = 1.0 - smoothstep(0.0, 1.0, upness);
+    float height = smoothstep(0.0, 1.0, dir.y * 0.5 + 0.5);
+    float sunFactor = max(dot(dir, normalize(uSunDir)), 0.0);
 
-    vec3 sky = computeAtmosphere(dir, horizon);
+    vec3 dayTop = vec3(0.20, 0.50, 1.0);
+    vec3 dayHorizon = vec3(0.72, 0.86, 1.0);
+    vec3 nightTop = vec3(0.02, 0.02, 0.05);
+    vec3 nightHorizon = vec3(0.05, 0.07, 0.14);
 
-    float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
-    float sunDisk = pow(sunDot, 320.0) * (0.25 + 1.2 * uSunEnergy);
-    float sunHalo = pow(sunDot, 20.0) * 0.22 * uSunEnergy;
-    sky += vec3(1.0, 0.93, 0.76) * (sunDisk + sunHalo);
+    vec3 dayGradient = mix(dayHorizon, dayTop, height);
+    vec3 nightGradient = mix(nightHorizon, nightTop, height);
 
-    vec3 starsPos = dir * 190.0 + vec3(0.0, uTime * 0.03, 0.0);
-    float stars = smoothstep(0.975, 1.0, valueNoise3(starsPos));
-    float twinkle = 0.4 + 0.6 * sin((uTime * 0.8) + dir.x * 41.0 + dir.z * 23.0);
-    sky += vec3(0.84, 0.90, 1.0) * stars * twinkle * pow(uNightFactor, 2.0);
+    vec3 baseSky = mix(nightGradient, dayGradient, uDayFactor);
 
-    vec3 auroraP = vec3(dir.x * 6.0, dir.z * 6.0, uTime * 0.1);
-    float auroraNoise = fbm(auroraP);
-    float auroraMask = smoothstep(0.25, 0.75, auroraNoise) * smoothstep(0.1, -0.5, dir.y);
-    sky += vec3(0.12, 0.9, 0.55) * auroraMask * 0.28 * uAuroraFactor;
+    vec3 sunTint = mix(vec3(1.0, 0.92, 0.72), dayGradient, 0.35);
+    vec3 sunGlow = sunTint * pow(sunFactor, 64.0) * (0.12 + uSunEnergy * 0.88);
 
-    gl_FragColor = vec4(clamp(sky, 0.0, 1.0), 1.0);
+    float nightLift = 0.85 + 0.15 * uNightFactor;
+    vec3 finalSky = (baseSky * (0.35 + 0.65 * height) * nightLift) + sunGlow;
+
+    gl_FragColor = vec4(clamp(finalSky, 0.0, 1.0), 1.0);
 }
-`;
+`
 
 function makeFallbackUniforms(timeSeconds) {
     const period = 120.0;
     const cycle = ((timeSeconds % period) + period) % period / period;
     const angle = cycle * Math.PI * 2.0 - Math.PI * 0.5;
-    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0.15).normalize();
+    const sunDir = new THREE.Vector3(Math.cos(angle), Math.max(0, Math.sin(angle)), 0.2).normalize();
     const skyTint = THREE.MathUtils.smoothstep((Math.sin(angle) + 0.12) / 0.62, 0, 1);
     const day = skyTint;
     const aurora = Math.pow(1 - day, 1.4);
