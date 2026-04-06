@@ -36,9 +36,14 @@ pub fn flip_mesh_normals(mesh: &mut Mesh) {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "serde", not(target_arch = "wasm32")))]
 pub fn path_relative_to_bevy_exe(path: &str) -> std::path::PathBuf {
     let current_dir = bevy::asset::io::file::FileAssetReader::get_base_path();
     let new_path = current_dir.join(path);
     new_path
+}
+
+#[cfg(all(feature = "serde", target_arch = "wasm32"))]
+pub fn path_relative_to_bevy_exe(path: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(path)
 }
