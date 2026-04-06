@@ -1,0 +1,30 @@
+[package]
+name = "bevy_sky_gradient"
+version = "0.2.0"
+edition = "2024"
+keywords = ["bevy", "skybox", "atmosphere", "procedural", "gamedev"]
+categories = ["game-development", "rendering"]
+license = "MIT or Apache-2.0"
+readme = "README.md"
+description = "Sky rendering plugin for bevy featuring, sky gradient, aurora / northern lights, stars, sun, day-night cycle"
+repository = "https://github.com/TanTanDev/bevy_sky_gradient"
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:ron", "dep:bincode"]
+
+[dependencies]
+bevy = "0.17"
+thiserror = "2"
+
+# optional serialization
+serde = { version= "1", features = ["derive"], optional = true }
+# to serilalize user readable files
+ron = {version = "0.12", optional = true}
+# to serialize compact files
+bincode = {version = "2", optional = true, features = ["serde"]}
+
+[dev-dependencies]
+rand = "0.9"
+bevy_flycam = "0.17"
+bevy-inspector-egui = "0.35"
