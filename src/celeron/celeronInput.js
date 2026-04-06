@@ -47,13 +47,20 @@ function canInteractNow() {
 }
 
 export function registerCeleronInputHandlers() {
+    document.querySelectorAll('.slot').forEach((slot) => {
+        slot.addEventListener('click', () => {
+            const index = Number(slot.dataset.index);
+            if (Number.isInteger(index)) updateSelectedBlock(index);
+        });
+    });
+
     document.addEventListener('keydown', (event) => {
         setKeyState(event.code, true);
         if (event.code === 'KeyC' && !event.repeat) {
             toggleCameraPerspective();
             return;
         }
-        if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
+        if (event.key >= '1' && event.key <= '9') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 
     document.addEventListener('keyup', (event) => {
