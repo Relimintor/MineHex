@@ -33,13 +33,13 @@ float hash3(vec3 p) {
 }
 
 float stars(vec3 dir, float night, float t) {
-    float angle = t * 0.002;
+    float angle = t * 0.0004;
     float c = cos(angle);
     float s = sin(angle);
     vec3 rotated = vec3((dir.x * c) - (dir.z * s), dir.y, (dir.x * s) + (dir.z * c));
     float n = hash3(rotated * 1000.0);
     float star = step(0.99833, n);
-    float twinkle = 0.90 + 0.10 * sin(t * 0.15 + rotated.x * 61.0 + rotated.z * 37.0);
+    float twinkle = 0.94 + 0.06 * sin(t * 0.03 + rotated.x * 61.0 + rotated.z * 37.0);
     return star * night * twinkle;
 }
 

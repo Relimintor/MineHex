@@ -176,12 +176,12 @@ fn sun_value(direction: Vec3, sun_dir: Vec3, params: SkyParams, height: f32) -> 
 }
 
 /// Final composition: gradient + sun + stars + aurora.
-fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, _time_seconds: f32) -> Vec3 {
+fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
     let height = smoothstep(direction.y * 0.5 + 0.5);
     let mut sky = sky_color(direction, sun_dir, params, height);
 
     let night = smoothstep((1.0 - params.day_factor - 0.1) / 0.8);
-    let star_val = stars_mask(direction, night, params.sky_tint);
+    let star_val = stars_mask(direction, night, time_seconds);
     sky = sky + sun_value(direction, sun_dir, params, height);
     sky + (Vec3::new(1.0, 1.0, 1.0) * star_val)
 }
@@ -192,8 +192,8 @@ fn hash3(v: Vec3) -> f32 {
     ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()
 }
 
-fn stars_mask(direction: Vec3, night: f32, time_of_day: f32) -> f32 {
-    let angle = time_of_day * 0.002;
+fn stars_mask(direction: Vec3, night: f32, time_seconds: f32) -> f32 {
+    let angle = time_seconds * 0.0004;
     let c = angle.cos();
     let s = angle.sin();
     let rotated = Vec3::new((direction.x * c) - (direction.z * s), direction.y, (direction.x * s) + (direction.z * c));
