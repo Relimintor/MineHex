@@ -58,7 +58,8 @@ export const PLAYER_HEIGHT_IN_HEXES = 1.8;
 export const PLAYER_HEIGHT = HEX_HEIGHT * PLAYER_HEIGHT_IN_HEXES;
 
 export const GRAVITY = -0.02;
-export const JUMP_FORCE = 0.42;
+// Target jump apex: about 1.5 hexes (~2.4 world units) from takeoff.
+export const JUMP_FORCE = 0.31;
 export const MOVE_SPEED = 0.12;
 export const MOVE_ACCELERATION = 0.35;
 export const MOVE_FRICTION = 0.2;
