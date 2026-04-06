@@ -18,6 +18,9 @@ const useUltraLowChunkProfile = isCeleronOverride || (!controlModeOverride && is
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileOverride || (!isPcOverride && !controlModeOverride && (isMobileUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
+const isCeleronChunkProfile = useUltraLowChunkProfile;
+const isMobileChunkProfile = !isCeleronChunkProfile && (isMobileOverride || (!isPcOverride && !controlModeOverride && isMobileUserAgent));
+
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
@@ -25,19 +28,18 @@ export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = false;
 export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 
-// Chunking Goldilocks profile:
-// - celeron profile: 4-ish footprint and tiny range for low-end Chromebooks.
-// - mobile profile: 8-ish footprint balanced for touch devices.
-// - desktop/high-end: 16-ish footprint with larger visibility range.
-export const CHUNK_SIZE = useUltraLowChunkProfile ? 4 : (useLowEndChunkProfile ? 8 : 16);
-export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 2 : 4);
-export const CHUNK_CREATION_BUDGET = useUltraLowChunkProfile ? 1 : 2;
-export const CHUNK_APPLY_BUDGET = useUltraLowChunkProfile ? 1 : 2;
-export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
-export const ENABLE_COMPLEX_LOD = !useLowEndChunkProfile;
+// Chunk profile alignment:
+// - celeron + mobile share the same budgets/features for stable low-end behavior.
+// - mobile gets slightly bigger chunks and +1 render distance compared to celeron.
+export const CHUNK_SIZE = isCeleronChunkProfile ? 4 : (isMobileChunkProfile ? 6 : (useLowEndChunkProfile ? 8 : 16));
+export const RENDER_DIST = isCeleronChunkProfile ? 1 : (isMobileChunkProfile ? 2 : (useLowEndChunkProfile ? 2 : 4));
+export const CHUNK_CREATION_BUDGET = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
+export const CHUNK_APPLY_BUDGET = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
+export const ENABLE_OCCLUSION_CULLING = !(useLowEndChunkProfile || isMobileChunkProfile);
+export const ENABLE_COMPLEX_LOD = !(useLowEndChunkProfile || isMobileChunkProfile);
 export const ENABLE_WORLDGEN_WORKER = true;
-export const MAX_WORLDGEN_IN_FLIGHT = useUltraLowChunkProfile ? 1 : 2;
-export const FORCE_BATCHED_CHUNK_RENDERING = useUltraLowChunkProfile;
+export const MAX_WORLDGEN_IN_FLIGHT = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
+export const FORCE_BATCHED_CHUNK_RENDERING = isCeleronChunkProfile || isMobileChunkProfile;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
