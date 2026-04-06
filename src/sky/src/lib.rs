@@ -89,7 +89,7 @@ pub fn sky_color_hex(time_seconds: f32) -> u32 {
 pub fn sky_color_hex_for_direction(time_seconds: f32, dir_x: f32, dir_y: f32, dir_z: f32) -> u32 {
     let direction = Vec3::new(dir_x, dir_y, dir_z).normalize();
     let params = sky_params_internal(time_seconds);
-    let color = sample_sky_gradient(direction, params, time_seconds).clamp01();
+    let color = render_sky(direction, params.sun_dir, params, time_seconds).clamp01();
     pack_hex(color)
 }
 
@@ -141,11 +141,7 @@ fn sky_params_internal(time_seconds: f32) -> SkyParams {
     }
 }
 
-/// Core gradient: branch-free, no texture lookups, based on dir/sun/height.
-fn sample_sky_gradient(direction: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
-    let height = smoothstep(direction.y * 0.5 + 0.5);
-    let sun_dot = direction.dot(params.sun_dir).clamp(0.0, 1.0);
-
+fn sky_color(direction: Vec3, params: SkyParams, height: f32) -> Vec3 {
     let day_top = Vec3::new(0.20, 0.50, 1.00);
     let day_horizon = Vec3::new(0.72, 0.86, 1.00);
     let night_top = Vec3::new(0.02, 0.02, 0.05);
@@ -154,20 +150,32 @@ fn sample_sky_gradient(direction: Vec3, params: SkyParams, time_seconds: f32) ->
     let day_gradient = mix(day_horizon, day_top, height);
     let night_gradient = mix(night_horizon, night_top, height);
     let base = mix(night_gradient, day_gradient, params.day_factor);
+    let _ = direction;
+    base * (0.35 + 0.65 * height * params.sky_tint)
+}
 
+fn sun_value(direction: Vec3, sun_dir: Vec3, params: SkyParams, height: f32) -> Vec3 {
+    let day_gradient = mix(Vec3::new(0.72, 0.86, 1.00), Vec3::new(0.20, 0.50, 1.00), height);
     let sun_tint = mix(Vec3::new(1.0, 0.92, 0.72), day_gradient, 0.35);
+    let sun_dot = direction.dot(sun_dir).clamp(0.0, 1.0);
     let disc = smoothstep((sun_dot - 0.999) / 0.001);
     let glow = smoothstep((sun_dot - 0.94) / 0.06);
-    let sun_color = sun_tint * ((disc * (0.85 + 0.15 * params.sun_energy)) + (glow * 0.35 * params.sun_energy));
+    let sun_val = (disc * (0.85 + 0.15 * params.sun_energy)) + (glow * 0.35 * params.sun_energy);
+    sun_tint * sun_val
+}
+
+/// Final composition: gradient + sun + stars + aurora.
+fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, time_seconds: f32) -> Vec3 {
+    let height = smoothstep(direction.y * 0.5 + 0.5);
+    let mut sky = sky_color(direction, params, height);
 
     let night = smoothstep((1.0 - params.day_factor - 0.1) / 0.8);
-    let star_mask = stars_mask(direction, night, params.day_factor);
-    let star_color = Vec3::new(0.88, 0.92, 1.0) * star_mask;
+    let star_val = stars_mask(direction, night, params.day_factor);
+    let aurora_val = aurora_mask(direction, time_seconds) * smoothstep((1.0 - params.day_factor - 0.2) / 0.8);
 
-    let aurora_mask = aurora_mask(direction, time_seconds) * smoothstep((1.0 - params.day_factor - 0.2) / 0.8);
-    let aurora_color = Vec3::new(0.20, 0.95, 0.75) * (aurora_mask * 0.35);
-
-    (base * (0.35 + 0.65 * height * params.sky_tint)) + sun_color + star_color + aurora_color
+    sky = sky + sun_value(direction, sun_dir, params, height);
+    sky = sky + (Vec3::new(1.0, 1.0, 1.0) * star_val);
+    sky + (Vec3::new(0.1, 0.8, 0.4) * aurora_val)
 }
 
 
