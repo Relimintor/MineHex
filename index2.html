@@ -28,7 +28,65 @@
     <div id="crosshair"></div>
 
     <div id="inventory-screen" aria-hidden="true">
-        <div class="inventory-screen-panel">Inventory</div>
+        <div class="inventory-screen-panel" role="dialog" aria-label="Inventory screen">
+            <div class="inventory-avatar-box">
+                <div class="inventory-avatar-gear inventory-avatar-gear-left-top" aria-hidden="true"></div>
+                <div class="inventory-avatar-gear inventory-avatar-gear-left-bottom" aria-hidden="true"></div>
+                <div id="inventory-avatar-viewport" aria-label="Player avatar preview"></div>
+                <div class="inventory-avatar-gear inventory-avatar-gear-right-top" aria-hidden="true"></div>
+                <div class="inventory-avatar-gear inventory-avatar-gear-right-bottom" aria-hidden="true"></div>
+                <div class="inventory-avatar-label">Player</div>
+            </div>
+
+            <div class="inventory-grid-box">
+                <div class="inventory-hotbar-strip" aria-label="Hotbar slots mirrored in inventory">
+                    <div class="inventory-hex-slot is-hotbar active" data-slot="0"><div class="block-preview block-preview-grass"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="1"><div class="block-preview block-preview-dirt"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="2"><div class="block-preview block-preview-stone"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="3"><div class="block-preview block-preview-cloud"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="4"><div class="block-preview block-preview-water"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="5"><div class="block-preview block-preview-nethrock"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="6"><div class="block-preview block-preview-oak-wood"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="7"><div class="block-preview block-preview-oak-leaves"></div></div>
+                    <div class="inventory-hex-slot is-hotbar" data-slot="8"><div class="block-preview block-preview-snow"></div></div>
+                </div>
+
+                <div class="inventory-honeycomb" aria-label="Inventory honeycomb with 20 extra hex slots (29 total including hotbar)">
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="1"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="2"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="3"></div>
+                    </div>
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="4"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="5"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="6"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="7"></div>
+                    </div>
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="8"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="9"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="10"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="11"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="12"></div>
+                    </div>
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="13"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="14"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="15"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="16"></div>
+                    </div>
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="17"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="18"></div>
+                        <div class="inventory-hex-slot" data-hive-slot="19"></div>
+                    </div>
+                    <div class="inventory-row">
+                        <div class="inventory-hex-slot" data-hive-slot="20"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="inventory">
