@@ -101,12 +101,12 @@ canvas { display: block; }
 }
 
 .inventory-screen-panel {
-    width: min(95vw, 980px);
+    width: min(94vw, 900px);
     min-height: min(80vh, 560px);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 18px;
+    gap: 14px;
 }
 
 .inventory-avatar-box,
@@ -118,10 +118,10 @@ canvas { display: block; }
 }
 
 .inventory-avatar-box {
-    width: min(24vw, 220px);
-    min-width: 180px;
-    min-height: min(52vh, 340px);
-    padding: 18px;
+    width: min(32vw, 290px);
+    min-width: 220px;
+    min-height: min(64vh, 430px);
+    padding: 22px;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     grid-template-rows: auto auto auto;
@@ -131,8 +131,8 @@ canvas { display: block; }
 }
 
 #inventory-avatar-viewport {
-    width: 128px;
-    height: 188px;
+    width: 178px;
+    height: 256px;
     border-radius: 12px;
     border: 2px solid rgba(255, 255, 255, 0.35);
     background: radial-gradient(circle at 40% 25%, rgba(170, 170, 170, 0.5), rgba(95, 95, 95, 0.7));
@@ -171,9 +171,9 @@ canvas { display: block; }
 }
 
 .inventory-grid-box {
-    flex: 1;
-    min-height: min(72vh, 520px);
-    padding: 20px 20px 26px;
+    width: min(60vw, 560px);
+    min-height: min(66vh, 480px);
+    padding: 16px 16px 20px;
     display: grid;
     gap: 18px;
 }
@@ -183,6 +183,7 @@ canvas { display: block; }
     flex-wrap: nowrap;
     justify-content: center;
     gap: 8px;
+    align-self: end;
 }
 
 .inventory-honeycomb {
@@ -190,7 +191,7 @@ canvas { display: block; }
     flex-direction: column;
     align-items: center;
     align-content: start;
-    gap: 10px;
+    gap: 8px;
     padding-bottom: 8px;
 }
 
