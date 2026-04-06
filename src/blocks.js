@@ -1,20 +1,10 @@
-const THREE = window.THREE;
-
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld } from './coords.js';
+import { createBlockMaterials } from './shaders/materials.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
 
-const blockMaterials = BLOCK_TYPES.map((blockType) => new THREE.MeshLambertMaterial({
-    color: blockType.color,
-    transparent: blockType.transparent ?? false,
-    opacity: blockType.opacity ?? 1,
-    depthWrite: blockType.transparent ? false : true,
-    // GPU backface culling layer:
-    // triangles are rasterized only when their winding faces the camera
-    // (equivalent to n·v < 0 for front-facing triangles).
-    side: THREE.FrontSide
-}));
+const blockMaterials = createBlockMaterials(BLOCK_TYPES);
 const getChunkCoords = (q, r) => ({
     cq: Math.round(q / CHUNK_SIZE),
     cr: Math.round(r / CHUNK_SIZE)
