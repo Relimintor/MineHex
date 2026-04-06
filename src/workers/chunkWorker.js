@@ -14,7 +14,8 @@ const BLOCK_INDEX = {
     dirt: 1,
     water: 4,
     snow: 8,
-    ice: 9
+    ice: 9,
+    sand: 10
 };
 
 function hash2D(x, y, seed = 0) {
@@ -84,8 +85,8 @@ function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel }) {
             const biome = getBiome(climate, height, seaLevel);
             const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest';
             const topBlockType = biome === 'beach'
-                ? BLOCK_INDEX.dirt
-                : (height < seaLevel ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
+                ? BLOCK_INDEX.sand
+                : (height < seaLevel ? BLOCK_INDEX.sand : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
             const addSurfaceFluid = biome === 'ocean';
             const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
             const addTree = biome === 'forest' ? 'forest' : (biome === 'snowy_forest' ? 'snow' : null);
