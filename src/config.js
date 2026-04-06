@@ -7,12 +7,15 @@ const runtimeUserAgent = runtimeNavigator?.userAgent ?? '';
 const isMobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(runtimeUserAgent);
 const isChromebook = /CrOS/i.test(runtimeUserAgent);
 const isCeleronUserAgent = /Celeron/i.test(runtimeUserAgent);
+const controlModeOverride = runtimeStorage?.getItem('minehexControlMode');
 const performanceProfileOverride = runtimeStorage?.getItem('minehexPerformanceProfile');
 const isCeleronOverride = performanceProfileOverride === 'celeron_cb';
+const isMobileOverride = controlModeOverride === 'mobile';
+const isPcOverride = controlModeOverride === 'pc';
 const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
-const useUltraLowChunkProfile = isCeleronOverride || (isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
-const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileUserAgent || hasLimitedCpu || hasLimitedMemory;
+const useUltraLowChunkProfile = isCeleronOverride || (!controlModeOverride && isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
+const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileOverride || (!isPcOverride && !controlModeOverride && (isMobileUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
@@ -23,10 +26,11 @@ export const ENABLE_SHADOW_MAP = false;
 export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 
 // Chunking Goldilocks profile:
-// - low-end/mobile: 8-ish footprint reduces remesh spikes.
-// - desktop/high-end: 16-ish footprint lowers draw-call pressure.
+// - celeron profile: 4-ish footprint and tiny range for low-end Chromebooks.
+// - mobile profile: 8-ish footprint balanced for touch devices.
+// - desktop/high-end: 16-ish footprint with larger visibility range.
 export const CHUNK_SIZE = useUltraLowChunkProfile ? 4 : (useLowEndChunkProfile ? 8 : 16);
-export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 3 : 2);
+export const RENDER_DIST = useUltraLowChunkProfile ? 1 : (useLowEndChunkProfile ? 2 : 4);
 export const CHUNK_CREATION_BUDGET = useUltraLowChunkProfile ? 1 : 2;
 export const CHUNK_APPLY_BUDGET = useUltraLowChunkProfile ? 1 : 2;
 export const ENABLE_OCCLUSION_CULLING = !useLowEndChunkProfile;
