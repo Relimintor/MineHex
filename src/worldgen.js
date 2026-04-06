@@ -76,6 +76,12 @@ const pendingChunkApplyQueue = [];
 const pendingChunkApplySet = new Set();
 const recycledChunkBlockSets = [];
 let chunkGenerationWorkerPool = null;
+const CHUNK_WORKER_SCRIPT_URLS = [
+    new URL('./workers/chunkWorker.js', import.meta.url),
+    new URL('./workers/chunkWorkerSecondary.js', import.meta.url),
+    new URL('./workers/chunkWorkerTertiary.js', import.meta.url)
+];
+
 
 const FRAME_TIME_TARGET_MS = 16.7;
 const FRAME_TIME_SPIKE_MS = 24;
@@ -848,9 +854,14 @@ function initChunkGenerationWorker() {
     if (typeof Worker === 'undefined') return;
 
     try {
+        let workerScriptIndex = 0;
         chunkGenerationWorkerPool = createChunkWorkerPool({
             workerSize: WORLDGEN_WORKER_COUNT,
-            workerFactory: () => new Worker(new URL('./workers/chunkWorker.js', import.meta.url), { type: 'module' }),
+            workerFactory: () => {
+                const scriptUrl = CHUNK_WORKER_SCRIPT_URLS[workerScriptIndex % CHUNK_WORKER_SCRIPT_URLS.length];
+                workerScriptIndex += 1;
+                return new Worker(scriptUrl, { type: 'module' });
+            },
             onMessage: (event) => {
                 const { chunkKey, cq, cr, columns } = event.data ?? {};
                 if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
