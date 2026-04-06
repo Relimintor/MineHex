@@ -1,12 +1,13 @@
 const THREE = window.THREE;
 
-import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
 import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
+import { createChunkWorkerPool } from './workers/chunkWorkerPool.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -74,7 +75,7 @@ const pendingChunkUnloadSet = new Set();
 const pendingChunkApplyQueue = [];
 const pendingChunkApplySet = new Set();
 const recycledChunkBlockSets = [];
-let chunkGenerationWorker = null;
+let chunkGenerationWorkerPool = null;
 
 const FRAME_TIME_TARGET_MS = 16.7;
 const FRAME_TIME_SPIKE_MS = 24;
@@ -843,36 +844,36 @@ function isChunkWithinRenderDistance(cq, cr) {
 }
 
 function initChunkGenerationWorker() {
-    if (!ENABLE_WORLDGEN_WORKER || chunkGenerationWorker) return;
+    if (!ENABLE_WORLDGEN_WORKER || chunkGenerationWorkerPool) return;
     if (typeof Worker === 'undefined') return;
 
     try {
-        chunkGenerationWorker = new Worker(new URL('./workers/chunkWorker.js', import.meta.url), { type: 'module' });
+        chunkGenerationWorkerPool = createChunkWorkerPool({
+            workerSize: WORLDGEN_WORKER_COUNT,
+            workerFactory: () => new Worker(new URL('./workers/chunkWorker.js', import.meta.url), { type: 'module' }),
+            onMessage: (event) => {
+                const { chunkKey, cq, cr, columns } = event.data ?? {};
+                if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
+                pendingChunkGenerationInFlight.delete(chunkKey);
+                if (!isChunkWithinRenderDistance(cq, cr)) return;
+                if (worldState.loadedChunks.has(chunkKey)) return;
+                if (pendingChunkApplySet.has(chunkKey)) return;
+                pendingChunkApplySet.add(chunkKey);
+                pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
+            },
+            onError: (error) => {
+                console.warn('Chunk generation worker pool crashed, using main-thread chunk generation fallback.', error);
+                chunkGenerationWorkerPool?.terminate();
+                chunkGenerationWorkerPool = null;
+                pendingChunkGenerationInFlight.clear();
+                pendingChunkApplyQueue.length = 0;
+                pendingChunkApplySet.clear();
+            }
+        });
     } catch (error) {
         console.warn('Falling back to main-thread chunk generation.', error);
-        chunkGenerationWorker = null;
-        return;
+        chunkGenerationWorkerPool = null;
     }
-
-    chunkGenerationWorker.addEventListener('message', (event) => {
-        const { chunkKey, cq, cr, columns } = event.data ?? {};
-        if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
-        pendingChunkGenerationInFlight.delete(chunkKey);
-        if (!isChunkWithinRenderDistance(cq, cr)) return;
-        if (worldState.loadedChunks.has(chunkKey)) return;
-        if (pendingChunkApplySet.has(chunkKey)) return;
-        pendingChunkApplySet.add(chunkKey);
-        pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
-    });
-
-    chunkGenerationWorker.addEventListener('error', (error) => {
-        console.warn('Chunk generation worker crashed, using main-thread generation fallback.', error);
-        chunkGenerationWorker?.terminate();
-        chunkGenerationWorker = null;
-        pendingChunkGenerationInFlight.clear();
-        pendingChunkApplyQueue.length = 0;
-        pendingChunkApplySet.clear();
-    });
 }
 
 function applyGeneratedChunkColumns(cq, cr, columns) {
@@ -1180,9 +1181,9 @@ function flushChunkGenerationBudget() {
     while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
         const nextChunk = pendingChunkGenerationQueue.shift();
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
-        if (chunkGenerationWorker && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
+        if (chunkGenerationWorkerPool && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
             pendingChunkGenerationInFlight.add(nextChunk.chunkKey);
-            chunkGenerationWorker.postMessage({
+            chunkGenerationWorkerPool.postMessage({
                 type: 'generate',
                 cq: nextChunk.cq,
                 cr: nextChunk.cr,
@@ -1194,7 +1195,7 @@ function flushChunkGenerationBudget() {
             continue;
         }
 
-        if (chunkGenerationWorker) {
+        if (chunkGenerationWorkerPool) {
             pendingChunkGenerationQueue.unshift(nextChunk);
             break;
         }
