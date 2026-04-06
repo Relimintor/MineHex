@@ -11,6 +11,7 @@ const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 export const CAMERA_PERSPECTIVES = {
     FIRST_PERSON: 'first_person',
+    SECOND_PERSON: 'second_person',
     THIRD_PERSON: 'third_person'
 };
 
@@ -46,6 +47,29 @@ function createHeadMaterials() {
     ];
 }
 
+function createUniformTextureMaterial(path) {
+    return new THREE.MeshLambertMaterial({ map: loadHeadTexture(path) });
+}
+
+function createLimbMaterials(texturePath) {
+    const material = createUniformTextureMaterial(texturePath);
+    return [material, material, material, material, material, material];
+}
+
+function createChestMaterials() {
+    const front = loadHeadTexture('assets/skin/body/chest_front.png');
+    const side = loadHeadTexture('assets/skin/body/chest_right_side.png');
+    const back = loadHeadTexture('assets/skin/body/chest_back.png');
+    return [
+        new THREE.MeshLambertMaterial({ map: side }),
+        new THREE.MeshLambertMaterial({ map: side }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: back })
+    ];
+}
+
 function createAvatarMesh() {
     // Minecraft body proportions in "pixels":
     // head 8x8x8, torso 8x12x4, arm 4x12x4, leg 4x12x4, total height 32.
@@ -58,30 +82,30 @@ function createAvatarMesh() {
     const limbWidth = 4 * unit;
     const limbDepth = 4 * unit;
 
-    const torsoMaterial = new THREE.MeshLambertMaterial({ color: 0x4f79c7 });
-    const limbMaterial = new THREE.MeshLambertMaterial({ color: 0x334f8f });
+    const armMaterials = createLimbMaterials('assets/skin/arm/right_arm_front.png');
+    const legMaterials = createLimbMaterials('assets/skin/leg/right_leg_front.png');
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth), torsoMaterial);
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth), createChestMaterials());
     torso.position.y = legHeight + (torsoHeight * 0.5);
     avatarRoot.add(torso);
 
     const armOffset = (torsoWidth * 0.5) + (limbWidth * 0.5);
     const armY = legHeight + (torsoHeight * 0.5);
-    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), limbMaterial);
+    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), armMaterials);
     leftArm.position.set(-armOffset, armY, 0);
     avatarRoot.add(leftArm);
 
-    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), limbMaterial);
+    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), armMaterials);
     rightArm.position.set(armOffset, armY, 0);
     avatarRoot.add(rightArm);
 
     const legOffset = limbWidth * 0.5;
     const legY = legHeight * 0.5;
-    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), limbMaterial);
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), legMaterials);
     leftLeg.position.set(-legOffset, legY, 0);
     avatarRoot.add(leftLeg);
 
-    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), limbMaterial);
+    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), legMaterials);
     rightLeg.position.set(legOffset, legY, 0);
     avatarRoot.add(rightLeg);
 
@@ -93,9 +117,17 @@ function createAvatarMesh() {
 createAvatarMesh();
 
 export function toggleCameraPerspective() {
-    currentPerspective = currentPerspective === CAMERA_PERSPECTIVES.FIRST_PERSON
-        ? CAMERA_PERSPECTIVES.THIRD_PERSON
-        : CAMERA_PERSPECTIVES.FIRST_PERSON;
+    if (currentPerspective === CAMERA_PERSPECTIVES.FIRST_PERSON) {
+        currentPerspective = CAMERA_PERSPECTIVES.SECOND_PERSON;
+        return;
+    }
+
+    if (currentPerspective === CAMERA_PERSPECTIVES.SECOND_PERSON) {
+        currentPerspective = CAMERA_PERSPECTIVES.THIRD_PERSON;
+        return;
+    }
+
+    currentPerspective = CAMERA_PERSPECTIVES.FIRST_PERSON;
 }
 
 export function updateCameraPerspective(playerPosition, pitch, yaw) {
@@ -113,7 +145,11 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
     avatarRoot.visible = true;
     cameraTarget.copy(playerPosition);
 
-    cameraOffset.set(0, PLAYER_HEIGHT * 0.32, PLAYER_HEIGHT * 2.4);
+    const horizontalDistance = PLAYER_HEIGHT * 2.4;
+    const verticalOffset = PLAYER_HEIGHT * 0.32;
+    const isSecondPerson = currentPerspective === CAMERA_PERSPECTIVES.SECOND_PERSON;
+    const forwardOrBehindDistance = isSecondPerson ? -horizontalDistance : horizontalDistance;
+    cameraOffset.set(0, verticalOffset, forwardOrBehindDistance);
     cameraEuler.set(pitch * 0.75, yaw, 0);
     cameraOffset.applyEuler(cameraEuler);
 
