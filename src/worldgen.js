@@ -734,6 +734,12 @@ function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
 
+function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusive, fluidTypeIndex) {
+    for (let fluidH = fromHeight; fluidH > downToExclusive; fluidH--) {
+        addGeneratedBlock(chunkBlockKeys, q, r, fluidH, fluidTypeIndex);
+    }
+}
+
 function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
     if (budget <= 0) return;
@@ -872,9 +878,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
         if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
         if (addSurfaceFluid) {
-            const waterKey = `${q},${r},${SEA_LEVEL}`;
-            if (!worldState.permanentBlocks.has(waterKey) && !worldState.removedBlocks.has(waterKey)) addBlock(q, r, SEA_LEVEL, surfaceFluidType, false, false, false);
-            if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
+            addGeneratedFluidColumn(chunkBlockKeys, q, r, SEA_LEVEL, height, surfaceFluidType);
         }
 
         if (addTree) maybeAddTree(chunkBlockKeys, q, r, height, addTree === 'snow' ? 'snowy_forest' : 'forest');
@@ -947,10 +951,8 @@ export function generateChunk(cq, cr) {
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
-                    const waterKey = `${absQ},${absR},${SEA_LEVEL}`;
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
-                    if (!worldState.permanentBlocks.has(waterKey) && !worldState.removedBlocks.has(waterKey)) addBlock(absQ, absR, SEA_LEVEL, surfaceFluidType, false, false, false);
-                    if (worldState.worldBlocks.has(waterKey)) chunkBlockKeys.add(waterKey);
+                    addGeneratedFluidColumn(chunkBlockKeys, absQ, absR, SEA_LEVEL, height, surfaceFluidType);
                 }
 
                 maybeAddTree(chunkBlockKeys, absQ, absR, height, biome);
