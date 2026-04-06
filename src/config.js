@@ -18,6 +18,9 @@ const useUltraLowChunkProfile = isCeleronOverride || (!controlModeOverride && is
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileOverride || (!isPcOverride && !controlModeOverride && (isMobileUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
+const hardwareConcurrency = runtimeNavigator?.hardwareConcurrency ?? 4;
+const computedWorldgenWorkerCount = useLowEndChunkProfile ? 1 : Math.min(4, Math.max(2, Math.floor(hardwareConcurrency / 2)));
+
 const isCeleronChunkProfile = useUltraLowChunkProfile;
 const isMobileChunkProfile = !isCeleronChunkProfile && (isMobileOverride || (!isPcOverride && !controlModeOverride && isMobileUserAgent));
 
@@ -38,7 +41,8 @@ export const CHUNK_APPLY_BUDGET = (isCeleronChunkProfile || isMobileChunkProfile
 export const ENABLE_OCCLUSION_CULLING = !(useLowEndChunkProfile || isMobileChunkProfile);
 export const ENABLE_COMPLEX_LOD = !(useLowEndChunkProfile || isMobileChunkProfile);
 export const ENABLE_WORLDGEN_WORKER = true;
-export const MAX_WORLDGEN_IN_FLIGHT = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
+export const WORLDGEN_WORKER_COUNT = computedWorldgenWorkerCount;
+export const MAX_WORLDGEN_IN_FLIGHT = Math.max((isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2, WORLDGEN_WORKER_COUNT);
 export const FORCE_BATCHED_CHUNK_RENDERING = isCeleronChunkProfile || isMobileChunkProfile;
 export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
