@@ -45,6 +45,7 @@ function clearRemovedBlockMark(q, r, h) {
 }
 
 const NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
+const AXIAL_SIDE_DIRECTIONS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r, 0]);
 const FACE_DIRECTIONS = [
     [1, 0, 0],
     [-1, 0, 0],
@@ -198,7 +199,10 @@ function updateBlockVisibilityAt(q, r, h) {
     if (!block) return;
 
     const visibleFaces = getVisibleFaces(q, r, h);
-    block.visible = visibleFaces.length > 0;
+    const hasTopOrBottomExposure = isFaceVisible(q, r, h, [0, 0, 1]) || isFaceVisible(q, r, h, [0, 0, -1]);
+    const hasSideExposure = AXIAL_SIDE_DIRECTIONS.some((direction) => isFaceVisible(q, r, h, direction));
+    block.userData.hasExposedFace = hasTopOrBottomExposure || hasSideExposure;
+    block.visible = block.userData.hasExposedFace;
     block.userData.visibleFaces = visibleFaces;
 }
 

@@ -229,9 +229,8 @@ function rebuildChunkDetailedMeshes(chunkKey) {
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
         if (!mesh) continue;
-        const visibleFaces = mesh.userData.visibleFaces;
-        const hasVisibleFaces = !Array.isArray(visibleFaces) || visibleFaces.length > 0;
-        if (!hasVisibleFaces) continue;
+        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
+        if (!hasExposedFace) continue;
 
         const typeIndex = mesh.userData.typeIndex ?? 0;
         if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
@@ -295,9 +294,8 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     for (const blockKey of chunkBlockKeys) {
         const mesh = worldState.worldBlocks.get(blockKey);
         if (!mesh) continue;
-        const visibleFaces = mesh.userData.visibleFaces;
-        const hasVisibleFaces = !Array.isArray(visibleFaces) || visibleFaces.length > 0;
-        if (!hasVisibleFaces || !hasTopFace(mesh)) continue;
+        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
+        if (!hasExposedFace || !hasTopFace(mesh)) continue;
 
         const typeIndex = mesh.userData.typeIndex ?? 0;
         if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
