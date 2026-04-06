@@ -83,39 +83,6 @@ const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
 let hasSpawnedInAllowedRange = false;
 let coordinatesHudFrameInterval = 1;
-const targetPixelRatio = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
-const minPixelRatio = USE_ULTRA_LOW_PROFILE ? 0.6 : targetPixelRatio;
-let adaptivePixelRatio = targetPixelRatio;
-let adaptiveFrames = 0;
-let adaptiveSeconds = 0;
-
-function applyRendererPixelRatio(nextRatio) {
-    const roundedRatio = Number(nextRatio.toFixed(2));
-    if (roundedRatio === adaptivePixelRatio) return;
-    adaptivePixelRatio = roundedRatio;
-    renderer.setPixelRatio(adaptivePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-}
-
-function tickAdaptiveResolution(deltaTimeSeconds) {
-    if (!USE_ULTRA_LOW_PROFILE) return;
-    adaptiveFrames += 1;
-    adaptiveSeconds += deltaTimeSeconds;
-    if (adaptiveFrames < 30 || adaptiveSeconds <= 0) return;
-
-    const averageFps = adaptiveFrames / adaptiveSeconds;
-    adaptiveFrames = 0;
-    adaptiveSeconds = 0;
-
-    if (averageFps < 50 && adaptivePixelRatio > minPixelRatio) {
-        applyRendererPixelRatio(Math.max(minPixelRatio, adaptivePixelRatio - 0.1));
-        return;
-    }
-
-    if (averageFps > 58 && adaptivePixelRatio < targetPixelRatio) {
-        applyRendererPixelRatio(Math.min(targetPixelRatio, adaptivePixelRatio + 0.05));
-    }
-}
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -160,7 +127,6 @@ function animate(now = performance.now()) {
 
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
     skyController?.update(now * 0.001, camera);
-    tickAdaptiveResolution(deltaTimeSeconds);
     renderer.render(scene, camera);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
@@ -190,6 +156,6 @@ chooseControlMode().then((mode) => {
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setPixelRatio(adaptivePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO));
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
