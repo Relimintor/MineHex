@@ -4,7 +4,8 @@ import { applySkyAtmosphere } from './sky/skyAtmosphere.js';
 const THREE = window.THREE;
 
 export const scene = new THREE.Scene();
-export const skyController = applySkyAtmosphere(scene);
+export const lightingController = applySceneLighting(scene);
+export const skyController = applySkyAtmosphere(scene, lightingController);
 
 // Separate scene for occlusion proxy boxes so queries can run after the main depth pass.
 export const occlusionScene = new THREE.Scene();
@@ -16,5 +17,3 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_R
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = ENABLE_SHADOW_MAP;
 document.body.appendChild(renderer.domElement);
-
-applySceneLighting(scene);
