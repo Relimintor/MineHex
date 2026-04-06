@@ -119,7 +119,7 @@ pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
 
 fn time_state(time_seconds: f32) -> TimeState {
     let time_of_day = time_seconds.rem_euclid(DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS;
-    let sun_angle = time_of_day * 2.0 * PI;
+    let sun_angle = time_of_day * 2.0 * PI + (PI * 0.5);
     let sun_dir = Vec3::new(sun_angle.cos(), sun_angle.sin(), 0.05).normalize();
     let sky_tint = smoothstep((sun_angle.sin() + 0.12) / 0.62);
 

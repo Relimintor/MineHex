@@ -98,7 +98,7 @@ void main() {
 function makeFallbackUniforms(timeSeconds) {
     const period = 120.0;
     const cycle = ((timeSeconds % period) + period) % period / period;
-    const angle = cycle * Math.PI * 2.0 - Math.PI * 0.5;
+    const angle = cycle * Math.PI * 2.0 + Math.PI * 0.5;
     const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0.05).normalize();
     const skyTint = THREE.MathUtils.smoothstep((Math.sin(angle) + 0.12) / 0.62, 0, 1);
     const day = skyTint;
