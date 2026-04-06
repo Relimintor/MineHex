@@ -3,7 +3,10 @@ body.mobile-mode {
 }
 
 body.mobile-mode #crosshair {
-    display: none;
+    width: 18px;
+    height: 18px;
+    border-width: 3px;
+    opacity: 0.9;
 }
 
 body.mobile-mode #inventory {
