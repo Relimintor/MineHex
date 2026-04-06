@@ -72,6 +72,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "webgl2",
     "zstd_rust",
 ] }
+wasm-bindgen = "0.2"
 
 [dev-dependencies]
 rand = "0.9"

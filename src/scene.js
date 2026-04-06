@@ -4,7 +4,7 @@ import { applySkyAtmosphere } from './sky/skyAtmosphere.js';
 const THREE = window.THREE;
 
 export const scene = new THREE.Scene();
-applySkyAtmosphere(scene);
+export const skyController = applySkyAtmosphere(scene);
 
 // Separate scene for occlusion proxy boxes so queries can run after the main depth pass.
 export const occlusionScene = new THREE.Scene();

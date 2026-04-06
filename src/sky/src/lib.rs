@@ -14,6 +14,8 @@ pub mod sky_material;
 pub mod sky_texture;
 pub mod sun;
 pub mod utils;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 pub mod prelude {
     pub use crate::ambient_driver::{AmbientDriverPlugin, AmbientSettings};
