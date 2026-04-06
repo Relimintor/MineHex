@@ -169,7 +169,7 @@ function recomputeChunkBounds(chunkKey) {
     if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
 
     return new THREE.Box3(
-        new THREE.Vector3(minX - CHUNK_AABB_MARGIN, 0, minZ - CHUNK_AABB_MARGIN),
+        new THREE.Vector3(minX - CHUNK_AABB_MARGIN, (minH * HEX_HEIGHT) - CHUNK_AABB_MARGIN, minZ - CHUNK_AABB_MARGIN),
         new THREE.Vector3(maxX + CHUNK_AABB_MARGIN, ((maxH + 1) * HEX_HEIGHT) + CHUNK_AABB_MARGIN, maxZ + CHUNK_AABB_MARGIN)
     );
 }
