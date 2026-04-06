@@ -783,46 +783,80 @@ function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusi
     }
 }
 
+function getChunkCoordsFromKey(chunkKey) {
+    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    if (chunkMeta) return { cq: chunkMeta.cq, cr: chunkMeta.cr, chunkMeta };
+    const [cqRaw, crRaw] = chunkKey.split(',');
+    return { cq: Number(cqRaw), cr: Number(crRaw), chunkMeta: null };
+}
+
+function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
+    const { cq, cr, chunkMeta } = getChunkCoordsFromKey(chunkKey);
+    const distance = axialChunkDistance(cq, cr, cameraChunkQ, cameraChunkR);
+    const frustumVisible = chunkMeta?.frustumVisible ?? true;
+    const closeToCamera = distance <= 1;
+    const highDetailLod = (chunkMeta?.lodLevel ?? 0) === 0;
+    return (closeToCamera || frustumVisible || highDetailLod) ? 'hot' : 'cold';
+}
+
+function processDirtyChunk(chunkKey) {
+    if (!worldState.loadedChunks.has(chunkKey)) {
+        worldState.chunkBlocks.delete(chunkKey);
+        worldState.dirtyChunks.delete(chunkKey);
+        worldState.dirtyChunkOps.delete(chunkKey);
+        return true;
+    }
+
+    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
+    worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
+    recomputeChunkGreedyFaceQuads(chunkKey);
+
+    const chunk = worldState.chunkMeta.get(chunkKey);
+    const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
+    if (chunk) {
+        chunk.dirty = true;
+        const usedIncrementalBounds = applyIncrementalChunkBoundsUpdate(chunk, dirtyOps);
+        if (!usedIncrementalBounds) {
+            chunk.bounds = recomputeChunkBounds(chunkKey);
+        }
+        if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
+    }
+
+    updateChunkMeshVisibility(chunkKey);
+    if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
+    worldState.dirtyChunks.delete(chunkKey);
+    worldState.dirtyChunkOps.delete(chunkKey);
+    return true;
+}
+
 function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
     if (budget <= 0) return;
 
-    let processed = 0;
-    const processedChunkKeys = [];
+    const { cq: cameraChunkQ, cr: cameraChunkR } = getCurrentChunkCoords();
+    const hotQueue = [];
+    const coldQueue = [];
+
     for (const chunkKey of worldState.dirtyChunks) {
-        if (processed >= budget) break;
-        if (!worldState.loadedChunks.has(chunkKey)) {
-            worldState.chunkBlocks.delete(chunkKey);
-            processedChunkKeys.push(chunkKey);
-            processed++;
-            continue;
-        }
-
-        const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
-        worldState.chunkBlocks.set(chunkKey, chunkBlockKeys);
-        recomputeChunkGreedyFaceQuads(chunkKey);
-
-        const chunk = worldState.chunkMeta.get(chunkKey);
-        const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
-        if (chunk) {
-            chunk.dirty = true;
-            const usedIncrementalBounds = applyIncrementalChunkBoundsUpdate(chunk, dirtyOps);
-            if (!usedIncrementalBounds) {
-                chunk.bounds = recomputeChunkBounds(chunkKey);
-            }
-            if (chunk.bounds) syncOcclusionProxyTransform(chunkKey);
-        }
-
-        updateChunkMeshVisibility(chunkKey);
-        processedChunkKeys.push(chunkKey);
-        processed++;
+        const priority = classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR);
+        if (priority === 'hot') hotQueue.push(chunkKey);
+        else coldQueue.push(chunkKey);
     }
 
-    for (const chunkKey of processedChunkKeys) {
-        const chunk = worldState.chunkMeta.get(chunkKey);
-        if (chunk && chunk.lodLevel === 2) chunk.dirty = false;
-        worldState.dirtyChunks.delete(chunkKey);
-        worldState.dirtyChunkOps.delete(chunkKey);
+    const processQueue = (queue, remainingBudget) => {
+        let consumed = 0;
+        while (consumed < remainingBudget && queue.length > 0) {
+            const chunkKey = queue.shift();
+            if (!worldState.dirtyChunks.has(chunkKey)) continue;
+            if (processDirtyChunk(chunkKey)) consumed++;
+        }
+        return consumed;
+    };
+
+    const hotProcessed = processQueue(hotQueue, budget);
+    const remainingBudget = Math.max(0, budget - hotProcessed);
+    if (remainingBudget > 0) {
+        processQueue(coldQueue, remainingBudget);
     }
 }
 
