@@ -1,9 +1,9 @@
 import { ENABLE_ANTIALIAS, ENABLE_SHADOW_MAP, MAX_DEVICE_PIXEL_RATIO, USE_STRICT_LOW_END_RENDERING } from './config.js';
+import { applySceneAtmosphere, applySceneLighting } from './shaders/sceneLighting.js';
 const THREE = window.THREE;
 
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 20, 60);
+applySceneAtmosphere(scene);
 
 // Separate scene for occlusion proxy boxes so queries can run after the main depth pass.
 export const occlusionScene = new THREE.Scene();
@@ -16,9 +16,4 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = ENABLE_SHADOW_MAP;
 document.body.appendChild(renderer.domElement);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-scene.add(ambientLight);
-
-const sunLight = new THREE.DirectionalLight(0xffffff, 0.6);
-sunLight.position.set(50, 100, 50);
-scene.add(sunLight);
+applySceneLighting(scene);
