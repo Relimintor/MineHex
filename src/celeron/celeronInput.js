@@ -7,6 +7,7 @@ import {
     updateSelectedBlock
 } from '../input.js';
 import { inputState } from '../state.js';
+import { toggleCameraPerspective } from '../playerView.js';
 
 const LOOK_SENSITIVITY = 0.0018;
 const INTERACTION_COOLDOWN_MS = 90;
@@ -48,6 +49,10 @@ function canInteractNow() {
 export function registerCeleronInputHandlers() {
     document.addEventListener('keydown', (event) => {
         setKeyState(event.code, true);
+        if (event.code === 'KeyC' && !event.repeat) {
+            toggleCameraPerspective();
+            return;
+        }
         if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 
