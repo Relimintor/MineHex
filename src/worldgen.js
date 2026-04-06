@@ -28,7 +28,9 @@ const BLOCK_INDEX = {
     oakWood: 6,
     oakLeaves: 7,
     snow: 8,
-    ice: 9
+    ice: 9,
+    sand: 10,
+    sandstone: 11
 };
 
 const CHUNK_NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
@@ -866,8 +868,16 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
         for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
             const blockKey = `${q},${r},${h}`;
             let blockType = BLOCK_INDEX.stone;
-            if (h === height) blockType = topBlockType;
-            else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
+            if (h === height) {
+                blockType = topBlockType;
+            } else if (addSurfaceFluid) {
+                blockType = BLOCK_INDEX.stone;
+            } else if (topBlockType === BLOCK_INDEX.sand) {
+                if (h === height - 1) blockType = BLOCK_INDEX.sand;
+                else if (h === height - 2) blockType = BLOCK_INDEX.sandstone;
+            } else if (h >= height - 2) {
+                blockType = BLOCK_INDEX.dirt;
+            }
 
             if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(q, r, h, blockType, false, false, false);
             if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
@@ -932,15 +942,23 @@ export function generateChunk(cq, cr) {
                 const biome = getBiomeAt(climateBiome, height);
                 const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest' || biome === 'arctic';
                 const topBlockType = biome === 'beach'
-                    ? BLOCK_INDEX.dirt
-                    : (height < SEA_LEVEL ? BLOCK_INDEX.dirt : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
+                    ? BLOCK_INDEX.sand
+                    : (height < SEA_LEVEL ? BLOCK_INDEX.sand : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
 
                 // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
                 for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
                     const blockKey = `${absQ},${absR},${h}`;
                     let blockType = BLOCK_INDEX.stone;
-                    if (h === height) blockType = topBlockType;
-                    else if (h >= height - 2) blockType = BLOCK_INDEX.dirt;
+                    if (h === height) {
+                        blockType = topBlockType;
+                    } else if (biome === 'ocean') {
+                        blockType = BLOCK_INDEX.stone;
+                    } else if (biome === 'beach') {
+                        if (h === height - 1) blockType = BLOCK_INDEX.sand;
+                        else if (h === height - 2) blockType = BLOCK_INDEX.sandstone;
+                    } else if (h >= height - 2) {
+                        blockType = BLOCK_INDEX.dirt;
+                    }
 
                     if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);

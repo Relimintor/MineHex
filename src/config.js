@@ -51,7 +51,9 @@ export const BLOCK_TYPES = [
     { name: 'Oak Wood', color: 0x8d6e63 },
     { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true },
     { name: 'Snow', color: 0xf5f8ff },
-    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true }
+    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true },
+    { name: 'Sand', color: 0xdcc38b },
+    { name: 'Sandstone', color: 0xcaa472 }
 ];
 
 export const PLAYER_HEIGHT_IN_HEXES = 1.8;
