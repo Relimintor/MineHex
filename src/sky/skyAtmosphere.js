@@ -33,6 +33,28 @@ float hash3(vec3 p) {
     return fract(sin(dot(p, vec3(12.3, 45.6, 78.9))) * 43758.5);
 }
 
+
+
+float value_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    float a = hash3(vec3(i, 0.0));
+    float b = hash3(vec3(i + vec2(1.0, 0.0), 0.0));
+    float c = hash3(vec3(i + vec2(0.0, 1.0), 0.0));
+    float d = hash3(vec3(i + vec2(1.0, 1.0), 0.0));
+
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float cloud_map(vec2 uv) {
+    float n0 = value_noise(uv * 3.2);
+    float n1 = value_noise(uv * 6.4 + vec2(11.3, 7.7));
+    float n2 = value_noise(uv * 12.8 + vec2(23.1, 5.2));
+    float combined = (n0 * 0.58) + (n1 * 0.30) + (n2 * 0.12);
+    return step(0.57, combined);
+}
 float stars(vec3 dir, float night, float t) {
     float angle = t * 0.0004;
     float c = cos(angle);
@@ -104,9 +126,17 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
 
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
+
+    vec2 cloudUV = (dir.xz / max(0.15, dir.y + 0.45)) * 1.4 + vec2(time * 0.003, time * 0.0015);
+    float cloudMask = cloud_map(cloudUV);
+    float cloudFade = smoothstep(0.15, 0.9, dayFactor) * smoothstep(-0.15, 0.35, dir.y);
+    float cloudShade = 0.75 + 0.25 * max(dot(normalize(vec3(dir.x, 0.25, dir.z)), sunDir), 0.0);
+    vec3 cloudColor = vec3(0.95, 0.96, 0.98) * cloudMask * cloudFade * cloudShade * 0.8;
+
     sky += sunTint * sunVal * 1.6;
     sky += moon_color(dir, sunDir, time);
     sky += vec3(1.0) * starVal;
+    sky = mix(sky, cloudColor + sky, cloudMask * cloudFade * 0.75);
     return sky;
 }
 
