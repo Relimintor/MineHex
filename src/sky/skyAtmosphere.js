@@ -33,9 +33,13 @@ float hash3(vec3 p) {
 }
 
 float stars(vec3 dir, float night, float t) {
-    float n = hash3(dir * 1000.0 + vec3(0.0, t * 0.002, 0.0));
-    float star = step(0.995, n);
-    float twinkle = 0.85 + 0.15 * sin(t * 0.25 + dir.x * 91.0 + dir.z * 57.0);
+    float angle = t * 0.002;
+    float c = cos(angle);
+    float s = sin(angle);
+    vec3 rotated = vec3((dir.x * c) - (dir.z * s), dir.y, (dir.x * s) + (dir.z * c));
+    float n = hash3(rotated * 1000.0);
+    float star = step(0.99833, n);
+    float twinkle = 0.90 + 0.10 * sin(t * 0.15 + rotated.x * 61.0 + rotated.z * 37.0);
     return star * night * twinkle;
 }
 
@@ -95,7 +99,7 @@ function makeFallbackUniforms(timeSeconds) {
     const period = 120.0;
     const cycle = ((timeSeconds % period) + period) % period / period;
     const angle = cycle * Math.PI * 2.0 - Math.PI * 0.5;
-    const sunDir = new THREE.Vector3(0.12, Math.sin(angle) * 0.55, Math.cos(angle)).normalize();
+    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0.05).normalize();
     const skyTint = THREE.MathUtils.smoothstep((Math.sin(angle) + 0.12) / 0.62, 0, 1);
     const day = skyTint;
     const energy = THREE.MathUtils.smoothstep((sunDir.y + 0.08) / 0.52, 0, 1);

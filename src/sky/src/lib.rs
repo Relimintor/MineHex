@@ -120,9 +120,7 @@ pub fn sky_uniforms(time_seconds: f32) -> Vec<f32> {
 fn time_state(time_seconds: f32) -> TimeState {
     let time_of_day = time_seconds.rem_euclid(DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS;
     let sun_angle = time_of_day * 2.0 * PI;
-    let elevation = sun_angle.sin() * 0.55;
-    let depth = sun_angle.cos();
-    let sun_dir = Vec3::new(0.12, elevation, depth).normalize();
+    let sun_dir = Vec3::new(sun_angle.cos(), sun_angle.sin(), 0.05).normalize();
     let sky_tint = smoothstep((sun_angle.sin() + 0.12) / 0.62);
 
     TimeState {
@@ -172,7 +170,7 @@ fn render_sky(direction: Vec3, sun_dir: Vec3, params: SkyParams, _time_seconds: 
     let mut sky = sky_color(direction, params, height);
 
     let night = smoothstep((1.0 - params.day_factor - 0.1) / 0.8);
-    let star_val = stars_mask(direction, night, params.day_factor);
+    let star_val = stars_mask(direction, night, params.sky_tint);
     sky = sky + sun_value(direction, sun_dir, params, height);
     sky + (Vec3::new(1.0, 1.0, 1.0) * star_val)
 }
@@ -183,9 +181,13 @@ fn hash3(v: Vec3) -> f32 {
     ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()
 }
 
-fn stars_mask(direction: Vec3, night: f32, day_factor: f32) -> f32 {
-    let n = hash3(direction * 1000.0 + Vec3::new(day_factor * 7.0, 0.0, 0.0));
-    let star = smoothstep((n - 0.995) / 0.005);
+fn stars_mask(direction: Vec3, night: f32, time_of_day: f32) -> f32 {
+    let angle = time_of_day * 0.002;
+    let c = angle.cos();
+    let s = angle.sin();
+    let rotated = Vec3::new((direction.x * c) - (direction.z * s), direction.y, (direction.x * s) + (direction.z * c));
+    let n = hash3(rotated * 1000.0);
+    let star = smoothstep((n - 0.99833) / 0.00167);
     star * night
 }
 
