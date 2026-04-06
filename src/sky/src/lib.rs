@@ -160,7 +160,22 @@ fn sample_sky_gradient(direction: Vec3, params: SkyParams) -> Vec3 {
     let glow = smoothstep((sun_dot - 0.94) / 0.06);
     let sun_color = sun_tint * ((disc * (0.85 + 0.15 * params.sun_energy)) + (glow * 0.35 * params.sun_energy));
 
-    (base * (0.35 + 0.65 * height * params.sky_tint)) + sun_color
+    let night = smoothstep((1.0 - params.day_factor - 0.1) / 0.8);
+    let star_mask = stars_mask(direction, night, params.day_factor);
+    let star_color = Vec3::new(0.88, 0.92, 1.0) * star_mask;
+
+    (base * (0.35 + 0.65 * height * params.sky_tint)) + sun_color + star_color
+}
+
+
+fn hash3(v: Vec3) -> f32 {
+    ((v.x * 12.3 + v.y * 45.6 + v.z * 78.9).sin() * 43_758.5).fract().abs()
+}
+
+fn stars_mask(direction: Vec3, night: f32, day_factor: f32) -> f32 {
+    let n = hash3(direction * 1000.0 + Vec3::new(day_factor * 7.0, 0.0, 0.0));
+    let star = smoothstep((n - 0.995) / 0.005);
+    star * night
 }
 
 fn smoothstep(x: f32) -> f32 {

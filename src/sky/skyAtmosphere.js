@@ -24,12 +24,24 @@ precision mediump float;
 
 varying vec3 vWorldDir;
 
+uniform float uTime;
 uniform vec3 uSunDir;
 uniform float uSunEnergy;
 uniform float uDayFactor;
 uniform float uNightFactor;
 uniform float uAuroraFactor;
 
+
+float hash3(vec3 p) {
+    return fract(sin(dot(p, vec3(12.3, 45.6, 78.9))) * 43758.5);
+}
+
+float stars(vec3 dir, float night, float t) {
+    float n = hash3(dir * 1000.0 + vec3(0.0, t * 0.02, 0.0));
+    float star = step(0.995, n);
+    float twinkle = 0.75 + 0.25 * sin(t * 1.7 + dir.x * 91.0 + dir.z * 57.0);
+    return star * night * twinkle;
+}
 float sun_disc(vec3 dir, vec3 sunDir) {
     float d = dot(dir, sunDir);
     return smoothstep(0.999, 1.0, d);
@@ -60,8 +72,12 @@ void main() {
     float glow = sun_glow(dir, sunDir);
     vec3 sunColor = sunTint * ((disc * (0.85 + 0.15 * uSunEnergy)) + (glow * 0.35 * uSunEnergy));
 
+    float night = smoothstep(0.1, 0.9, uNightFactor);
+    float starMask = stars(dir, night, uTime);
+    vec3 starColor = vec3(0.88, 0.92, 1.0) * starMask;
+
     float nightLift = 0.85 + 0.15 * uNightFactor;
-    vec3 finalSky = (baseSky * (0.35 + 0.65 * height) * nightLift) + sunColor;
+    vec3 finalSky = (baseSky * (0.35 + 0.65 * height) * nightLift) + sunColor + starColor;
 
     gl_FragColor = vec4(clamp(finalSky, 0.0, 1.0), 1.0);
 }
