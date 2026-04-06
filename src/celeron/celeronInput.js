@@ -4,6 +4,7 @@ import {
     mineBlockFromCenter,
     placeBlockFromCenter,
     setKeyState,
+    toggleInventoryScreen,
     updateSelectedBlock
 } from '../input.js';
 import { inputState } from '../state.js';
@@ -55,6 +56,12 @@ export function registerCeleronInputHandlers() {
     });
 
     document.addEventListener('keydown', (event) => {
+        if ((event.code === 'KeyI' || event.code === 'KeyY') && !event.repeat) {
+            toggleInventoryScreen();
+            event.preventDefault();
+            return;
+        }
+
         setKeyState(event.code, true);
         if (event.code === 'KeyC' && !event.repeat) {
             toggleCameraPerspective();

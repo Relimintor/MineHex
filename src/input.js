@@ -12,6 +12,8 @@ const CENTER_SCREEN = new THREE.Vector2(0, 0);
 const placeNormal = new THREE.Vector3();
 const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
+const inventoryScreen = document.getElementById('inventory-screen');
+let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
 const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
 
@@ -40,6 +42,20 @@ export function isKeyDown(code) {
 export function updateSelectedBlock(index) {
     worldState.selectedBlockIndex = index;
     document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
+}
+
+export function toggleInventoryScreen() {
+    if (!inventoryScreen) return;
+    isInventoryScreenOpen = !isInventoryScreenOpen;
+    inventoryScreen.classList.toggle('visible', isInventoryScreenOpen);
+    inventoryScreen.setAttribute('aria-hidden', isInventoryScreenOpen ? 'false' : 'true');
+
+    if (isInventoryScreenOpen) {
+        inputState.keys.fill(0);
+        if (document.pointerLockElement === renderer.domElement) {
+            document.exitPointerLock();
+        }
+    }
 }
 
 function getCenterIntersection() {
@@ -87,6 +103,12 @@ export function registerDesktopInputHandlers() {
     });
 
     document.addEventListener('keydown', (event) => {
+        if ((event.code === 'KeyI' || event.code === 'KeyY') && !event.repeat) {
+            toggleInventoryScreen();
+            event.preventDefault();
+            return;
+        }
+
         setKeyState(event.code, true);
         if (event.code === 'KeyC' && !event.repeat) {
             toggleCameraPerspective();
