@@ -85,7 +85,7 @@ export function registerDesktopInputHandlers() {
             toggleCameraPerspective();
             return;
         }
-        if (event.key >= '1' && event.key <= '5') updateSelectedBlock(parseInt(event.key, 10) - 1);
+        if (event.key >= '1' && event.key <= '9') updateSelectedBlock(parseInt(event.key, 10) - 1);
     });
 
     document.addEventListener('keyup', (event) => {
