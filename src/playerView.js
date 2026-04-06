@@ -47,37 +47,41 @@ function createHeadMaterials() {
 }
 
 function createAvatarMesh() {
-    const legHeight = PLAYER_HEIGHT * 0.36;
-    const torsoHeight = PLAYER_HEIGHT * 0.34;
-    const headSize = PLAYER_HEIGHT * 0.28;
+    // Minecraft body proportions in "pixels":
+    // head 8x8x8, torso 8x12x4, arm 4x12x4, leg 4x12x4, total height 32.
+    const unit = PLAYER_HEIGHT / 32;
+    const legHeight = 12 * unit;
+    const torsoHeight = 12 * unit;
+    const headSize = 8 * unit;
+    const torsoWidth = 8 * unit;
+    const torsoDepth = 4 * unit;
+    const limbWidth = 4 * unit;
+    const limbDepth = 4 * unit;
 
-    const torsoWidth = PLAYER_HEIGHT * 0.24;
-    const limbWidth = torsoWidth * 0.45;
+    const torsoMaterial = new THREE.MeshLambertMaterial({ color: 0x4f79c7 });
+    const limbMaterial = new THREE.MeshLambertMaterial({ color: 0x334f8f });
 
-    const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x3f6db6 });
-    const limbMaterial = new THREE.MeshLambertMaterial({ color: 0x2e4d8f });
-
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoWidth * 0.6), bodyMaterial);
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth), torsoMaterial);
     torso.position.y = legHeight + (torsoHeight * 0.5);
     avatarRoot.add(torso);
 
-    const armOffset = (torsoWidth * 0.5) + (limbWidth * 0.65);
-    const armY = legHeight + (torsoHeight * 0.58);
-    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight * 0.92, limbWidth), limbMaterial);
+    const armOffset = (torsoWidth * 0.5) + (limbWidth * 0.5);
+    const armY = legHeight + (torsoHeight * 0.5);
+    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), limbMaterial);
     leftArm.position.set(-armOffset, armY, 0);
     avatarRoot.add(leftArm);
 
-    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight * 0.92, limbWidth), limbMaterial);
+    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), limbMaterial);
     rightArm.position.set(armOffset, armY, 0);
     avatarRoot.add(rightArm);
 
-    const legOffset = limbWidth * 0.75;
+    const legOffset = limbWidth * 0.5;
     const legY = legHeight * 0.5;
-    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbWidth), limbMaterial);
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), limbMaterial);
     leftLeg.position.set(-legOffset, legY, 0);
     avatarRoot.add(leftLeg);
 
-    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbWidth), limbMaterial);
+    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), limbMaterial);
     rightLeg.position.set(legOffset, legY, 0);
     avatarRoot.add(rightLeg);
 
