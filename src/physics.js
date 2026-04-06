@@ -1,6 +1,7 @@
 const THREE = window.THREE;
 
 import {
+    CHUNK_SIZE,
     GRAVITY,
     HEX_HEIGHT,
     JUMP_FORCE,
@@ -42,6 +43,14 @@ function isSolidAtWorldPosition(x, y, z) {
 function collidesAtCameraPosition(x, y, z) {
     if (isSolidAtWorldPosition(x, y - PLAYER_HEAD_OFFSET, z)) return true;
     return isSolidAtWorldPosition(x, y - PLAYER_TORSO_OFFSET, z);
+}
+
+function isChunkLoadedAtWorldPosition(x, y, z) {
+    collisionProbePoint.set(x, y, z);
+    const { q, r } = worldToAxial(collisionProbePoint);
+    const cq = Math.round(q / CHUNK_SIZE);
+    const cr = Math.round(r / CHUNK_SIZE);
+    return worldState.loadedChunks.has(`${cq},${cr}`);
 }
 
 function getFallbackGroundDistanceFromTopSolidColumn() {
@@ -138,14 +147,18 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     }
 
     const nextX = camera.position.x + (inputState.velocity.x * frameScale);
-    if (!collidesAtCameraPosition(nextX, camera.position.y, camera.position.z)) {
+    const canMoveToNextX = isChunkLoadedAtWorldPosition(nextX, camera.position.y, camera.position.z)
+        && !collidesAtCameraPosition(nextX, camera.position.y, camera.position.z);
+    if (canMoveToNextX) {
         camera.position.x = nextX;
     } else {
         inputState.velocity.x = 0;
     }
 
     const nextZ = camera.position.z + (inputState.velocity.z * frameScale);
-    if (!collidesAtCameraPosition(camera.position.x, camera.position.y, nextZ)) {
+    const canMoveToNextZ = isChunkLoadedAtWorldPosition(camera.position.x, camera.position.y, nextZ)
+        && !collidesAtCameraPosition(camera.position.x, camera.position.y, nextZ);
+    if (canMoveToNextZ) {
         camera.position.z = nextZ;
     } else {
         inputState.velocity.z = 0;
