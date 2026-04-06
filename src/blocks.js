@@ -3,6 +3,7 @@ import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld } from './coords.js';
 import { createBlockMaterials } from './shaders/materials.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
+import { packBlockKey, unpackBlockKey } from './blockKey.js';
 
 const blockMaterials = createBlockMaterials(BLOCK_TYPES);
 const getChunkCoords = (q, r) => ({
@@ -16,7 +17,7 @@ const getChunkKey = (q, r) => {
 };
 
 function trackRemovedBlock(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     worldState.removedBlocks.add(key);
     const chunkKey = getChunkKey(q, r);
     if (!worldState.removedBlocksByChunk.has(chunkKey)) worldState.removedBlocksByChunk.set(chunkKey, new Set());
@@ -24,7 +25,7 @@ function trackRemovedBlock(q, r, h) {
 }
 
 function clearRemovedBlockMark(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (!worldState.removedBlocks.has(key)) return;
     worldState.removedBlocks.delete(key);
     const chunkKey = getChunkKey(q, r);
@@ -49,7 +50,7 @@ const FACE_DIRECTIONS = [
 function parseBlockKey(key) {
     const cached = worldState.blockCoordsByKey.get(key);
     if (cached) return cached;
-    const [q, r, h] = key.split(',').map(Number);
+    const { q, r, h } = unpackBlockKey(key);
     const parsed = { q, r, h };
     worldState.blockCoordsByKey.set(key, parsed);
     return parsed;
@@ -158,7 +159,7 @@ function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
 }
 
 function getBlockAt(q, r, h) {
-    return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
+    return worldState.worldBlocks.get(packBlockKey(q, r, h)) ?? null;
 }
 
 function isFaceVisible(q, r, h, [dq, dr, dh]) {
@@ -198,7 +199,7 @@ function getVisibleFaces(q, r, h) {
 }
 
 function updateBlockVisibilityAt(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     const block = worldState.worldBlocks.get(key);
     if (!block) return;
 
@@ -359,7 +360,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
         const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
 
         for (const [targetQ, targetR, targetH] of targets) {
-            const targetKey = `${targetQ},${targetR},${targetH}`;
+            const targetKey = packBlockKey(targetQ, targetR, targetH);
             if (visited.has(targetKey)) continue;
             visited.add(targetKey);
             updateBlockVisibilityAt(targetQ, targetR, targetH);
@@ -368,7 +369,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
 }
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true, refreshVisibility = true) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (worldState.worldBlocks.has(key)) return;
 
     const safeTypeIndex = blockMaterials[typeIndex] ? typeIndex : 0;

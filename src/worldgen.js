@@ -7,6 +7,7 @@ import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
 import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
+import { packBlockKey } from './blockKey.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -765,7 +766,7 @@ function getBiomeAt(climateBiome, height) {
 }
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
@@ -905,7 +906,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             : column.addTree;
 
         for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-            const blockKey = `${q},${r},${h}`;
+            const blockKey = packBlockKey(q, r, h);
             let blockType = BLOCK_INDEX.stone;
             if (h === height) {
                 blockType = topBlockType;
@@ -922,7 +923,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
-        const nethrockKey = `${q},${r},${NETHROCK_LEVEL_HEX}`;
+        const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
         if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
         if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
@@ -986,7 +987,7 @@ export function generateChunk(cq, cr) {
 
                 // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
                 for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-                    const blockKey = `${absQ},${absR},${h}`;
+                    const blockKey = packBlockKey(absQ, absR, h);
                     let blockType = BLOCK_INDEX.stone;
                     if (h === height) {
                         blockType = topBlockType;
@@ -1003,7 +1004,7 @@ export function generateChunk(cq, cr) {
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
-                const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
+                const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
                 if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
