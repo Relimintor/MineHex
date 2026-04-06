@@ -6,6 +6,7 @@ import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
+import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
 
 const SEA_LEVEL = 0;
 const CONTINENT_AMPLITUDE = 50;
@@ -37,10 +38,7 @@ const CHUNK_NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
 
 const CHUNK_AABB_MARGIN = 0.08;
 
-const occlusionProxyMaterial = new THREE.MeshBasicMaterial({
-    colorWrite: false,
-    depthWrite: false
-});
+const occlusionProxyMaterial = createOcclusionProxyMaterial();
 
 const OCCLUSION_QUERY_TARGET = 'ANY_SAMPLES_PASSED_CONSERVATIVE';
 
@@ -52,7 +50,7 @@ const occlusionProxiesToTest = [];
 
 const FLAT_HEX_LOD_DISTANCE = Math.max(1, RENDER_DIST - 1);
 const MEGA_HEX_LOD_DISTANCE = RENDER_DIST;
-const megaHexMaterial = new THREE.MeshLambertMaterial({ color: 0x6d8f5f });
+const megaHexMaterial = createMegaHexMaterial();
 
 const pendingChunkGenerationQueue = [];
 const pendingChunkGenerationSet = new Set();
