@@ -12,6 +12,7 @@ import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { worldState } from './state.js';
 import { updateCameraPerspective } from './playerView.js';
+import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
 
 camera.position.set(0, 48, 0);
 
@@ -128,6 +129,7 @@ function animate(now = performance.now()) {
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
     skyController?.update(now * 0.001, camera);
     renderer.render(scene, camera);
+    renderInventoryAvatarPreview(now * 0.001);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
     }
@@ -150,6 +152,7 @@ chooseControlMode().then((mode) => {
     tickChunkVisibility();
     hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
     playerPosition.copy(camera.position);
+    initInventoryAvatarPreview();
     animate();
 });
 
