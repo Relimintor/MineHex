@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 const PI: f32 = core::f32::consts::PI;
-const DAY_LENGTH_SECONDS: f32 = 120.0;
+const DAY_LENGTH_SECONDS: f32 = 480.0;
 
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
@@ -202,10 +202,8 @@ fn hash3(v: Vec3) -> f32 {
 }
 
 fn stars_mask(direction: Vec3, night: f32, time_seconds: f32) -> f32 {
-    let angle = time_seconds * 0.0004;
-    let c = angle.cos();
-    let s = angle.sin();
-    let rotated = Vec3::new((direction.x * c) - (direction.z * s), direction.y, (direction.x * s) + (direction.z * c));
+    let _ = time_seconds;
+    let rotated = direction;
     let n = hash3(rotated * 1000.0);
     let star = smoothstep((n - 0.99833) / 0.00167);
     star * night
@@ -243,7 +241,7 @@ mod tests {
 
     #[test]
     fn cycle_wraps_for_negative_time() {
-        assert_eq!(sky_color_hex(-5.0), sky_color_hex(115.0));
+        assert_eq!(sky_color_hex(-5.0), sky_color_hex(DAY_LENGTH_SECONDS - 5.0));
     }
 
     #[test]
