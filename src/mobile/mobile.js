@@ -47,6 +47,8 @@ export function registerMobileInputHandlers() {
     inputState.isLocked = true;
 
     const { joystick, joystickBase, joystickCenter, jumpButton, inventoryButton, cameraButton } = createMobileControls();
+    const inventoryScreen = document.getElementById('inventory-screen');
+    const inventoryPanel = document.querySelector('.inventory-screen-panel');
     const activeTouches = new Map();
     const touchStartPositions = new Map();
 
@@ -119,6 +121,16 @@ export function registerMobileInputHandlers() {
             const touchPoint = { x: touch.clientX, y: touch.clientY };
             activeTouches.set(touch.identifier, touchPoint);
             touchStartPositions.set(touch.identifier, touchPoint);
+
+            const isInventoryOpen = inventoryScreen?.classList.contains('visible');
+            const tappedOutsideInventory = isInventoryOpen
+                && inventoryPanel
+                && !inventoryPanel.contains(target)
+                && !inventoryButton.contains(target);
+            if (tappedOutsideInventory) {
+                toggleInventoryScreen();
+                continue;
+            }
 
             if (joystick.contains(target) && movementTouchId === null) {
                 movementTouchId = touch.identifier;
