@@ -2,6 +2,7 @@ const THREE = window.THREE;
 
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
+import { normalizeChunkKey, packBlockKey, packChunkKey, unpackChunkKey } from './keys.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { profilerMeasure, profilerRecord, worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
@@ -114,10 +115,10 @@ const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
 });
 
 function ensureChunkMeta(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.chunkMeta.has(chunkKey)) return;
 
-    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => packChunkKey(cq + dq, cr + dr));
     worldState.chunkMeta.set(chunkKey, {
         cq,
         cr,
@@ -138,12 +139,14 @@ function ensureChunkMeta(cq, cr) {
 }
 
 function recomputeChunkBounds(chunkKey) {
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkBlockKeys = worldState.chunkBlocks.get(normalizedChunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
 
-    const chunkMeta = worldState.chunkMeta.get(chunkKey);
-    const cq = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
-    const cr = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
+    const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
+    const unpacked = unpackChunkKey(normalizedChunkKey);
+    const cq = chunkMeta?.cq ?? unpacked.cq;
+    const cr = chunkMeta?.cr ?? unpacked.cr;
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
 
@@ -357,7 +360,7 @@ function updateChunkLodLevels(cameraChunkQ, cameraChunkR) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta) continue;
 
-        const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
+        const { cq: chunkQ, cr: chunkR } = unpackChunkKey(chunkKey);
         let nextLodLevel = ENABLE_COMPLEX_LOD
             ? getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR)
             : 0;
@@ -738,7 +741,7 @@ function getBiomeAt(climateBiome, height) {
 }
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
@@ -750,10 +753,11 @@ function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusi
 }
 
 function getChunkCoordsFromKey(chunkKey) {
-    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
     if (chunkMeta) return { cq: chunkMeta.cq, cr: chunkMeta.cr, chunkMeta };
-    const [cqRaw, crRaw] = chunkKey.split(',');
-    return { cq: Number(cqRaw), cr: Number(crRaw), chunkMeta: null };
+    const { cq, cr } = unpackChunkKey(normalizedChunkKey);
+    return { cq, cr, chunkMeta: null };
 }
 
 function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
@@ -864,13 +868,14 @@ function initChunkGenerationWorker() {
             },
             onMessage: (event) => {
                 const { chunkKey, cq, cr, columns } = event.data ?? {};
-                if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
-                pendingChunkGenerationInFlight.delete(chunkKey);
+                const normalizedChunkKey = normalizeChunkKey(chunkKey);
+                if (!chunkKey || !pendingChunkGenerationInFlight.has(normalizedChunkKey)) return;
+                pendingChunkGenerationInFlight.delete(normalizedChunkKey);
                 if (!isChunkWithinRenderDistance(cq, cr)) return;
-                if (worldState.loadedChunks.has(chunkKey)) return;
-                if (pendingChunkApplySet.has(chunkKey)) return;
-                pendingChunkApplySet.add(chunkKey);
-                pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
+                if (worldState.loadedChunks.has(normalizedChunkKey)) return;
+                if (pendingChunkApplySet.has(normalizedChunkKey)) return;
+                pendingChunkApplySet.add(normalizedChunkKey);
+                pendingChunkApplyQueue.push({ chunkKey: normalizedChunkKey, cq, cr, columns });
             },
             onError: (error) => {
                 console.warn('Chunk generation worker pool crashed, using main-thread chunk generation fallback.', error);
@@ -888,7 +893,7 @@ function initChunkGenerationWorker() {
 }
 
 function applyGeneratedChunkColumns(cq, cr, columns) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
     const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
@@ -917,7 +922,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             : column.addTree;
 
         for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-            const blockKey = `${q},${r},${h}`;
+            const blockKey = packBlockKey(q, r, h);
             let blockType = BLOCK_INDEX.stone;
             if (h === height) {
                 blockType = topBlockType;
@@ -934,7 +939,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
-        const nethrockKey = `${q},${r},${NETHROCK_LEVEL_HEX}`;
+        const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
         if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
         if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
@@ -967,7 +972,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
 }
 
 export function generateChunk(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.loadedChunks.has(chunkKey)) return;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
@@ -998,7 +1003,7 @@ export function generateChunk(cq, cr) {
 
                 // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
                 for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-                    const blockKey = `${absQ},${absR},${h}`;
+                    const blockKey = packBlockKey(absQ, absR, h);
                     let blockType = BLOCK_INDEX.stone;
                     if (h === height) {
                         blockType = topBlockType;
@@ -1015,7 +1020,7 @@ export function generateChunk(cq, cr) {
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
-                const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
+                const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
                 if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
@@ -1051,7 +1056,7 @@ export function generateChunk(cq, cr) {
 }
 
 export function unloadChunk(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (!worldState.loadedChunks.has(chunkKey)) return;
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
@@ -1098,14 +1103,14 @@ function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
 }
 
 function enqueueChunkGeneration(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey) || pendingChunkGenerationInFlight.has(chunkKey)) return;
     pendingChunkGenerationSet.add(chunkKey);
     pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
 }
 
 function enqueueChunkUnload(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (!worldState.loadedChunks.has(chunkKey) || pendingChunkUnloadSet.has(chunkKey)) return;
     pendingChunkUnloadSet.add(chunkKey);
     pendingChunkUnloadQueue.push({ cq, cr, chunkKey });
@@ -1120,7 +1125,7 @@ function rebuildStreamingQueue(cq, cr) {
             if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > RENDER_DIST) continue;
             const visibleCq = cq + dq;
             const visibleCr = cr + dr;
-            const chunkKey = `${visibleCq},${visibleCr}`;
+            const chunkKey = packChunkKey(visibleCq, visibleCr);
             visibleChunkKeys.add(chunkKey);
             enqueueChunkGeneration(visibleCq, visibleCr);
         }
@@ -1130,8 +1135,9 @@ function rebuildStreamingQueue(cq, cr) {
         if (visibleChunkKeys.has(chunkKey)) continue;
 
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
-        const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
-        const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
+        const unpacked = unpackChunkKey(chunkKey);
+        const chunkQ = chunkMeta?.cq ?? unpacked.cq;
+        const chunkR = chunkMeta?.cr ?? unpacked.cr;
         enqueueChunkUnload(chunkQ, chunkR);
     }
 
@@ -1289,7 +1295,7 @@ export function tickChunkStreaming() {
     profilerMeasure('stream_total', () => {
         initChunkGenerationWorker();
         const { cq, cr } = getCurrentChunkCoords();
-        const currentChunkKey = `${cq},${cr}`;
+        const currentChunkKey = packChunkKey(cq, cr);
         const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
         if (chunkChanged) {
