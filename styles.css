@@ -190,6 +190,7 @@ canvas { display: block; }
     justify-content: center;
     gap: 8px;
     align-self: end;
+    transform: translateY(-20px);
 }
 
 .inventory-honeycomb {
@@ -197,17 +198,18 @@ canvas { display: block; }
     flex-direction: column;
     align-items: center;
     align-content: start;
-    gap: 6px;
+    gap: 4px;
+    margin-top: 20px;
     padding-bottom: 2px;
 }
 
 .inventory-row {
     display: flex;
-    gap: 12px;
+    gap: 8px;
 }
 
 .inventory-row:nth-child(even) {
-    margin-left: 42px;
+    margin-left: 29px;
 }
 
 .inventory-hex-slot {
