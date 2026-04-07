@@ -2,7 +2,7 @@ const THREE = window.THREE;
 
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
-import { normalizeChunkKey, packBlockKey, packChunkKey, unpackChunkKey } from './keys.js';
+import { normalizeChunkKey, packBlockKey, packChunkKey, unpackBlockKey, unpackChunkKey } from './keys.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { profilerMeasure, profilerRecord, worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
@@ -141,7 +141,9 @@ function ensureChunkMeta(cq, cr) {
 function recomputeChunkBounds(chunkKey) {
     const normalizedChunkKey = normalizeChunkKey(chunkKey);
     const chunkBlockKeys = worldState.chunkBlocks.get(normalizedChunkKey);
+    const chunkBlockData = worldState.chunkBlockData.get(normalizedChunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
+    if (!chunkBlockData || chunkBlockData.count === 0) return null;
 
     const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
     const unpacked = unpackChunkKey(normalizedChunkKey);
@@ -169,11 +171,12 @@ function recomputeChunkBounds(chunkKey) {
 
     let minH = Infinity;
     let maxH = -Infinity;
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        minH = Math.min(minH, mesh.userData.h);
-        maxH = Math.max(maxH, mesh.userData.h);
+    for (let i = 0; i < chunkBlockData.count; i++) {
+        const blockKey = chunkBlockData.keys[i];
+        if (!blockKey) continue;
+        const { h } = unpackBlockKey(blockKey);
+        minH = Math.min(minH, h);
+        maxH = Math.max(maxH, h);
     }
 
     if (!Number.isFinite(minH) || !Number.isFinite(maxH)) return null;
@@ -743,7 +746,7 @@ function getBiomeAt(climateBiome, height) {
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = packBlockKey(q, r, h);
     if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
-    if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
+    if (worldState.blockIndexByKey.has(key)) chunkBlockKeys.add(key);
 }
 
 function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusive, fluidTypeIndex) {
@@ -936,12 +939,12 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             }
 
             if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(q, r, h, blockType, false, false, false);
-            if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
+            if (worldState.blockIndexByKey.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
         const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
         if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
-        if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+        if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
         if (addSurfaceFluid) {
             addGeneratedFluidColumn(chunkBlockKeys, q, r, SEA_LEVEL, height, surfaceFluidType);
@@ -1017,12 +1020,12 @@ export function generateChunk(cq, cr) {
                     }
 
                     if (!worldState.permanentBlocks.has(blockKey) && !worldState.removedBlocks.has(blockKey)) addBlock(absQ, absR, h, blockType, false, false, false);
-                    if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
+                    if (worldState.blockIndexByKey.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
                 const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
                 if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
-                if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+                if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
                 if (biome === 'ocean') {
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;
