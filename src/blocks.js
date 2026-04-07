@@ -300,14 +300,6 @@ function computeVisibleFaceMask(q, r, h, typeIndex) {
     return faceMask;
 }
 
-function isFaceVisible(q, r, h, direction) {
-    const key = packBlockKey(q, r, h);
-    const mask = getFaceMaskAtKey(key);
-    const idx = FACE_INDEX_BY_DIRECTION.get(direction.join(','));
-    if (idx === undefined || idx < 0) return false;
-    return (mask & (1 << idx)) !== 0;
-}
-
 function getVisibleFaces(q, r, h) {
     const key = packBlockKey(q, r, h);
     const mask = getFaceMaskAtKey(key);
