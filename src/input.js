@@ -16,6 +16,9 @@ const inventoryScreen = document.getElementById('inventory-screen');
 let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
 const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
+const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
+const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
+const INTERACTION_RAY_NEAR = 0.05;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -63,10 +66,18 @@ export function toggleInventoryScreen() {
 
 function getCenterIntersection() {
     const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, INTERACTION_RAYCAST_CHUNK_RADIUS, localInteractionCandidates);
-    if (localInteractionCandidates.length === 0) return null;
     raycaster.setFromCamera(CENTER_SCREEN, camera);
+    raycaster.near = INTERACTION_RAY_NEAR;
     raycaster.far = INTERACTION_RANGE;
+    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, INTERACTION_RAYCAST_CHUNK_RADIUS, localInteractionCandidates, {
+        cacheKey: INTERACTION_CANDIDATE_CACHE_KEY,
+        reuseFrames: INTERACTION_CANDIDATE_CACHE_FRAMES,
+        rayOrigin: raycaster.ray.origin,
+        rayDirection: raycaster.ray.direction,
+        rayNear: raycaster.near,
+        rayFar: raycaster.far
+    });
+    if (localInteractionCandidates.length === 0) return null;
     const intersects = raycaster.intersectObjects(localInteractionCandidates, false);
     return intersects[0] ?? null;
 }
