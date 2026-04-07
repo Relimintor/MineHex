@@ -1,1 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
 
+        .bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: -1;
+        }
+
+        .content {
+            position: relative;
+            z-index: 1;
+            color: white;
+            font-size: 2rem;
+            text-align: center;
+            margin-top: 40vh;
+        }
+    </style>
+</head>
+<body>
+
+    <img src="yourgif.gif" class="bg">
+
+    <div class="content">
+        Your menu goes here
+    </div>
+
+</body>
+</html>
