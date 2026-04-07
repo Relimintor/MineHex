@@ -274,31 +274,13 @@ function removeChunkSimBlock(chunkKey, blockKey) {
     }
 }
 
-function getBlockAt(q, r, h) {
-    const key = packBlockKey(q, r, h);
-    const typeIndex = getTypeIndexAtKey(key);
-    if (typeIndex < 0) return null;
-    return { key, typeIndex };
-}
-
-function isFaceVisible(q, r, h, [dq, dr, dh]) {
-    const current = getBlockAt(q, r, h);
-    if (!current) return false;
-
-    const neighbor = getBlockAt(q + dq, r + dr, h + dh);
-    if (!neighbor) return true;
-
-    const currentType = BLOCK_TYPES[current.typeIndex] ?? {};
-    const neighborType = BLOCK_TYPES[neighbor.typeIndex] ?? {};
-
+function isFaceVisibleForTypes(currentTypeIndex, neighborTypeIndex) {
+    const currentType = BLOCK_TYPES[currentTypeIndex] ?? {};
+    const neighborType = neighborTypeIndex >= 0 ? (BLOCK_TYPES[neighborTypeIndex] ?? {}) : null;
+    if (!neighborType) return true;
     if (currentType.isLiquid) {
-        // Liquids keep boundary faces when touching air, transparent blocks,
-        // or any different material/liquid rule set.
         if (!neighborType.isLiquid) return true;
-        if (neighbor.typeIndex !== current.typeIndex) return true;
-
-        // Same liquid type next to this face => internal face culled.
-        // (Top face still appears naturally when no liquid above.)
+        if (neighborTypeIndex !== currentTypeIndex) return true;
         return false;
     }
 
@@ -306,34 +288,68 @@ function isFaceVisible(q, r, h, [dq, dr, dh]) {
     return false;
 }
 
+function computeVisibleFaceMask(q, r, h, typeIndex) {
+    let faceMask = 0;
+    for (let faceIdx = 0; faceIdx < FACE_DIRECTIONS.length; faceIdx++) {
+        const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
+        const neighborTypeIndex = getTypeIndexAtKey(packBlockKey(q + dq, r + dr, h + dh));
+        if (isFaceVisibleForTypes(typeIndex, neighborTypeIndex)) {
+            faceMask |= (1 << faceIdx);
+        }
+    }
+    return faceMask;
+}
+
 function getVisibleFaces(q, r, h) {
+    const key = packBlockKey(q, r, h);
+    const mask = getFaceMaskAtKey(key);
     const faces = [];
-    for (const { direction, offsets } of FACE_GEOMETRY) {
-        if (!isFaceVisible(q, r, h, direction)) continue;
-        const vertices = offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz]);
-        faces.push({ direction, vertices });
+    for (let faceIdx = 0; faceIdx < FACE_GEOMETRY.length; faceIdx++) {
+        if ((mask & (1 << faceIdx)) === 0) continue;
+        const { direction, offsets } = FACE_GEOMETRY[faceIdx];
+        faces.push({
+            direction,
+            vertices: offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz])
+        });
+    }
+    return faces;
+}
+
+function updateFaceMaskBit(blockKey, faceIdx, visible) {
+    const currentMask = getFaceMaskAtKey(blockKey);
+    const nextMask = visible ? (currentMask | (1 << faceIdx)) : (currentMask & ~(1 << faceIdx));
+    if (nextMask !== currentMask) setFaceMaskAtKey(blockKey, nextMask);
+}
+
+function updateVisibilityPairAtFace(q, r, h, faceIdx) {
+    const blockKey = packBlockKey(q, r, h);
+    const selfTypeIndex = getTypeIndexAtKey(blockKey);
+    const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
+    const neighborKey = packBlockKey(q + dq, r + dr, h + dh);
+    const neighborTypeIndex = getTypeIndexAtKey(neighborKey);
+    const oppositeFaceIdx = faceIdx ^ 1;
+
+    if (selfTypeIndex < 0) {
+        if (neighborTypeIndex >= 0) updateFaceMaskBit(neighborKey, oppositeFaceIdx, true);
+        return;
     }
 
-    return faces;
+    updateFaceMaskBit(blockKey, faceIdx, isFaceVisibleForTypes(selfTypeIndex, neighborTypeIndex));
+
+    if (neighborTypeIndex < 0) return;
+    updateFaceMaskBit(neighborKey, oppositeFaceIdx, isFaceVisibleForTypes(neighborTypeIndex, selfTypeIndex));
 }
 
 function updateBlockVisibilityAt(q, r, h) {
     const key = packBlockKey(q, r, h);
-    if (!worldState.blockIndexByKey.has(key)) return;
-
-    const visibleFaces = getVisibleFaces(q, r, h);
-    let visibleFaceMask = 0;
-    for (const face of visibleFaces) {
-        const idx = FACE_INDEX_BY_DIRECTION.get(face.direction.join(','));
-        if (idx >= 0) visibleFaceMask |= (1 << idx);
-    }
-    setFaceMaskAtKey(key, visibleFaceMask);
+    const typeIndex = getTypeIndexAtKey(key);
+    if (typeIndex < 0) return;
+    setFaceMaskAtKey(key, computeVisibleFaceMask(q, r, h, typeIndex));
 }
 
 function updateVisibilityAround(q, r, h) {
-    updateBlockVisibilityAt(q, r, h);
-    for (const [dq, dr, dh] of FACE_DIRECTIONS) {
-        updateBlockVisibilityAt(q + dq, r + dr, h + dh);
+    for (let faceIdx = 0; faceIdx < FACE_DIRECTIONS.length; faceIdx++) {
+        updateVisibilityPairAtFace(q, r, h, faceIdx);
     }
 }
 
