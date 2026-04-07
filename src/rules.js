@@ -1,8 +1,9 @@
 import { PLAYER_HEIGHT, BLOCK_TYPES } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
-import { packBlockKey, packColumnKey } from './keys.js';
+import { packColumnKey } from './keys.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
+import { getBlockTypeIndexAt } from './blocks.js';
 
 const SEARCH_RADIUS = 12;
 const SEARCH_HEIGHT_TOP = 80;
@@ -22,7 +23,9 @@ const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(
 );
 
 function getBlockAt(q, r, h) {
-    return worldState.worldBlocks.get(packBlockKey(q, r, h)) ?? null;
+    const typeIndex = getBlockTypeIndexAt(q, r, h);
+    if (typeIndex < 0) return null;
+    return { userData: { typeIndex } };
 }
 
 function getColumnKey(q, r) {
