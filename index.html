@@ -8,7 +8,7 @@
             overflow: hidden;
         }
 
-        .bg {
+        #intro-gif {
             position: fixed;
             top: 0;
             left: 0;
@@ -30,11 +30,25 @@
 </head>
 <body>
 
-    <img src="yourgif.gif" class="bg">
+    <img id="intro-gif" src="assets/intro/4a1d3b747e1aaaad55eb167b95b53de2_original.gif">
 
     <div class="content">
-        Your menu goes here
+        Main Menu
     </div>
+
+    <script>
+        const gif = document.getElementById("intro-gif");
+
+        gif.addEventListener("load", () => {
+            // Estimate GIF duration (in ms)
+            // If you know the exact duration, put it here
+            const duration = 5000; // 5 seconds example
+
+            setTimeout(() => {
+                gif.style.display = "none"; // hide after it finishes
+            }, duration);
+        });
+    </script>
 
 </body>
 </html>
