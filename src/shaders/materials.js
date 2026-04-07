@@ -6,15 +6,34 @@ const DEFAULT_MEGA_HEX_ROUGHNESS = 0.85;
 const DEFAULT_MEGA_HEX_METALNESS = 0.05;
 
 export function createBlockMaterials(blockTypes) {
-    return blockTypes.map((blockType) => new THREE.MeshStandardMaterial({
-        color: blockType.color,
-        transparent: blockType.transparent ?? false,
-        opacity: blockType.opacity ?? 1,
-        depthWrite: blockType.transparent ? false : true,
-        roughness: blockType.roughness ?? DEFAULT_BLOCK_ROUGHNESS,
-        metalness: blockType.metalness ?? DEFAULT_BLOCK_METALNESS,
-        side: THREE.FrontSide
-    }));
+    return blockTypes.map((blockType) => {
+        const transparent = blockType.transparent ?? false;
+        const alphaTest = blockType.alphaTest ?? (transparent && (blockType.opacity ?? 1) >= 0.85 ? 0.35 : 0);
+        const materialParams = {
+            color: blockType.color,
+            transparent,
+            opacity: blockType.opacity ?? 1,
+            alphaTest,
+            depthWrite: transparent && alphaTest <= 0 ? false : true,
+            roughness: blockType.roughness ?? DEFAULT_BLOCK_ROUGHNESS,
+            metalness: blockType.metalness ?? DEFAULT_BLOCK_METALNESS,
+            normalMap: blockType.normalMap ?? null,
+            roughnessMap: blockType.roughnessMap ?? null,
+            aoMap: blockType.aoMap ?? null,
+            envMapIntensity: blockType.envMapIntensity ?? 1,
+            dithering: transparent && alphaTest <= 0,
+            side: THREE.FrontSide
+        };
+        if (Number.isFinite(blockType.transmission) || Number.isFinite(blockType.thickness)) {
+            return new THREE.MeshPhysicalMaterial({
+                ...materialParams,
+                transmission: blockType.transmission ?? 0,
+                thickness: blockType.thickness ?? 0,
+                ior: blockType.ior ?? 1.5
+            });
+        }
+        return new THREE.MeshStandardMaterial(materialParams);
+    });
 }
 
 export function createOcclusionProxyMaterial() {
