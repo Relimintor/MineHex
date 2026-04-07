@@ -1,6 +1,7 @@
 const THREE = window.THREE;
 
 export const SKY_COLOR = 0x87ceeb;
+const DAY_LENGTH_SECONDS = 480.0;
 
 let wasmSkyModule;
 let wasmSkyReady = false;
@@ -49,21 +50,23 @@ float value_noise(vec2 p) {
 }
 
 float cloud_map(vec2 uv) {
-    float n0 = value_noise(uv * 3.2);
-    float n1 = value_noise(uv * 6.4 + vec2(11.3, 7.7));
-    float n2 = value_noise(uv * 12.8 + vec2(23.1, 5.2));
-    float combined = (n0 * 0.58) + (n1 * 0.30) + (n2 * 0.12);
-    return step(0.57, combined);
+    float n0 = value_noise(uv * 1.9);
+    float n1 = value_noise(uv * 3.8 + vec2(11.3, 7.7));
+    float n2 = value_noise(uv * 7.6 + vec2(23.1, 5.2));
+    float detail = value_noise(uv * 14.0 + vec2(5.3, 19.1));
+    float combined = (n0 * 0.52) + (n1 * 0.28) + (n2 * 0.14) + (detail * 0.06);
+    return smoothstep(0.54, 0.69, combined);
 }
 float stars(vec3 dir, float night, float t) {
     float angle = t * 0.0004;
     float c = cos(angle);
     float s = sin(angle);
     vec3 rotated = vec3((dir.x * c) - (dir.z * s), dir.y, (dir.x * s) + (dir.z * c));
-    float n = hash3(rotated * 1000.0);
-    float star = step(0.99833, n);
-    float twinkle = 0.94 + 0.06 * sin(t * 0.03 + rotated.x * 61.0 + rotated.z * 37.0);
-    return star * night * twinkle;
+    float large = smoothstep(0.9966, 1.0, hash3(rotated * 640.0));
+    float small = smoothstep(0.9985, 1.0, hash3(rotated * 1180.0));
+    float twinkle = 0.85 + 0.15 * sin(t * 0.05 + rotated.x * 67.0 + rotated.z * 41.0);
+    float starField = max(large * 0.85, small);
+    return starField * night * twinkle;
 }
 
 float sun_disc(vec3 dir, vec3 sunDir) {
@@ -95,7 +98,7 @@ vec3 atmospheric_scatter(vec3 viewDir, vec3 sunDir, float dayFactor, float night
 
 
 vec3 moon_color(vec3 dir, vec3 sunDir, float time) {
-    float cycle = (time / 120.0) * 6.2831853 + 1.5707963;
+    float cycle = (time / ${DAY_LENGTH_SECONDS.toFixed(1)}) * 6.2831853 + 1.5707963;
     float moonAngle = cycle * 1.6;
     vec3 moonDir = normalize(vec3(cos(moonAngle), sin(moonAngle), 0.05));
 
@@ -127,19 +130,19 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night, time);
 
-    vec2 cloudUV = (dir.xz / max(0.15, dir.y + 0.45)) * 1.4 + vec2(time * 0.010, time * 0.004);
+    vec2 cloudUV = (dir.xz / max(0.18, dir.y + 0.45)) * 1.1 + vec2(time * 0.0035, time * 0.0014);
     float cloudMask = cloud_map(cloudUV);
     float cloudVerticalFade = smoothstep(-0.2, 0.4, dir.y);
-    float cloudDistanceFade = 1.0 - smoothstep(2.0, 4.5, length(cloudUV));
+    float cloudDistanceFade = 1.0 - smoothstep(3.0, 6.0, length(cloudUV));
     float cloudFade = cloudVerticalFade * cloudDistanceFade;
-    float cloudNightVisibility = 0.35 + (0.65 * dayFactor);
-    float cloudShade = mix(0.62, 1.0, max(dot(normalize(vec3(dir.x, 0.25, dir.z)), sunDir), 0.0));
-    vec3 cloudColor = vec3(0.95, 0.96, 0.98) * cloudMask * cloudFade * cloudNightVisibility * cloudShade;
+    float cloudNightVisibility = 0.22 + (0.78 * dayFactor);
+    float cloudShade = mix(0.56, 1.05, max(dot(normalize(vec3(dir.x, 0.35, dir.z)), sunDir), 0.0));
+    vec3 cloudColor = vec3(0.92, 0.95, 0.99) * cloudMask * cloudFade * cloudNightVisibility * cloudShade;
 
     sky += sunTint * sunVal * 1.6;
     sky += moon_color(dir, sunDir, time);
     sky += vec3(1.0) * starVal;
-    sky = mix(sky, cloudColor + sky, cloudMask * cloudFade * cloudNightVisibility * 0.75);
+    sky = mix(sky, cloudColor + sky, cloudMask * cloudFade * cloudNightVisibility * 0.68);
     return sky;
 }
 
@@ -152,7 +155,7 @@ void main() {
 `
 
 function makeFallbackUniforms(timeSeconds) {
-    const period = 120.0;
+    const period = DAY_LENGTH_SECONDS;
     const cycle = ((timeSeconds % period) + period) % period / period;
     const angle = cycle * Math.PI * 2.0 + Math.PI * 0.5;
     const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0.05).normalize();
