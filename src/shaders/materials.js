@@ -18,23 +18,25 @@ function getTexture(texturePath) {
     return loaded;
 }
 
-function applyTopFaceTextureShader(material, topTexture) {
+function applyTopFaceTextureShader(material, topTexture, capTextureScale = 1) {
     material.onBeforeCompile = (shader) => {
         shader.uniforms.topFaceMap = { value: topTexture };
+        shader.uniforms.topFaceScale = { value: capTextureScale };
         shader.vertexShader = shader.vertexShader
             .replace('void main() {', 'varying vec3 vLocalPos;\nvoid main() {')
             .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvLocalPos = position;');
 
         shader.fragmentShader = shader.fragmentShader
-            .replace('void main() {', 'varying vec3 vLocalPos;\nuniform sampler2D topFaceMap;\nvoid main() {')
+            .replace('void main() {', 'varying vec3 vLocalPos;\nuniform sampler2D topFaceMap;\nuniform float topFaceScale;\nvoid main() {')
             .replace(
                 '#include <map_fragment>',
                 `#include <map_fragment>
-    vec2 topUv = clamp(vec2(vLocalPos.x * 0.5 + 0.5, 1.0 - (vLocalPos.z * 0.5 + 0.5)), vec2(0.001), vec2(0.999));
+    vec2 topUv = vec2(vLocalPos.x * 0.5, -vLocalPos.z * 0.5) / max(topFaceScale, 0.01) + vec2(0.5);
+    topUv = clamp(topUv, vec2(0.001), vec2(0.999));
     vec4 topFaceColor = texture2D(topFaceMap, topUv);
     vec3 localFaceNormal = normalize(cross(dFdx(vLocalPos), dFdy(vLocalPos)));
-    float topMask = smoothstep(0.96, 0.999, localFaceNormal.y);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * topFaceColor.rgb, topMask);`
+    float topBottomMask = smoothstep(0.96, 0.999, abs(localFaceNormal.y));
+    diffuseColor.rgb = mix(diffuseColor.rgb, topFaceColor.rgb, topBottomMask);`
             );
     };
     material.needsUpdate = true;
@@ -67,11 +69,11 @@ export function createBlockMaterials(blockTypes) {
                 thickness: blockType.thickness ?? 0,
                 ior: blockType.ior ?? 1.5
             });
-            if (topFaceTexture) applyTopFaceTextureShader(material, topFaceTexture);
+            if (topFaceTexture) applyTopFaceTextureShader(material, topFaceTexture, blockType.capTextureScale ?? 1);
             return material;
         }
         const material = new THREE.MeshStandardMaterial(materialParams);
-        if (topFaceTexture) applyTopFaceTextureShader(material, topFaceTexture);
+        if (topFaceTexture) applyTopFaceTextureShader(material, topFaceTexture, blockType.capTextureScale ?? 1);
         return material;
     });
 }
