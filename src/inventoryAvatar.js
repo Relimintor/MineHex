@@ -8,6 +8,8 @@ let previewRenderer = null;
 let previewScene = null;
 let previewCamera = null;
 let avatarGroup = null;
+let previewWidth = 0;
+let previewHeight = 0;
 
 function loadTexture(path) {
     if (textureCache.has(path)) return textureCache.get(path);
@@ -128,6 +130,9 @@ function resizePreviewRenderer() {
     if (!previewRoot || !previewRenderer || !previewCamera) return;
     const width = Math.max(1, previewRoot.clientWidth);
     const height = Math.max(1, previewRoot.clientHeight);
+    if (width === previewWidth && height === previewHeight) return;
+    previewWidth = width;
+    previewHeight = height;
     previewRenderer.setSize(width, height, false);
     previewCamera.aspect = width / height;
     previewCamera.updateProjectionMatrix();
@@ -167,6 +172,7 @@ export function renderInventoryAvatarPreview(timeSeconds) {
     const inventoryScreen = document.getElementById('inventory-screen');
     if (!inventoryScreen || !inventoryScreen.classList.contains('visible')) return;
 
+    resizePreviewRenderer();
     avatarGroup.rotation.y = timeSeconds * 0.55;
     avatarGroup.position.y = Math.sin(timeSeconds * 1.8) * 0.04;
     previewRenderer.render(previewScene, previewCamera);
