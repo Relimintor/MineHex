@@ -1,7 +1,5 @@
 const THREE = window.THREE;
 
-import { syncShaderLighting } from './materials.js';
-
 export function applySceneLighting(scene) {
     const ambient = new THREE.AmbientLight(0xdde7ff, 0.32);
     scene.add(ambient);
@@ -28,8 +26,6 @@ export function applySceneLighting(scene) {
             hemi.intensity = 0.08 + dayFactor * 0.26;
             sun.color.setRGB(1.0, 0.88 + dayFactor * 0.1, 0.72 + dayFactor * 0.2);
             hemi.color.setRGB(0.62 + dayFactor * 0.32, 0.70 + dayFactor * 0.22, 0.84 + dayFactor * 0.12);
-
-            syncShaderLighting(skyValues);
         },
     };
 }
