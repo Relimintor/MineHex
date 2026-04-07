@@ -18,23 +18,6 @@ function getTexture(texturePath) {
     return loaded;
 }
 
-function applyCapTextureShader(material) {
-    material.onBeforeCompile = (shader) => {
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <map_fragment>',
-            `#ifdef USE_MAP
-	vec4 sampledDiffuseColor = texture2D( map, vUv );
-	#ifdef DECODE_VIDEO_TEXTURE
-		sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
-	#endif
-	float capMask = smoothstep(0.88, 0.98, abs(normalize(vNormal).y));
-	diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * sampledDiffuseColor.rgb, capMask);
-#endif`
-        );
-    };
-    material.needsUpdate = true;
-}
-
 export function createBlockMaterials(blockTypes) {
     return blockTypes.map((blockType) => {
         const transparent = blockType.transparent ?? false;
@@ -57,18 +40,14 @@ export function createBlockMaterials(blockTypes) {
             side: THREE.FrontSide
         };
         if (Number.isFinite(blockType.transmission) || Number.isFinite(blockType.thickness)) {
-            const material = new THREE.MeshPhysicalMaterial({
+            return new THREE.MeshPhysicalMaterial({
                 ...materialParams,
                 transmission: blockType.transmission ?? 0,
                 thickness: blockType.thickness ?? 0,
                 ior: blockType.ior ?? 1.5
             });
-            if (map) applyCapTextureShader(material);
-            return material;
         }
-        const material = new THREE.MeshStandardMaterial(materialParams);
-        if (map) applyCapTextureShader(material);
-        return material;
+        return new THREE.MeshStandardMaterial(materialParams);
     });
 }
 
