@@ -57,11 +57,18 @@ float cloud_map(vec2 uv) {
     float combined = (n0 * 0.52) + (n1 * 0.28) + (n2 * 0.14) + (detail * 0.06);
     return smoothstep(0.54, 0.69, combined);
 }
-float stars(vec3 dir, float night, float t) {
-    vec3 rotated = dir;
-    float large = smoothstep(0.9966, 1.0, hash3(rotated * 640.0));
-    float small = smoothstep(0.9985, 1.0, hash3(rotated * 1180.0));
-    float starField = max(large * 0.85, small);
+
+vec2 star_uv(vec3 dir) {
+    float u = atan(dir.z, dir.x) * 0.15915494 + 0.5;
+    float v = asin(clamp(dir.y, -1.0, 1.0)) * 0.31830989 + 0.5;
+    return vec2(fract(u), clamp(v, 0.0, 1.0));
+}
+
+float stars(vec3 dir, float night) {
+    vec2 uv = star_uv(dir);
+    float major = value_noise(uv * 360.0 + vec2(12.4, 3.7));
+    float minor = value_noise(uv * 760.0 + vec2(41.0, 19.6));
+    float starField = smoothstep(0.90, 0.985, major * 0.74 + minor * 0.26);
     return starField * night;
 }
 
@@ -124,7 +131,7 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float sunVal = disc * (0.95 + 0.05 * sunEnergy);
 
     float night = smoothstep(0.1, 0.9, nightFactor);
-    float starVal = stars(dir, night, time);
+    float starVal = stars(dir, night);
 
     vec2 cloudUV = (dir.xz / max(0.18, dir.y + 0.45)) * 1.1 + vec2(time * 0.0035, time * 0.0014);
     float cloudMask = cloud_map(cloudUV);
