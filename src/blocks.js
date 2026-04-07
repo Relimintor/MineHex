@@ -300,6 +300,14 @@ function computeVisibleFaceMask(q, r, h, typeIndex) {
     return faceMask;
 }
 
+function isFaceVisible(q, r, h, direction) {
+    const key = packBlockKey(q, r, h);
+    const mask = getFaceMaskAtKey(key);
+    const idx = FACE_INDEX_BY_DIRECTION.get(direction.join(','));
+    if (idx === undefined || idx < 0) return false;
+    return (mask & (1 << idx)) !== 0;
+}
+
 function getVisibleFaces(q, r, h) {
     const key = packBlockKey(q, r, h);
     const mask = getFaceMaskAtKey(key);
@@ -390,51 +398,61 @@ function buildFaceCell(blockMesh, direction) {
 }
 
 function greedyMergeCells(cells, direction, plane, planeValue, typeIndex) {
-    const byU = new Map();
     let minU = Infinity;
     let maxU = -Infinity;
     let minV = Infinity;
     let maxV = -Infinity;
 
     for (const cell of cells) {
-        if (!byU.has(cell.u)) byU.set(cell.u, new Set());
-        byU.get(cell.u).add(cell.v);
         minU = Math.min(minU, cell.u);
         maxU = Math.max(maxU, cell.u);
         minV = Math.min(minV, cell.v);
         maxV = Math.max(maxV, cell.v);
     }
 
-    const visited = new Set();
+    if (!Number.isFinite(minU) || !Number.isFinite(minV) || !Number.isFinite(maxU) || !Number.isFinite(maxV)) return [];
+
+    const gridWidth = (maxU - minU) + 1;
+    const gridHeight = (maxV - minV) + 1;
+    const gridSize = gridWidth * gridHeight;
+    const occupied = new Uint8Array(gridSize);
+    const visited = new Uint8Array(gridSize);
     const quads = [];
-    const keyOf = (u, v) => `${u},${v}`;
+    const toIndex = (u, v) => ((v - minV) * gridWidth) + (u - minU);
 
-    for (let u = minU; u <= maxU; u++) {
-        for (let v = minV; v <= maxV; v++) {
-            if (!byU.get(u)?.has(v)) continue;
-            const startKey = keyOf(u, v);
-            if (visited.has(startKey)) continue;
+    for (const cell of cells) {
+        occupied[toIndex(cell.u, cell.v)] = 1;
+    }
 
-            let width = 1;
-            while (byU.get(u + width)?.has(v) && !visited.has(keyOf(u + width, v))) width++;
+    for (let v = minV; v <= maxV; v++) {
+        for (let u = minU; u <= maxU; u++) {
+            const startIndex = toIndex(u, v);
+            if (occupied[startIndex] === 0 || visited[startIndex] === 1) continue;
+
+            let width = 0;
+            while ((u + width) <= maxU) {
+                const idx = toIndex(u + width, v);
+                if (occupied[idx] === 0 || visited[idx] === 1) break;
+                width++;
+            }
 
             let height = 1;
-            let canExtend = true;
-            while (canExtend) {
-                const nextV = v + height;
+            while ((v + height) <= maxV) {
+                let canExtend = true;
                 for (let du = 0; du < width; du++) {
-                    const testU = u + du;
-                    if (!byU.get(testU)?.has(nextV) || visited.has(keyOf(testU, nextV))) {
+                    const idx = toIndex(u + du, v + height);
+                    if (occupied[idx] === 0 || visited[idx] === 1) {
                         canExtend = false;
                         break;
                     }
                 }
-                if (canExtend) height++;
+                if (!canExtend) break;
+                height++;
             }
 
-            for (let du = 0; du < width; du++) {
-                for (let dv = 0; dv < height; dv++) {
-                    visited.add(keyOf(u + du, v + dv));
+            for (let dv = 0; dv < height; dv++) {
+                for (let du = 0; du < width; du++) {
+                    visited[toIndex(u + du, v + dv)] = 1;
                 }
             }
 
