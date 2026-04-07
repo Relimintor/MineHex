@@ -32,7 +32,8 @@ function applyTopFaceTextureShader(material, topTexture) {
                 `#include <map_fragment>
     vec2 topUv = clamp(vec2(vLocalPos.x * 0.5 + 0.5, 1.0 - (vLocalPos.z * 0.5 + 0.5)), vec2(0.001), vec2(0.999));
     vec4 topFaceColor = texture2D(topFaceMap, topUv);
-    float topMask = smoothstep(0.92, 0.99, normalize(vNormal).y);
+    vec3 localFaceNormal = normalize(cross(dFdx(vLocalPos), dFdy(vLocalPos)));
+    float topMask = smoothstep(0.96, 0.999, localFaceNormal.y);
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * topFaceColor.rgb, topMask);`
             );
     };
