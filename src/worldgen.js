@@ -62,7 +62,7 @@ const DIRTY_CHUNK_APPLY_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
-const chunkInstanceDummy = new THREE.Object3D();
+const instanceMatrixTmp = new THREE.Matrix4();
 const projectedChunkCenter = new THREE.Vector3();
 const hizCenter = new THREE.Vector3();
 const cameraForwardXZ = new THREE.Vector3();
@@ -228,12 +228,6 @@ function getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR) {
     return 0;
 }
 
-function hasTopFace(mesh) {
-    const faces = mesh.userData.visibleFaces;
-    if (!Array.isArray(faces)) return false;
-    return faces.some((face) => face.direction?.[0] === 0 && face.direction?.[1] === 0 && face.direction?.[2] === 1);
-}
-
 function ensureMegaHexMesh(chunkKey) {
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta?.bounds) return null;
@@ -260,25 +254,8 @@ function rebuildChunkDetailedMeshes(chunkKey) {
 
     disposeDetailedChunkMeshes(chunkMeta);
 
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
-        chunkMeta.dirty = false;
-        return;
-    }
-
-    const perTypeInstances = new Map();
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
-        if (!hasExposedFace) continue;
-
-        const typeIndex = mesh.userData.typeIndex ?? 0;
-        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
-        perTypeInstances.get(typeIndex).push(mesh);
-    }
-
-    if (perTypeInstances.size === 0) {
+    const renderBatches = worldState.chunkRenderBatches.get(chunkKey);
+    if (!renderBatches || renderBatches.length === 0) {
         chunkMeta.dirty = false;
         return;
     }
@@ -287,21 +264,19 @@ function rebuildChunkDetailedMeshes(chunkKey) {
     group.visible = false;
     const createdMeshes = [];
 
-    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
-
-        for (let i = 0; i < sourceMeshes.length; i++) {
-            const sourceMesh = sourceMeshes[i];
-            chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.set(0, 0, 0);
-            chunkInstanceDummy.scale.set(1, 1, 1);
-            chunkInstanceDummy.updateMatrix();
-            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+    for (const batch of renderBatches) {
+        const instanceCount = batch.allKeys.length;
+        if (instanceCount === 0) continue;
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(batch.typeIndex), instanceCount);
+        const positions = batch.allPositions;
+        for (let i = 0; i < instanceCount; i++) {
+            instanceMatrixTmp.makeTranslation(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+            instanced.setMatrixAt(i, instanceMatrixTmp);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
-        instanced.userData.typeIndex = typeIndex;
-        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
+        instanced.userData.typeIndex = batch.typeIndex;
+        instanced.userData.instanceKeys = batch.allKeys;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -325,27 +300,8 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
 
     disposeInstancedLodMeshes(chunkMeta);
 
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
-        chunkMeta.dirty = false;
-        return;
-    }
-
-    const perTypeInstances = new Map();
-    const requireTopFaceForInstancedLod = !FORCE_BATCHED_CHUNK_RENDERING;
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
-        if (!hasExposedFace) continue;
-        if (requireTopFaceForInstancedLod && !hasTopFace(mesh)) continue;
-
-        const typeIndex = mesh.userData.typeIndex ?? 0;
-        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
-        perTypeInstances.get(typeIndex).push(mesh);
-    }
-
-    if (perTypeInstances.size === 0) {
+    const renderBatches = worldState.chunkRenderBatches.get(chunkKey);
+    if (!renderBatches || renderBatches.length === 0) {
         chunkMeta.dirty = false;
         return;
     }
@@ -354,21 +310,22 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     group.visible = false;
     const createdMeshes = [];
 
-    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+    const requireTopFaceForInstancedLod = !FORCE_BATCHED_CHUNK_RENDERING;
+    for (const batch of renderBatches) {
+        const positions = requireTopFaceForInstancedLod ? batch.topPositions : batch.allPositions;
+        const instanceKeys = requireTopFaceForInstancedLod ? batch.topKeys : batch.allKeys;
+        const instanceCount = instanceKeys.length;
+        if (instanceCount === 0) continue;
 
-        for (let i = 0; i < sourceMeshes.length; i++) {
-            const sourceMesh = sourceMeshes[i];
-            chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.set(0, 0, 0);
-            chunkInstanceDummy.scale.set(1, 1, 1);
-            chunkInstanceDummy.updateMatrix();
-            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(batch.typeIndex), instanceCount);
+        for (let i = 0; i < instanceCount; i++) {
+            instanceMatrixTmp.makeTranslation(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+            instanced.setMatrixAt(i, instanceMatrixTmp);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
-        instanced.userData.typeIndex = typeIndex;
-        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
+        instanced.userData.typeIndex = batch.typeIndex;
+        instanced.userData.instanceKeys = instanceKeys;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -1097,6 +1054,7 @@ export function unloadChunk(cq, cr) {
     if (chunkBlockKeys.size > 0) chunkBlockKeys.clear();
     if (recycledChunkBlockSets.length < 128) recycledChunkBlockSets.push(chunkBlockKeys);
     worldState.chunkFaceQuads.delete(chunkKey);
+    worldState.chunkRenderBatches.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
 
