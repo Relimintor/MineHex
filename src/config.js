@@ -28,7 +28,7 @@ export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
 export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
-export const ENABLE_SHADOW_MAP = false;
+export const ENABLE_SHADOW_MAP = !useStrictLowEndRendering;
 export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 
 // Chunk profile alignment:
@@ -48,18 +48,18 @@ export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
 export const BLOCK_TYPES = [
-    { name: 'Grass', color: 0x4caf50 },
-    { name: 'Dirt', color: 0x795548 },
-    { name: 'Stone', color: 0x9e9e9e },
-    { name: 'Cloud', color: 0xffffff },
-    { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true },
-    { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true },
-    { name: 'Oak Wood', color: 0x8d6e63 },
-    { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true },
-    { name: 'Snow', color: 0xf5f8ff },
-    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true },
-    { name: 'Sand', color: 0xdcc38b },
-    { name: 'Sandstone', color: 0xcaa472 }
+    { name: 'Grass', color: 0x4caf50, roughness: 0.96, metalness: 0.0 },
+    { name: 'Dirt', color: 0x795548, roughness: 0.95, metalness: 0.0 },
+    { name: 'Stone', color: 0x9e9e9e, roughness: 0.84, metalness: 0.02 },
+    { name: 'Cloud', color: 0xffffff, roughness: 0.92, metalness: 0.0 },
+    { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true, roughness: 0.08, metalness: 0.0, envMapIntensity: 1.2, transmission: 0.18, thickness: 0.25, ior: 1.33 },
+    { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true, roughness: 0.92, metalness: 0.0 },
+    { name: 'Oak Wood', color: 0x5b3a24, roughness: 0.82, metalness: 0.0, capTexture: 'assets/hexes/log/oak/oak_log_top_bottom.png', capTextureScale: 1.22 },
+    { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true, roughness: 0.86, metalness: 0.0, alphaTest: 0.35 },
+    { name: 'Snow', color: 0xf5f8ff, roughness: 0.52, metalness: 0.0 },
+    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true, roughness: 0.16, metalness: 0.02, envMapIntensity: 1.15, transmission: 0.32, thickness: 0.32, ior: 1.31 },
+    { name: 'Sand', color: 0xdcc38b, roughness: 0.95, metalness: 0.0 },
+    { name: 'Sandstone', color: 0xcaa472, roughness: 0.9, metalness: 0.0 }
 ];
 
 export const PLAYER_HEIGHT_IN_HEXES = 1.8;
