@@ -54,7 +54,7 @@ const FLAT_HEX_LOD_DISTANCE = Math.max(1, RENDER_DIST - 1);
 const MEGA_HEX_LOD_DISTANCE = RENDER_DIST;
 const megaHexMaterial = createMegaHexMaterial();
 
-const pendingChunkGenerationQueue = [];
+const pendingChunkGenerationQueue = { items: [], head: 0 };
 const pendingChunkGenerationSet = new Set();
 const pendingChunkGenerationInFlight = new Set();
 let lastStreamChunkKey = null;
@@ -71,9 +71,9 @@ const chunkPriorityVector = new THREE.Vector3();
 const HIZ_SECTORS_X = 32;
 const HIZ_SECTORS_Y = 18;
 const hiZDepthSectors = new Float32Array(HIZ_SECTORS_X * HIZ_SECTORS_Y);
-const pendingChunkUnloadQueue = [];
+const pendingChunkUnloadQueue = { items: [], head: 0 };
 const pendingChunkUnloadSet = new Set();
-const pendingChunkApplyQueue = [];
+const pendingChunkApplyQueue = { items: [], head: 0 };
 const pendingChunkApplySet = new Set();
 const recycledChunkBlockSets = [];
 let chunkGenerationWorkerPool = null;
@@ -82,6 +82,58 @@ const CHUNK_WORKER_SCRIPT_URLS = [
     new URL('./workers/chunkWorkerSecondary.js', import.meta.url),
     new URL('./workers/chunkWorkerTertiary.js', import.meta.url)
 ];
+
+function queueLength(queue) {
+    return queue.items.length - queue.head;
+}
+
+function queuePush(queue, value) {
+    queue.items.push(value);
+}
+
+function queueShift(queue) {
+    if (queueLength(queue) <= 0) return null;
+    const value = queue.items[queue.head];
+    queue.head += 1;
+    if (queue.head > 64 && queue.head * 2 >= queue.items.length) {
+        queue.items = queue.items.slice(queue.head);
+        queue.head = 0;
+    }
+    return value;
+}
+
+function queueUnshift(queue, value) {
+    if (queue.head > 0) {
+        queue.head -= 1;
+        queue.items[queue.head] = value;
+        return;
+    }
+    queue.items.unshift(value);
+}
+
+function queueClear(queue) {
+    queue.items.length = 0;
+    queue.head = 0;
+}
+
+function queueFilterInPlace(queue, predicate, onDrop = null) {
+    const next = [];
+    for (let i = queue.head; i < queue.items.length; i++) {
+        const entry = queue.items[i];
+        if (predicate(entry)) next.push(entry);
+        else if (onDrop) onDrop(entry);
+    }
+    queue.items = next;
+    queue.head = 0;
+}
+
+function queueSortActive(queue, compareFn) {
+    if (queue.head > 0) {
+        queue.items = queue.items.slice(queue.head);
+        queue.head = 0;
+    }
+    queue.items.sort(compareFn);
+}
 
 
 const FRAME_TIME_TARGET_MS = 16.7;
@@ -878,14 +930,14 @@ function initChunkGenerationWorker() {
                 if (worldState.loadedChunks.has(normalizedChunkKey)) return;
                 if (pendingChunkApplySet.has(normalizedChunkKey)) return;
                 pendingChunkApplySet.add(normalizedChunkKey);
-                pendingChunkApplyQueue.push({ chunkKey: normalizedChunkKey, cq, cr, columns });
+                queuePush(pendingChunkApplyQueue, { chunkKey: normalizedChunkKey, cq, cr, columns });
             },
             onError: (error) => {
                 console.warn('Chunk generation worker pool crashed, using main-thread chunk generation fallback.', error);
                 chunkGenerationWorkerPool?.terminate();
                 chunkGenerationWorkerPool = null;
                 pendingChunkGenerationInFlight.clear();
-                pendingChunkApplyQueue.length = 0;
+                queueClear(pendingChunkApplyQueue);
                 pendingChunkApplySet.clear();
             }
         });
@@ -1109,18 +1161,19 @@ function enqueueChunkGeneration(cq, cr) {
     const chunkKey = packChunkKey(cq, cr);
     if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey) || pendingChunkGenerationInFlight.has(chunkKey)) return;
     pendingChunkGenerationSet.add(chunkKey);
-    pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
+    queuePush(pendingChunkGenerationQueue, { cq, cr, chunkKey, priorityScore: Number.POSITIVE_INFINITY, priorityCameraKey: '' });
 }
 
 function enqueueChunkUnload(cq, cr) {
     const chunkKey = packChunkKey(cq, cr);
     if (!worldState.loadedChunks.has(chunkKey) || pendingChunkUnloadSet.has(chunkKey)) return;
     pendingChunkUnloadSet.add(chunkKey);
-    pendingChunkUnloadQueue.push({ cq, cr, chunkKey });
+    queuePush(pendingChunkUnloadQueue, { cq, cr, chunkKey });
 }
 
 function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
+    const cameraChunkKey = packChunkKey(cq, cr);
 
     for (let dq = -RENDER_DIST; dq <= RENDER_DIST; dq++) {
         for (let dr = -RENDER_DIST; dr <= RENDER_DIST; dr++) {
@@ -1144,63 +1197,51 @@ function rebuildStreamingQueue(cq, cr) {
         enqueueChunkUnload(chunkQ, chunkR);
     }
 
-    for (let i = pendingChunkUnloadQueue.length - 1; i >= 0; i--) {
-        const queued = pendingChunkUnloadQueue[i];
-        if (!visibleChunkKeys.has(queued.chunkKey)) continue;
+    queueFilterInPlace(pendingChunkUnloadQueue, (queued) => {
+        if (!visibleChunkKeys.has(queued.chunkKey)) return true;
         pendingChunkUnloadSet.delete(queued.chunkKey);
-        pendingChunkUnloadQueue.splice(i, 1);
-    }
+        return false;
+    });
 
-    for (let i = pendingChunkGenerationQueue.length - 1; i >= 0; i--) {
-        const queued = pendingChunkGenerationQueue[i];
-        if (visibleChunkKeys.has(queued.chunkKey)) continue;
+    queueFilterInPlace(pendingChunkGenerationQueue, (queued) => {
+        if (visibleChunkKeys.has(queued.chunkKey)) return true;
         pendingChunkGenerationSet.delete(queued.chunkKey);
-        pendingChunkGenerationQueue.splice(i, 1);
-    }
+        return false;
+    });
 
     for (const chunkKey of Array.from(pendingChunkGenerationInFlight)) {
         if (visibleChunkKeys.has(chunkKey)) continue;
         pendingChunkGenerationInFlight.delete(chunkKey);
     }
 
-    for (let i = pendingChunkApplyQueue.length - 1; i >= 0; i--) {
-        const queued = pendingChunkApplyQueue[i];
-        if (visibleChunkKeys.has(queued.chunkKey)) continue;
+    queueFilterInPlace(pendingChunkApplyQueue, (queued) => {
+        if (visibleChunkKeys.has(queued.chunkKey)) return true;
         pendingChunkApplySet.delete(queued.chunkKey);
-        pendingChunkApplyQueue.splice(i, 1);
-    }
+        return false;
+    });
 
-    const distanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
-    for (const queued of pendingChunkGenerationQueue) {
-        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
-        const bucket = distanceBuckets[Math.min(RENDER_DIST, distance)];
+    for (let i = pendingChunkGenerationQueue.head; i < pendingChunkGenerationQueue.items.length; i++) {
+        const queued = pendingChunkGenerationQueue.items[i];
+        if (queued.priorityCameraKey === cameraChunkKey) continue;
         queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
-        bucket.push(queued);
+        queued.priorityCameraKey = cameraChunkKey;
     }
-    pendingChunkGenerationQueue.length = 0;
-    for (const bucket of distanceBuckets) {
-        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
-        pendingChunkGenerationQueue.push(...bucket);
-    }
+    queueSortActive(pendingChunkGenerationQueue, (a, b) => a.priorityScore - b.priorityScore);
 
-    const applyDistanceBuckets = Array.from({ length: RENDER_DIST + 1 }, () => []);
-    for (const queued of pendingChunkApplyQueue) {
-        const distance = axialChunkDistance(queued.cq, queued.cr, cq, cr);
-        const bucket = applyDistanceBuckets[Math.min(RENDER_DIST, distance)];
+    for (let i = pendingChunkApplyQueue.head; i < pendingChunkApplyQueue.items.length; i++) {
+        const queued = pendingChunkApplyQueue.items[i];
+        if (queued.priorityCameraKey === cameraChunkKey) continue;
         queued.priorityScore = getChunkPriorityScore(queued.cq, queued.cr, cq, cr);
-        bucket.push(queued);
+        queued.priorityCameraKey = cameraChunkKey;
     }
-    pendingChunkApplyQueue.length = 0;
-    for (const bucket of applyDistanceBuckets) {
-        bucket.sort((a, b) => a.priorityScore - b.priorityScore);
-        pendingChunkApplyQueue.push(...bucket);
-    }
+    queueSortActive(pendingChunkApplyQueue, (a, b) => a.priorityScore - b.priorityScore);
 }
 
 function flushChunkGenerationBudget() {
     let budget = adaptiveChunkBudget.createBudget;
-    while (budget > 0 && pendingChunkGenerationQueue.length > 0) {
-        const nextChunk = pendingChunkGenerationQueue.shift();
+    while (budget > 0 && queueLength(pendingChunkGenerationQueue) > 0) {
+        const nextChunk = queueShift(pendingChunkGenerationQueue);
+        if (!nextChunk) break;
         pendingChunkGenerationSet.delete(nextChunk.chunkKey);
         if (chunkGenerationWorkerPool && pendingChunkGenerationInFlight.size < adaptiveChunkBudget.maxInFlight) {
             pendingChunkGenerationInFlight.add(nextChunk.chunkKey);
@@ -1217,7 +1258,7 @@ function flushChunkGenerationBudget() {
         }
 
         if (chunkGenerationWorkerPool) {
-            pendingChunkGenerationQueue.unshift(nextChunk);
+            queueUnshift(pendingChunkGenerationQueue, nextChunk);
             break;
         }
 
@@ -1228,8 +1269,9 @@ function flushChunkGenerationBudget() {
 
 function flushChunkUnloadBudget() {
     let budget = CHUNK_UNLOAD_BUDGET;
-    while (budget > 0 && pendingChunkUnloadQueue.length > 0) {
-        const nextChunk = pendingChunkUnloadQueue.shift();
+    while (budget > 0 && queueLength(pendingChunkUnloadQueue) > 0) {
+        const nextChunk = queueShift(pendingChunkUnloadQueue);
+        if (!nextChunk) break;
         pendingChunkUnloadSet.delete(nextChunk.chunkKey);
         unloadChunk(nextChunk.cq, nextChunk.cr);
         budget--;
@@ -1238,8 +1280,9 @@ function flushChunkUnloadBudget() {
 
 function flushChunkApplyBudget() {
     let budget = adaptiveChunkBudget.applyBudget;
-    while (budget > 0 && pendingChunkApplyQueue.length > 0) {
-        const nextChunk = pendingChunkApplyQueue.shift();
+    while (budget > 0 && queueLength(pendingChunkApplyQueue) > 0) {
+        const nextChunk = queueShift(pendingChunkApplyQueue);
+        if (!nextChunk) break;
         pendingChunkApplySet.delete(nextChunk.chunkKey);
         if (worldState.loadedChunks.has(nextChunk.chunkKey)) continue;
         if (!isChunkWithinRenderDistance(nextChunk.cq, nextChunk.cr)) continue;
