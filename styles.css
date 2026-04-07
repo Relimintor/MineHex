@@ -190,7 +190,7 @@ canvas { display: block; }
     justify-content: center;
     gap: 8px;
     align-self: end;
-    transform: translateY(-5px);
+    transform: translateY(-15px);
 }
 
 .inventory-honeycomb {
@@ -199,7 +199,7 @@ canvas { display: block; }
     align-items: center;
     align-content: start;
     gap: 4px;
-    margin-top: 25px;
+    margin-top: 35px;
     padding-bottom: 2px;
 }
 
