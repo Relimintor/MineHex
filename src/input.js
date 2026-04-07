@@ -42,6 +42,8 @@ const inventoryHotbarSlotEls = new Map();
 const extraInventorySlotEls = new Map();
 let dragSourceSlotId = null;
 let selectedHotbarSlotIndex = 0;
+let inventoryUiInitialized = false;
+let heldInventoryItemType = null;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -66,6 +68,7 @@ export function isKeyDown(code) {
 }
 
 export function updateSelectedBlock(index) {
+    if (!inventoryUiInitialized) initInventoryUi();
     selectedHotbarSlotIndex = index;
     const selectedSlotId = `hotbar-${index}`;
     const selectedType = inventoryItemsBySlotId.get(selectedSlotId);
@@ -77,6 +80,7 @@ export function updateSelectedBlock(index) {
 }
 
 export function toggleInventoryScreen() {
+    if (!inventoryUiInitialized) initInventoryUi();
     if (!inventoryScreen) return;
     isInventoryScreenOpen = !isInventoryScreenOpen;
     inventoryScreen.classList.toggle('visible', isInventoryScreenOpen);
@@ -136,8 +140,7 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 }
 
 export function registerDesktopInputHandlers() {
-    initializeInventorySlots();
-    renderInventorySlots();
+    initInventoryUi();
 
     document.querySelectorAll('.slot').forEach((slot) => {
         slot.addEventListener('click', () => {
@@ -189,6 +192,13 @@ export function registerDesktopInputHandlers() {
     });
 
     window.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+export function initInventoryUi() {
+    if (inventoryUiInitialized) return;
+    initializeInventorySlots();
+    inventoryUiInitialized = true;
+    renderInventorySlots();
 }
 
 function initializeInventorySlots() {
@@ -257,6 +267,15 @@ function registerInventorySlotDnD(slotEl, slotId) {
     slotEl.addEventListener('dragend', () => {
         dragSourceSlotId = null;
     });
+
+    slotEl.addEventListener('touchend', (event) => {
+        event.preventDefault();
+        handleInventorySlotPickup(slotId);
+    });
+
+    slotEl.addEventListener('click', () => {
+        handleInventorySlotPickup(slotId);
+    });
 }
 
 function transferInventoryItem(sourceSlotId, targetSlotId) {
@@ -287,6 +306,25 @@ function renderInventorySlots() {
     }
 
     updateSelectedBlock(Math.max(0, Math.min(TOTAL_HOTBAR_SLOTS - 1, selectedHotbarSlotIndex)));
+}
+
+function handleInventorySlotPickup(slotId) {
+    if (!inventoryScreen || !inventoryScreen.classList.contains('visible')) return;
+    if (!inventoryItemsBySlotId.has(slotId)) return;
+
+    if (!Number.isInteger(heldInventoryItemType)) {
+        const slotItem = inventoryItemsBySlotId.get(slotId);
+        if (!Number.isInteger(slotItem)) return;
+        heldInventoryItemType = slotItem;
+        inventoryItemsBySlotId.set(slotId, null);
+        renderInventorySlots();
+        return;
+    }
+
+    const targetItem = inventoryItemsBySlotId.get(slotId);
+    inventoryItemsBySlotId.set(slotId, heldInventoryItemType);
+    heldInventoryItemType = Number.isInteger(targetItem) ? targetItem : null;
+    renderInventorySlots();
 }
 
 function renderSlotPreview(slotEl, blockType, preserveInnerHtml) {

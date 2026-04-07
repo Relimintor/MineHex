@@ -1,5 +1,5 @@
 import { inputState } from '../state.js';
-import { applyLookDelta, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
+import { applyLookDelta, initInventoryUi, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
 import { toggleCameraPerspective } from '../playerView.js';
 
 const HOLD_TO_MINE_DELAY_MS = 320;
@@ -45,6 +45,7 @@ function createMobileControls() {
 
 export function registerMobileInputHandlers() {
     inputState.isLocked = true;
+    initInventoryUi();
 
     const { joystick, joystickBase, joystickCenter, jumpButton, inventoryButton, cameraButton } = createMobileControls();
     const inventoryScreen = document.getElementById('inventory-screen');
