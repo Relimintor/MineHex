@@ -1,4 +1,3 @@
-import { HEX_RADIUS } from '../config.js';
 const THREE = window.THREE;
 
 const DEFAULT_BLOCK_ROUGHNESS = 0.9;
@@ -28,42 +27,11 @@ function applyTopFaceTextureShader(material, topTexture, capTextureScale = 1) {
             .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvLocalPos = position;');
 
         shader.fragmentShader = shader.fragmentShader
-            .replace(
-                'void main() {',
-                `varying vec3 vLocalPos;
-uniform sampler2D topFaceMap;
-uniform float topFaceScale;
-
-vec2 snapToNearestHexCenter(vec2 xz) {
-    float q = (${Math.sqrt(3) / 3} * xz.x - (1.0 / 3.0) * xz.y) / ${HEX_RADIUS};
-    float r = ((2.0 / 3.0) * xz.y) / ${HEX_RADIUS};
-    float x = q;
-    float z = r;
-    float y = -x - z;
-
-    vec3 rounded = floor(vec3(x, y, z) + 0.5);
-    vec3 diff = abs(rounded - vec3(x, y, z));
-
-    if (diff.x > diff.y && diff.x > diff.z) {
-        rounded.x = -rounded.y - rounded.z;
-    } else if (diff.y > diff.z) {
-        rounded.y = -rounded.x - rounded.z;
-    } else {
-        rounded.z = -rounded.x - rounded.y;
-    }
-
-    float centerX = ${HEX_RADIUS} * ${Math.sqrt(3)} * (rounded.x + rounded.z * 0.5);
-    float centerZ = ${HEX_RADIUS} * 1.5 * rounded.z;
-    return vec2(centerX, centerZ);
-}
-void main() {`
-            )
+            .replace('void main() {', 'varying vec3 vLocalPos;\nuniform sampler2D topFaceMap;\nuniform float topFaceScale;\nvoid main() {')
             .replace(
                 '#include <map_fragment>',
                 `#include <map_fragment>
-    vec2 nearestHexCenter = snapToNearestHexCenter(vLocalPos.xz);
-    vec2 localHexPos = vLocalPos.xz - nearestHexCenter;
-    vec2 topUv = vec2(localHexPos.x / (${HEX_RADIUS} * ${Math.sqrt(3)}), -localHexPos.y / (${HEX_RADIUS} * 2.0)) / max(topFaceScale, 0.01) + vec2(0.5);
+    vec2 topUv = vec2(vLocalPos.x * 0.5, -vLocalPos.z * 0.5) / max(topFaceScale, 0.01) + vec2(0.5);
     topUv = clamp(topUv, vec2(0.001), vec2(0.999));
     vec4 topFaceColor = texture2D(topFaceMap, topUv);
     vec3 localFaceNormal = normalize(cross(dFdx(vLocalPos), dFdy(vLocalPos)));
