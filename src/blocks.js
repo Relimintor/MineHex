@@ -44,6 +44,7 @@ const FACE_DIRECTIONS = [
     [0, 0, 1],
     [0, 0, -1]
 ];
+const TOP_FACE_MASK = 1 << 4;
 
 
 function parseBlockKey(key) {
@@ -120,6 +121,7 @@ const FACE_GEOMETRY = [
         ]
     }
 ];
+const FACE_INDEX_BY_DIRECTION = new Map(FACE_GEOMETRY.map((face, idx) => [face.direction.join(','), idx]));
 
 function getNeighborChunkKeys(cq, cr) {
     const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
@@ -203,9 +205,15 @@ function updateBlockVisibilityAt(q, r, h) {
     if (!block) return;
 
     const visibleFaces = getVisibleFaces(q, r, h);
+    let visibleFaceMask = 0;
+    for (const face of visibleFaces) {
+        const idx = FACE_INDEX_BY_DIRECTION.get(face.direction.join(','));
+        if (idx >= 0) visibleFaceMask |= (1 << idx);
+    }
     const hasTopOrBottomExposure = isFaceVisible(q, r, h, [0, 0, 1]) || isFaceVisible(q, r, h, [0, 0, -1]);
     const hasSideExposure = AXIAL_SIDE_DIRECTIONS.some((direction) => isFaceVisible(q, r, h, direction));
     block.userData.hasExposedFace = hasTopOrBottomExposure || hasSideExposure;
+    block.userData.visibleFaceMask = visibleFaceMask;
     block.visible = block.userData.hasExposedFace;
     block.userData.visibleFaces = visibleFaces;
 }
@@ -321,16 +329,40 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
         worldState.chunkFaceQuads.delete(chunkKey);
+        worldState.chunkRenderBatches.delete(chunkKey);
         return;
     }
 
     const faceGroups = new Map();
+    const perType = new Map();
 
     for (const blockKey of chunkBlockKeys) {
         const blockMesh = worldState.worldBlocks.get(blockKey);
-        if (!blockMesh || !Array.isArray(blockMesh.userData.visibleFaces)) continue;
+        if (!blockMesh || !blockMesh.userData.hasExposedFace) continue;
 
-        for (const face of blockMesh.userData.visibleFaces) {
+        const typeIndex = blockMesh.userData.typeIndex ?? 0;
+        if (!perType.has(typeIndex)) {
+            perType.set(typeIndex, {
+                allPositions: [],
+                allKeys: [],
+                topPositions: [],
+                topKeys: []
+            });
+        }
+        const perTypeBucket = perType.get(typeIndex);
+        const { x, y, z } = blockMesh.position;
+        perTypeBucket.allPositions.push(x, y, z);
+        perTypeBucket.allKeys.push(blockKey);
+
+        const faceMask = blockMesh.userData.visibleFaceMask ?? 0;
+        if ((faceMask & TOP_FACE_MASK) !== 0) {
+            perTypeBucket.topPositions.push(x, y, z);
+            perTypeBucket.topKeys.push(blockKey);
+        }
+
+        for (let faceIdx = 0; faceIdx < FACE_GEOMETRY.length; faceIdx++) {
+            if ((faceMask & (1 << faceIdx)) === 0) continue;
+            const face = FACE_GEOMETRY[faceIdx];
             const cell = buildFaceCell(blockMesh, face.direction);
             const groupKey = `${cell.plane}:${cell.planeValue}:${cell.direction.join(',')}:${cell.typeIndex}`;
             if (!faceGroups.has(groupKey)) faceGroups.set(groupKey, []);
@@ -349,6 +381,22 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
     }
 
     worldState.chunkFaceQuads.set(chunkKey, mergedQuads);
+    if (perType.size === 0) {
+        worldState.chunkRenderBatches.delete(chunkKey);
+        return;
+    }
+
+    const renderBatches = [];
+    for (const [typeIndex, bucket] of perType) {
+        renderBatches.push({
+            typeIndex,
+            allPositions: new Float32Array(bucket.allPositions),
+            allKeys: bucket.allKeys,
+            topPositions: new Float32Array(bucket.topPositions),
+            topKeys: bucket.topKeys
+        });
+    }
+    worldState.chunkRenderBatches.set(chunkKey, renderBatches);
 }
 
 export function refreshBlockVisibilityForKeys(blockKeys) {

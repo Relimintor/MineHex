@@ -9,6 +9,7 @@ export const worldState = {
     blockCoordsByKey: new Map(),
     chunkBlocks: new Map(),
     chunkFaceQuads: new Map(),
+    chunkRenderBatches: new Map(),
     chunkMeta: new Map(),
     dirtyChunks: new Set(),
     dirtyChunkOps: new Map(),
