@@ -293,6 +293,8 @@ function ensureMegaHexMesh(chunkKey) {
 
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.06, 6), megaHexMaterial);
     mesh.rotation.y = Math.PI / 6;
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
     mesh.visible = false;
     scene.add(mesh);
     chunkMeta.megaHexMesh = mesh;
@@ -335,6 +337,9 @@ function rebuildChunkDetailedMeshes(chunkKey) {
         instanced.instanceMatrix.needsUpdate = true;
         instanced.userData.typeIndex = batch.typeIndex;
         instanced.userData.instanceKeys = batch.allKeys;
+        instanced.castShadow = true;
+        instanced.receiveShadow = true;
+        if (instanced.material.transparent) instanced.renderOrder = 10;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -384,6 +389,9 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
         instanced.instanceMatrix.needsUpdate = true;
         instanced.userData.typeIndex = batch.typeIndex;
         instanced.userData.instanceKeys = instanceKeys;
+        instanced.castShadow = true;
+        instanced.receiveShadow = true;
+        if (instanced.material.transparent) instanced.renderOrder = 10;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
