@@ -10,7 +10,7 @@ import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tic
 import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
-import { worldState } from './state.js';
+import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, toggleProfilerEnabled, worldState } from './state.js';
 import { updateCameraPerspective } from './playerView.js';
 import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
 
@@ -84,6 +84,55 @@ const coordinatesHud = document.getElementById('coordinates');
 let governorElapsedMs = 0;
 let hasSpawnedInAllowedRange = false;
 let coordinatesHudFrameInterval = 1;
+let profilerOverlay = null;
+let lastProfilerOverlayUpdate = 0;
+const PROFILER_OVERLAY_UPDATE_MS = 250;
+
+function ensureProfilerOverlay() {
+    if (profilerOverlay) return profilerOverlay;
+    profilerOverlay = document.createElement('div');
+    profilerOverlay.id = 'profiler-overlay';
+    profilerOverlay.classList.add('hidden');
+    document.body.appendChild(profilerOverlay);
+    return profilerOverlay;
+}
+
+function fmtMs(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : '0.00';
+}
+
+function updateProfilerOverlay(nowMs = performance.now()) {
+    const overlay = ensureProfilerOverlay();
+    if (!worldState.profiler.enabled) {
+        overlay.classList.add('hidden');
+        return;
+    }
+    overlay.classList.remove('hidden');
+    if ((nowMs - lastProfilerOverlayUpdate) < PROFILER_OVERLAY_UPDATE_MS) return;
+    lastProfilerOverlayUpdate = nowMs;
+
+    const snapshot = getProfilerSnapshot();
+    const rows = [
+        ['physics', 'physics'],
+        ['stream queue+gen', 'stream_total'],
+        ['stream queue rebuild', 'stream_rebuild_queue'],
+        ['dirty apply', 'dirty_apply'],
+        ['visibility/lod', 'visibility_lod'],
+        ['occlusion results', 'occlusion_results'],
+        ['occlusion setup', 'occlusion_setup'],
+        ['render', 'render'],
+        ['frame total', 'frame_total'],
+        ['profiler overhead', 'profiler_overhead']
+    ];
+
+    const lines = ['Profiler (F6 toggle)', 'metric | p50 | p95 | p99'];
+    for (const [label, key] of rows) {
+        const metric = snapshot[key];
+        if (!metric) continue;
+        lines.push(`${label}: ${fmtMs(metric.p50)} | ${fmtMs(metric.p95)} | ${fmtMs(metric.p99)} ms`);
+    }
+    overlay.textContent = lines.join('\n');
+}
 
 function updateCoordinatesHud() {
     if (!coordinatesHud) return;
@@ -94,6 +143,10 @@ function updateCoordinatesHud() {
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
+    let profilerOverheadMs = 0;
+    const profilerBeginStart = performance.now();
+    profilerBeginFrame(now);
+    profilerOverheadMs += performance.now() - profilerBeginStart;
     const deltaTimeSeconds = Math.min(0.1, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
@@ -128,11 +181,22 @@ function animate(now = performance.now()) {
 
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
     skyController?.update(now * 0.001, camera);
+    const renderStart = performance.now();
     renderer.render(scene, camera);
+    const renderDuration = performance.now() - renderStart;
+    const renderRecordStart = performance.now();
+    profilerRecord('render', renderDuration);
+    profilerOverheadMs += performance.now() - renderRecordStart;
     renderInventoryAvatarPreview(now * 0.001);
     if (ENABLE_OCCLUSION_CULLING && (worldState.frame % OCCLUSION_CULLING_INTERVAL_FRAMES) === 0) {
         runChunkOcclusionCulling();
     }
+    const overlayStart = performance.now();
+    updateProfilerOverlay(now);
+    profilerOverheadMs += performance.now() - overlayStart;
+    const profilerEndStart = performance.now();
+    profilerEndFrame(performance.now(), profilerOverheadMs);
+    profilerOverheadMs += performance.now() - profilerEndStart;
 }
 
 
@@ -153,7 +217,14 @@ chooseControlMode().then((mode) => {
     hasSpawnedInAllowedRange = enforceSpawnOnSolidBlock(0, 0);
     playerPosition.copy(camera.position);
     initInventoryAvatarPreview();
+    ensureProfilerOverlay();
     animate();
+});
+
+window.addEventListener('keydown', (event) => {
+    if (event.code !== 'F6') return;
+    toggleProfilerEnabled();
+    updateProfilerOverlay(performance.now());
 });
 
 window.addEventListener('resize', () => {

@@ -3,7 +3,7 @@ const THREE = window.THREE;
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
-import { worldState } from './state.js';
+import { profilerMeasure, profilerRecord, worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
 import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
@@ -564,6 +564,7 @@ function passHierarchicalZOcclusion(chunkMeta) {
 
 export function runChunkOcclusionCulling() {
     if (!ENABLE_OCCLUSION_CULLING) return;
+    const occlusionStart = performance.now();
 
     const gl = renderer.getContext();
     if (!(gl instanceof WebGL2RenderingContext)) return;
@@ -571,6 +572,7 @@ export function runChunkOcclusionCulling() {
     const queryTarget = gl[OCCLUSION_QUERY_TARGET] ?? gl.ANY_SAMPLES_PASSED;
     if (!queryTarget) return;
     hiZDepthSectors.fill(1);
+    const resultStart = performance.now();
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -607,8 +609,10 @@ export function runChunkOcclusionCulling() {
         proxy.visible = true;
         occlusionProxiesToTest.push(proxy);
     }
+    profilerRecord('occlusion_results', performance.now() - resultStart);
 
     occlusionProxiesToTest.length = 0;
+    const setupStart = performance.now();
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta?.frustumVisible || !chunkMeta.bounds) continue;
@@ -641,8 +645,12 @@ export function runChunkOcclusionCulling() {
         proxy.visible = true;
         occlusionProxiesToTest.push(proxy);
     }
+    profilerRecord('occlusion_setup', performance.now() - setupStart);
 
-    if (occlusionProxiesToTest.length === 0) return;
+    if (occlusionProxiesToTest.length === 0) {
+        profilerRecord('occlusion_total', performance.now() - occlusionStart);
+        return;
+    }
 
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
@@ -650,6 +658,7 @@ export function runChunkOcclusionCulling() {
     renderer.autoClear = prevAutoClear;
 
     for (const proxy of occlusionProxiesToTest) proxy.visible = false;
+    profilerRecord('occlusion_total', performance.now() - occlusionStart);
 }
 
 function getHeight(q, r) {
@@ -1269,31 +1278,39 @@ function getCurrentChunkCoords() {
 }
 
 export function tickChunkApplyBudget() {
-    initChunkGenerationWorker();
-    applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
-    flushChunkApplyBudget();
+    profilerMeasure('dirty_apply', () => {
+        initChunkGenerationWorker();
+        applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
+        flushChunkApplyBudget();
+    });
 }
 
 export function tickChunkStreaming() {
-    initChunkGenerationWorker();
-    const { cq, cr } = getCurrentChunkCoords();
-    const currentChunkKey = `${cq},${cr}`;
-    const chunkChanged = currentChunkKey !== lastStreamChunkKey;
+    profilerMeasure('stream_total', () => {
+        initChunkGenerationWorker();
+        const { cq, cr } = getCurrentChunkCoords();
+        const currentChunkKey = `${cq},${cr}`;
+        const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged) {
-        rebuildStreamingQueue(cq, cr);
-        lastStreamChunkKey = currentChunkKey;
-    }
+        if (chunkChanged) {
+            profilerMeasure('stream_rebuild_queue', () => rebuildStreamingQueue(cq, cr));
+            lastStreamChunkKey = currentChunkKey;
+        }
 
-    flushChunkUnloadBudget();
-    flushChunkGenerationBudget();
+        profilerMeasure('stream_generation', () => {
+            flushChunkUnloadBudget();
+            flushChunkGenerationBudget();
+        });
+    });
 }
 
 export function tickChunkVisibility() {
-    const { cq, cr } = getCurrentChunkCoords();
-    const lodChangedChunks = updateChunkLodLevels(cq, cr);
-    for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
-    applyChunkFrustumCulling();
+    profilerMeasure('visibility_lod', () => {
+        const { cq, cr } = getCurrentChunkCoords();
+        const lodChangedChunks = updateChunkLodLevels(cq, cr);
+        for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
+        applyChunkFrustumCulling();
+    });
 }
 
 export function updateChunks() {

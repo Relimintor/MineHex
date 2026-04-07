@@ -19,7 +19,7 @@ import { collectChunkRaycastCandidates } from './blocks.js';
 import { worldToAxial } from './coords.js';
 import { camera } from './scene.js';
 import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
-import { inputState, worldState } from './state.js';
+import { inputState, profilerRecord, worldState } from './state.js';
 import { isKeyDown } from './input.js';
 
 const GROUND_STICK_DISTANCE = 0.08;
@@ -100,6 +100,7 @@ function resolveGroundCollision() {
 }
 
 export function handlePhysics(deltaTimeSeconds = 1 / 60) {
+    const physicsStart = performance.now();
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
 
@@ -175,4 +176,5 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
     }
+    profilerRecord('physics', performance.now() - physicsStart);
 }
