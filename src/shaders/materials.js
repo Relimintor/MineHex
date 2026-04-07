@@ -23,11 +23,11 @@ function applyCapTextureShader(material) {
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <map_fragment>',
             `#ifdef USE_MAP
-	vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+	vec4 sampledDiffuseColor = texture2D( map, vUv );
 	#ifdef DECODE_VIDEO_TEXTURE
 		sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
 	#endif
-	float capMask = smoothstep(0.9, 0.98, abs(normal.y));
+	float capMask = smoothstep(0.88, 0.98, abs(normalize(vNormal).y));
 	diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * sampledDiffuseColor.rgb, capMask);
 #endif`
         );
