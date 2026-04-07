@@ -30,6 +30,9 @@ const moveDir = new THREE.Vector3();
 const moveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const localGroundCandidates = [];
 const GROUND_RAYCAST_CHUNK_RADIUS = 1;
+const GROUND_CANDIDATE_CACHE_KEY = 'ground';
+const GROUND_CANDIDATE_CACHE_FRAMES = 6;
+const GROUND_RAY_NEAR = 0.01;
 const collisionProbePoint = new THREE.Vector3();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
@@ -64,10 +67,19 @@ function getFallbackGroundDistanceFromTopSolidColumn() {
 
 function getGroundHit() {
     const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, GROUND_RAYCAST_CHUNK_RADIUS, localGroundCandidates, { collidableOnly: true });
-    if (localGroundCandidates.length === 0) return null;
     groundRaycaster.set(camera.position, DOWN);
+    groundRaycaster.near = GROUND_RAY_NEAR;
     groundRaycaster.far = PLAYER_HEIGHT + 1;
+    collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, GROUND_RAYCAST_CHUNK_RADIUS, localGroundCandidates, {
+        collidableOnly: true,
+        cacheKey: GROUND_CANDIDATE_CACHE_KEY,
+        reuseFrames: GROUND_CANDIDATE_CACHE_FRAMES,
+        rayOrigin: groundRaycaster.ray.origin,
+        rayDirection: groundRaycaster.ray.direction,
+        rayNear: groundRaycaster.near,
+        rayFar: groundRaycaster.far
+    });
+    if (localGroundCandidates.length === 0) return null;
     const intersections = groundRaycaster.intersectObjects(localGroundCandidates, false);
     return intersections[0] ?? null;
 }

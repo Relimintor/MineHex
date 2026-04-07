@@ -1,6 +1,6 @@
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld } from './coords.js';
-import { normalizeBlockKey, packBlockKey, packChunkKey, unpackBlockKey } from './keys.js';
+import { normalizeBlockKey, normalizeChunkKey, packBlockKey, packChunkKey, packColumnKey, unpackBlockKey } from './keys.js';
 import { createBlockMaterials } from './shaders/materials.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
@@ -36,7 +36,6 @@ function clearRemovedBlockMark(q, r, h) {
 }
 
 const NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
-const AXIAL_SIDE_DIRECTIONS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r, 0]);
 const FACE_DIRECTIONS = [
     [1, 0, 0],
     [-1, 0, 0],
@@ -62,7 +61,6 @@ function createBlockRecord(q, r, h, key, typeIndex, isPermanent) {
         position: axialToWorld(q, r, h),
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 1, y: 1, z: 1 },
-        visible: true,
         userData: { q, r, h, key, isPermanent, typeIndex }
     };
 }
@@ -123,6 +121,74 @@ const FACE_GEOMETRY = [
     }
 ];
 const FACE_INDEX_BY_DIRECTION = new Map(FACE_GEOMETRY.map((face, idx) => [face.direction.join(','), idx]));
+const INITIAL_CHUNK_BLOCK_CAPACITY = 256;
+
+function createChunkBlockData(capacity = INITIAL_CHUNK_BLOCK_CAPACITY) {
+    return {
+        count: 0,
+        keys: new Array(capacity),
+        keyToIndex: new Map(),
+        typeByIndex: new Uint16Array(capacity),
+        exposedFaceMaskByIndex: new Uint8Array(capacity),
+        topSolidHeightDeltaByIndex: new Int16Array(capacity)
+    };
+}
+
+function ensureChunkBlockData(chunkKey) {
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    if (worldState.chunkBlockData.has(normalizedChunkKey)) return worldState.chunkBlockData.get(normalizedChunkKey);
+    const created = createChunkBlockData();
+    worldState.chunkBlockData.set(normalizedChunkKey, created);
+    return created;
+}
+
+function growChunkBlockData(chunkData) {
+    const nextCapacity = chunkData.typeByIndex.length * 2;
+    const nextType = new Uint16Array(nextCapacity);
+    nextType.set(chunkData.typeByIndex);
+    chunkData.typeByIndex = nextType;
+
+    const nextFaceMask = new Uint8Array(nextCapacity);
+    nextFaceMask.set(chunkData.exposedFaceMaskByIndex);
+    chunkData.exposedFaceMaskByIndex = nextFaceMask;
+
+    const nextTopDelta = new Int16Array(nextCapacity);
+    nextTopDelta.set(chunkData.topSolidHeightDeltaByIndex);
+    chunkData.topSolidHeightDeltaByIndex = nextTopDelta;
+    chunkData.keys.length = nextCapacity;
+}
+
+function getTypeIndexAtKey(blockKey) {
+    const indexRef = worldState.blockIndexByKey.get(blockKey);
+    if (!indexRef) return -1;
+    const chunkData = worldState.chunkBlockData.get(indexRef.chunkKey);
+    if (!chunkData) return -1;
+    return chunkData.typeByIndex[indexRef.index];
+}
+
+function getFaceMaskAtKey(blockKey) {
+    const indexRef = worldState.blockIndexByKey.get(blockKey);
+    if (!indexRef) return 0;
+    const chunkData = worldState.chunkBlockData.get(indexRef.chunkKey);
+    if (!chunkData) return 0;
+    return chunkData.exposedFaceMaskByIndex[indexRef.index];
+}
+
+function setFaceMaskAtKey(blockKey, faceMask) {
+    const indexRef = worldState.blockIndexByKey.get(blockKey);
+    if (!indexRef) return;
+    const chunkData = worldState.chunkBlockData.get(indexRef.chunkKey);
+    if (!chunkData) return;
+    chunkData.exposedFaceMaskByIndex[indexRef.index] = faceMask;
+}
+
+function setTopSolidDeltaAtKey(blockKey, delta) {
+    const indexRef = worldState.blockIndexByKey.get(blockKey);
+    if (!indexRef) return;
+    const chunkData = worldState.chunkBlockData.get(indexRef.chunkKey);
+    if (!chunkData) return;
+    chunkData.topSolidHeightDeltaByIndex[indexRef.index] = Math.max(-32768, Math.min(32767, delta));
+}
 
 function getNeighborChunkKeys(cq, cr) {
     const chunk = worldState.chunkMeta.get(packChunkKey(cq, cr));
@@ -160,28 +226,61 @@ function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
     }
 }
 
-function getBlockAt(q, r, h) {
-    return worldState.worldBlocks.get(packBlockKey(q, r, h)) ?? null;
+function upsertChunkSimBlock(chunkKey, blockKey, typeIndex) {
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkData = ensureChunkBlockData(normalizedChunkKey);
+    const existingIndex = chunkData.keyToIndex.get(blockKey);
+    if (existingIndex !== undefined) {
+        chunkData.typeByIndex[existingIndex] = typeIndex;
+        return existingIndex;
+    }
+
+    if (chunkData.count >= chunkData.typeByIndex.length) growChunkBlockData(chunkData);
+    const index = chunkData.count++;
+    chunkData.keys[index] = blockKey;
+    chunkData.keyToIndex.set(blockKey, index);
+    chunkData.typeByIndex[index] = typeIndex;
+    chunkData.exposedFaceMaskByIndex[index] = 0;
+    chunkData.topSolidHeightDeltaByIndex[index] = 0;
+    worldState.blockIndexByKey.set(blockKey, { chunkKey: normalizedChunkKey, index });
+    return index;
 }
 
-function isFaceVisible(q, r, h, [dq, dr, dh]) {
-    const current = getBlockAt(q, r, h);
-    if (!current) return false;
+function removeChunkSimBlock(chunkKey, blockKey) {
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkData = worldState.chunkBlockData.get(normalizedChunkKey);
+    if (!chunkData) return;
+    const index = chunkData.keyToIndex.get(blockKey);
+    if (index === undefined) return;
 
-    const neighbor = getBlockAt(q + dq, r + dr, h + dh);
-    if (!neighbor) return true;
+    const lastIndex = chunkData.count - 1;
+    if (index !== lastIndex) {
+        const movedKey = chunkData.keys[lastIndex];
+        chunkData.keys[index] = movedKey;
+        chunkData.typeByIndex[index] = chunkData.typeByIndex[lastIndex];
+        chunkData.exposedFaceMaskByIndex[index] = chunkData.exposedFaceMaskByIndex[lastIndex];
+        chunkData.topSolidHeightDeltaByIndex[index] = chunkData.topSolidHeightDeltaByIndex[lastIndex];
+        chunkData.keyToIndex.set(movedKey, index);
+        worldState.blockIndexByKey.set(movedKey, { chunkKey: normalizedChunkKey, index });
+    }
 
-    const currentType = BLOCK_TYPES[current.userData.typeIndex] ?? {};
-    const neighborType = BLOCK_TYPES[neighbor.userData.typeIndex] ?? {};
+    chunkData.keyToIndex.delete(blockKey);
+    worldState.blockIndexByKey.delete(blockKey);
+    chunkData.keys[lastIndex] = undefined;
+    chunkData.count = lastIndex;
 
+    if (chunkData.count === 0) {
+        worldState.chunkBlockData.delete(normalizedChunkKey);
+    }
+}
+
+function isFaceVisibleForTypes(currentTypeIndex, neighborTypeIndex) {
+    const currentType = BLOCK_TYPES[currentTypeIndex] ?? {};
+    const neighborType = neighborTypeIndex >= 0 ? (BLOCK_TYPES[neighborTypeIndex] ?? {}) : null;
+    if (!neighborType) return true;
     if (currentType.isLiquid) {
-        // Liquids keep boundary faces when touching air, transparent blocks,
-        // or any different material/liquid rule set.
         if (!neighborType.isLiquid) return true;
-        if (neighbor.userData.typeIndex !== current.userData.typeIndex) return true;
-
-        // Same liquid type next to this face => internal face culled.
-        // (Top face still appears naturally when no liquid above.)
+        if (neighborTypeIndex !== currentTypeIndex) return true;
         return false;
     }
 
@@ -189,40 +288,76 @@ function isFaceVisible(q, r, h, [dq, dr, dh]) {
     return false;
 }
 
+function computeVisibleFaceMask(q, r, h, typeIndex) {
+    let faceMask = 0;
+    for (let faceIdx = 0; faceIdx < FACE_DIRECTIONS.length; faceIdx++) {
+        const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
+        const neighborTypeIndex = getTypeIndexAtKey(packBlockKey(q + dq, r + dr, h + dh));
+        if (isFaceVisibleForTypes(typeIndex, neighborTypeIndex)) {
+            faceMask |= (1 << faceIdx);
+        }
+    }
+    return faceMask;
+}
+
+function isFaceVisible(q, r, h, direction) {
+    const key = packBlockKey(q, r, h);
+    const mask = getFaceMaskAtKey(key);
+    const idx = FACE_INDEX_BY_DIRECTION.get(direction.join(','));
+    if (idx === undefined || idx < 0) return false;
+    return (mask & (1 << idx)) !== 0;
+}
+
 function getVisibleFaces(q, r, h) {
+    const key = packBlockKey(q, r, h);
+    const mask = getFaceMaskAtKey(key);
     const faces = [];
-    for (const { direction, offsets } of FACE_GEOMETRY) {
-        if (!isFaceVisible(q, r, h, direction)) continue;
-        const vertices = offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz]);
-        faces.push({ direction, vertices });
+    for (let faceIdx = 0; faceIdx < FACE_GEOMETRY.length; faceIdx++) {
+        if ((mask & (1 << faceIdx)) === 0) continue;
+        const { direction, offsets } = FACE_GEOMETRY[faceIdx];
+        faces.push({
+            direction,
+            vertices: offsets.map(([ox, oy, oz]) => [q + ox, r + oy, h + oz])
+        });
+    }
+    return faces;
+}
+
+function updateFaceMaskBit(blockKey, faceIdx, visible) {
+    const currentMask = getFaceMaskAtKey(blockKey);
+    const nextMask = visible ? (currentMask | (1 << faceIdx)) : (currentMask & ~(1 << faceIdx));
+    if (nextMask !== currentMask) setFaceMaskAtKey(blockKey, nextMask);
+}
+
+function updateVisibilityPairAtFace(q, r, h, faceIdx) {
+    const blockKey = packBlockKey(q, r, h);
+    const selfTypeIndex = getTypeIndexAtKey(blockKey);
+    const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
+    const neighborKey = packBlockKey(q + dq, r + dr, h + dh);
+    const neighborTypeIndex = getTypeIndexAtKey(neighborKey);
+    const oppositeFaceIdx = faceIdx ^ 1;
+
+    if (selfTypeIndex < 0) {
+        if (neighborTypeIndex >= 0) updateFaceMaskBit(neighborKey, oppositeFaceIdx, true);
+        return;
     }
 
-    return faces;
+    updateFaceMaskBit(blockKey, faceIdx, isFaceVisibleForTypes(selfTypeIndex, neighborTypeIndex));
+
+    if (neighborTypeIndex < 0) return;
+    updateFaceMaskBit(neighborKey, oppositeFaceIdx, isFaceVisibleForTypes(neighborTypeIndex, selfTypeIndex));
 }
 
 function updateBlockVisibilityAt(q, r, h) {
     const key = packBlockKey(q, r, h);
-    const block = worldState.worldBlocks.get(key);
-    if (!block) return;
-
-    const visibleFaces = getVisibleFaces(q, r, h);
-    let visibleFaceMask = 0;
-    for (const face of visibleFaces) {
-        const idx = FACE_INDEX_BY_DIRECTION.get(face.direction.join(','));
-        if (idx >= 0) visibleFaceMask |= (1 << idx);
-    }
-    const hasTopOrBottomExposure = isFaceVisible(q, r, h, [0, 0, 1]) || isFaceVisible(q, r, h, [0, 0, -1]);
-    const hasSideExposure = AXIAL_SIDE_DIRECTIONS.some((direction) => isFaceVisible(q, r, h, direction));
-    block.userData.hasExposedFace = hasTopOrBottomExposure || hasSideExposure;
-    block.userData.visibleFaceMask = visibleFaceMask;
-    block.visible = block.userData.hasExposedFace;
-    block.userData.visibleFaces = visibleFaces;
+    const typeIndex = getTypeIndexAtKey(key);
+    if (typeIndex < 0) return;
+    setFaceMaskAtKey(key, computeVisibleFaceMask(q, r, h, typeIndex));
 }
 
 function updateVisibilityAround(q, r, h) {
-    updateBlockVisibilityAt(q, r, h);
-    for (const [dq, dr, dh] of FACE_DIRECTIONS) {
-        updateBlockVisibilityAt(q + dq, r + dr, h + dh);
+    for (let faceIdx = 0; faceIdx < FACE_DIRECTIONS.length; faceIdx++) {
+        updateVisibilityPairAtFace(q, r, h, faceIdx);
     }
 }
 
@@ -263,51 +398,61 @@ function buildFaceCell(blockMesh, direction) {
 }
 
 function greedyMergeCells(cells, direction, plane, planeValue, typeIndex) {
-    const byU = new Map();
     let minU = Infinity;
     let maxU = -Infinity;
     let minV = Infinity;
     let maxV = -Infinity;
 
     for (const cell of cells) {
-        if (!byU.has(cell.u)) byU.set(cell.u, new Set());
-        byU.get(cell.u).add(cell.v);
         minU = Math.min(minU, cell.u);
         maxU = Math.max(maxU, cell.u);
         minV = Math.min(minV, cell.v);
         maxV = Math.max(maxV, cell.v);
     }
 
-    const visited = new Set();
+    if (!Number.isFinite(minU) || !Number.isFinite(minV) || !Number.isFinite(maxU) || !Number.isFinite(maxV)) return [];
+
+    const gridWidth = (maxU - minU) + 1;
+    const gridHeight = (maxV - minV) + 1;
+    const gridSize = gridWidth * gridHeight;
+    const occupied = new Uint8Array(gridSize);
+    const visited = new Uint8Array(gridSize);
     const quads = [];
-    const keyOf = (u, v) => `${u},${v}`;
+    const toIndex = (u, v) => ((v - minV) * gridWidth) + (u - minU);
 
-    for (let u = minU; u <= maxU; u++) {
-        for (let v = minV; v <= maxV; v++) {
-            if (!byU.get(u)?.has(v)) continue;
-            const startKey = keyOf(u, v);
-            if (visited.has(startKey)) continue;
+    for (const cell of cells) {
+        occupied[toIndex(cell.u, cell.v)] = 1;
+    }
 
-            let width = 1;
-            while (byU.get(u + width)?.has(v) && !visited.has(keyOf(u + width, v))) width++;
+    for (let v = minV; v <= maxV; v++) {
+        for (let u = minU; u <= maxU; u++) {
+            const startIndex = toIndex(u, v);
+            if (occupied[startIndex] === 0 || visited[startIndex] === 1) continue;
+
+            let width = 0;
+            while ((u + width) <= maxU) {
+                const idx = toIndex(u + width, v);
+                if (occupied[idx] === 0 || visited[idx] === 1) break;
+                width++;
+            }
 
             let height = 1;
-            let canExtend = true;
-            while (canExtend) {
-                const nextV = v + height;
+            while ((v + height) <= maxV) {
+                let canExtend = true;
                 for (let du = 0; du < width; du++) {
-                    const testU = u + du;
-                    if (!byU.get(testU)?.has(nextV) || visited.has(keyOf(testU, nextV))) {
+                    const idx = toIndex(u + du, v + height);
+                    if (occupied[idx] === 0 || visited[idx] === 1) {
                         canExtend = false;
                         break;
                     }
                 }
-                if (canExtend) height++;
+                if (!canExtend) break;
+                height++;
             }
 
-            for (let du = 0; du < width; du++) {
-                for (let dv = 0; dv < height; dv++) {
-                    visited.add(keyOf(u + du, v + dv));
+            for (let dv = 0; dv < height; dv++) {
+                for (let du = 0; du < width; du++) {
+                    visited[toIndex(u + du, v + dv)] = 1;
                 }
             }
 
@@ -328,7 +473,13 @@ function greedyMergeCells(cells, direction, plane, planeValue, typeIndex) {
 
 export function recomputeChunkGreedyFaceQuads(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const chunkData = worldState.chunkBlockData.get(chunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
+        worldState.chunkFaceQuads.delete(chunkKey);
+        worldState.chunkRenderBatches.delete(chunkKey);
+        return;
+    }
+    if (!chunkData || chunkData.count === 0) {
         worldState.chunkFaceQuads.delete(chunkKey);
         worldState.chunkRenderBatches.delete(chunkKey);
         return;
@@ -339,9 +490,12 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
 
     for (const blockKey of chunkBlockKeys) {
         const blockMesh = worldState.worldBlocks.get(blockKey);
-        if (!blockMesh || !blockMesh.userData.hasExposedFace) continue;
+        if (!blockMesh) continue;
+        const typeIndex = getTypeIndexAtKey(blockKey);
+        if (typeIndex < 0) continue;
+        const faceMask = getFaceMaskAtKey(blockKey);
+        if (faceMask === 0) continue;
 
-        const typeIndex = blockMesh.userData.typeIndex ?? 0;
         if (!perType.has(typeIndex)) {
             perType.set(typeIndex, {
                 allPositions: [],
@@ -355,7 +509,6 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
         perTypeBucket.allPositions.push(x, y, z);
         perTypeBucket.allKeys.push(blockKey);
 
-        const faceMask = blockMesh.userData.visibleFaceMask ?? 0;
         if ((faceMask & TOP_FACE_MASK) !== 0) {
             perTypeBucket.topPositions.push(x, y, z);
             perTypeBucket.topKeys.push(blockKey);
@@ -418,19 +571,24 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true, refreshVisibility = true) {
     const key = packBlockKey(q, r, h);
-    if (worldState.worldBlocks.has(key)) return;
+    if (worldState.blockIndexByKey.has(key)) return;
 
     const safeTypeIndex = blockMaterials[typeIndex] ? typeIndex : 0;
     const mesh = createBlockRecord(q, r, h, key, safeTypeIndex, isPermanent);
     worldState.blockCoordsByKey.set(key, { q, r, h });
 
-    worldState.worldBlocks.set(key, mesh);
-
     const chunkKey = getChunkKey(q, r);
+    upsertChunkSimBlock(chunkKey, key, safeTypeIndex);
     if (!worldState.chunkBlocks.has(chunkKey)) worldState.chunkBlocks.set(chunkKey, new Set());
     worldState.chunkBlocks.get(chunkKey).add(key);
 
+    const columnKey = packColumnKey(q, r);
+    const topBefore = worldState.topSolidHeightByColumn.get(columnKey) ?? (h - 1);
     updateTopSolidHeightOnAdd(q, r, h, safeTypeIndex);
+    const topAfter = worldState.topSolidHeightByColumn.get(columnKey) ?? (h - 1);
+    setTopSolidDeltaAtKey(key, topAfter - topBefore);
+
+    worldState.worldBlocks.set(key, mesh);
 
     if (trackDirty) {
         markChunkAndNeighborsDirty(q, r, 'add', h);
@@ -455,7 +613,8 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
     const normalizedKey = normalizeBlockKey(key);
     const mesh = worldState.worldBlocks.get(normalizedKey);
     if (mesh) {
-        const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
+        const simTypeIndex = getTypeIndexAtKey(normalizedKey);
+        const blockType = BLOCK_TYPES[simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex];
         if (blockType?.unbreakable && !force) return false;
 
         worldState.worldBlocks.delete(normalizedKey);
@@ -467,7 +626,12 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
             if (chunkBlockSet.size === 0) worldState.chunkBlocks.delete(chunkKey);
         }
 
-        updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, mesh.userData.typeIndex);
+        const columnKey = packColumnKey(mesh.userData.q, mesh.userData.r);
+        const topBefore = worldState.topSolidHeightByColumn.get(columnKey) ?? mesh.userData.h;
+        updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex);
+        const topAfter = worldState.topSolidHeightByColumn.get(columnKey) ?? (mesh.userData.h - 1);
+        setTopSolidDeltaAtKey(normalizedKey, topAfter - topBefore);
+        removeChunkSimBlock(chunkKey, normalizedKey);
         worldState.blockCoordsByKey.delete(normalizedKey);
 
         if (trackDirty) {
@@ -500,11 +664,55 @@ export function getBlockMaterial(typeIndex) {
     return blockMaterials[typeIndex] ?? blockMaterials[0];
 }
 
-export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, outCandidates, { collidableOnly = false } = {}) {
+export function getBlockTypeIndexAt(q, r, h) {
+    return getTypeIndexAtKey(packBlockKey(q, r, h));
+}
+
+const raycastCandidateCache = new Map();
+const chunkAabbTestRay = new THREE.Ray();
+const chunkAabbHitPoint = new THREE.Vector3();
+
+function doesChunkBoundsIntersectRayRange(bounds, rayOrigin, rayDirection, rayNear, rayFar) {
+    if (!bounds || !rayOrigin || !rayDirection) return true;
+    chunkAabbTestRay.origin.copy(rayOrigin);
+    chunkAabbTestRay.direction.copy(rayDirection);
+    const hitPoint = chunkAabbTestRay.intersectBox(bounds, chunkAabbHitPoint);
+    if (!hitPoint) return false;
+    const hitDistance = rayOrigin.distanceTo(hitPoint);
+    return hitDistance >= rayNear && hitDistance <= rayFar;
+}
+
+export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, outCandidates, {
+    collidableOnly = false,
+    cacheKey = '',
+    reuseFrames = 0,
+    rayOrigin = null,
+    rayDirection = null,
+    rayNear = 0,
+    rayFar = Number.POSITIVE_INFINITY
+} = {}) {
     if (!Array.isArray(outCandidates)) return;
     outCandidates.length = 0;
 
     const { cq: centerChunkQ, cr: centerChunkR } = getChunkCoords(centerQ, centerR);
+    const normalizedRayNear = Math.max(0, rayNear);
+    const normalizedRayFar = Math.max(normalizedRayNear, rayFar);
+    const nowFrame = worldState.frame ?? 0;
+    if (cacheKey) {
+        const cached = raycastCandidateCache.get(cacheKey);
+        if (
+            cached
+            && cached.centerChunkQ === centerChunkQ
+            && cached.centerChunkR === centerChunkR
+            && cached.chunkRadius === chunkRadius
+            && cached.collidableOnly === collidableOnly
+            && (nowFrame - cached.frame) <= reuseFrames
+        ) {
+            outCandidates.push(...cached.candidates);
+            return;
+        }
+    }
+
     for (let dq = -chunkRadius; dq <= chunkRadius; dq++) {
         for (let dr = -chunkRadius; dr <= chunkRadius; dr++) {
             const ds = -dq - dr;
@@ -513,6 +721,7 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
             const chunkKey = packChunkKey(centerChunkQ + dq, centerChunkR + dr);
             const chunkMeta = worldState.chunkMeta.get(chunkKey);
             if (!chunkMeta) continue;
+            if (!doesChunkBoundsIntersectRayRange(chunkMeta.bounds, rayOrigin, rayDirection, normalizedRayNear, normalizedRayFar)) continue;
 
             const chunkMeshes = chunkMeta.lodLevel === 1
                 ? (chunkMeta.instancedLodMeshes ?? [])
@@ -524,6 +733,17 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
                 outCandidates.push(mesh);
             }
         }
+    }
+
+    if (cacheKey) {
+        raycastCandidateCache.set(cacheKey, {
+            frame: nowFrame,
+            centerChunkQ,
+            centerChunkR,
+            chunkRadius,
+            collidableOnly,
+            candidates: outCandidates.slice()
+        });
     }
 }
 
