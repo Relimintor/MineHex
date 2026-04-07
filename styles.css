@@ -107,6 +107,7 @@ canvas { display: block; }
     align-items: center;
     justify-content: center;
     gap: 14px;
+    transform: translateY(24px);
 }
 
 .inventory-avatar-box,
@@ -182,6 +183,24 @@ canvas { display: block; }
     padding: 12px 16px 14px;
     display: grid;
     gap: 10px;
+}
+
+.inventory-top-box {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(64, 64, 64, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.inventory-square-slot {
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 2px solid rgba(255, 255, 255, 0.26);
 }
 
 .inventory-hotbar-strip {
