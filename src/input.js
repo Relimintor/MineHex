@@ -19,6 +19,31 @@ const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
 const INTERACTION_RAY_NEAR = 0.05;
+const TOTAL_HOTBAR_SLOTS = 9;
+const BLOCK_PREVIEW_CLASS_BY_TYPE = [
+    'block-preview-grass',
+    'block-preview-dirt',
+    'block-preview-stone',
+    'block-preview-cloud',
+    'block-preview-water',
+    'block-preview-nethrock',
+    'block-preview-oak-wood',
+    'block-preview-oak-leaves',
+    'block-preview-snow',
+    'block-preview-ice',
+    'block-preview-sand',
+    'block-preview-sandstone'
+];
+const DRAG_DATA_MIME = 'text/minehex-slot';
+
+const inventoryItemsBySlotId = new Map();
+const bottomHotbarSlotEls = new Map();
+const inventoryHotbarSlotEls = new Map();
+const extraInventorySlotEls = new Map();
+let dragSourceSlotId = null;
+let selectedHotbarSlotIndex = 0;
+let inventoryUiInitialized = false;
+let heldInventoryItemType = null;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -43,7 +68,11 @@ export function isKeyDown(code) {
 }
 
 export function updateSelectedBlock(index) {
-    worldState.selectedBlockIndex = index;
+    if (!inventoryUiInitialized) initInventoryUi();
+    selectedHotbarSlotIndex = index;
+    const selectedSlotId = `hotbar-${index}`;
+    const selectedType = inventoryItemsBySlotId.get(selectedSlotId);
+    worldState.selectedBlockIndex = Number.isInteger(selectedType) ? selectedType : -1;
     document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
     document
         .querySelectorAll('.inventory-hex-slot.is-hotbar')
@@ -51,6 +80,7 @@ export function updateSelectedBlock(index) {
 }
 
 export function toggleInventoryScreen() {
+    if (!inventoryUiInitialized) initInventoryUi();
     if (!inventoryScreen) return;
     isInventoryScreenOpen = !isInventoryScreenOpen;
     inventoryScreen.classList.toggle('visible', isInventoryScreenOpen);
@@ -83,6 +113,7 @@ function getCenterIntersection() {
 }
 
 export function placeBlockFromCenter() {
+    if (!Number.isInteger(worldState.selectedBlockIndex) || worldState.selectedBlockIndex < 0) return false;
     const intersect = getCenterIntersection();
     if (!intersect) return false;
 
@@ -109,6 +140,8 @@ export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
 }
 
 export function registerDesktopInputHandlers() {
+    initInventoryUi();
+
     document.querySelectorAll('.slot').forEach((slot) => {
         slot.addEventListener('click', () => {
             const index = Number(slot.dataset.index);
@@ -159,4 +192,155 @@ export function registerDesktopInputHandlers() {
     });
 
     window.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+export function initInventoryUi() {
+    if (inventoryUiInitialized) return;
+    initializeInventorySlots();
+    inventoryUiInitialized = true;
+    renderInventorySlots();
+}
+
+function initializeInventorySlots() {
+    if (inventoryItemsBySlotId.size > 0) return;
+
+    document.querySelectorAll('.slot').forEach((slot) => {
+        const index = Number(slot.dataset.index);
+        if (!Number.isInteger(index)) return;
+        const slotId = `hotbar-${index}`;
+        bottomHotbarSlotEls.set(slotId, slot);
+        if (index < TOTAL_HOTBAR_SLOTS) inventoryItemsBySlotId.set(slotId, index);
+        registerInventorySlotDnD(slot, slotId);
+    });
+
+    document.querySelectorAll('.inventory-hex-slot.is-hotbar').forEach((slot) => {
+        const index = Number(slot.dataset.slot);
+        if (!Number.isInteger(index)) return;
+        const slotId = `hotbar-${index}`;
+        inventoryHotbarSlotEls.set(slotId, slot);
+        registerInventorySlotDnD(slot, slotId);
+    });
+
+    document.querySelectorAll('.inventory-square-slot').forEach((slot) => {
+        const slotNumber = Number(slot.dataset.topSlot);
+        if (!Number.isInteger(slotNumber)) return;
+        const slotId = `top-${slotNumber}`;
+        extraInventorySlotEls.set(slotId, slot);
+        inventoryItemsBySlotId.set(slotId, null);
+        registerInventorySlotDnD(slot, slotId);
+    });
+
+    document.querySelectorAll('.inventory-hex-slot:not(.is-hotbar)').forEach((slot) => {
+        const slotNumber = Number(slot.dataset.hiveSlot);
+        if (!Number.isInteger(slotNumber)) return;
+        const slotId = `hive-${slotNumber}`;
+        extraInventorySlotEls.set(slotId, slot);
+        inventoryItemsBySlotId.set(slotId, null);
+        registerInventorySlotDnD(slot, slotId);
+    });
+}
+
+function registerInventorySlotDnD(slotEl, slotId) {
+    slotEl.setAttribute('draggable', 'true');
+
+    slotEl.addEventListener('dragstart', (event) => {
+        if (!inventoryItemsBySlotId.get(slotId) && inventoryItemsBySlotId.get(slotId) !== 0) {
+            event.preventDefault();
+            return;
+        }
+        dragSourceSlotId = slotId;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(DRAG_DATA_MIME, slotId);
+    });
+
+    slotEl.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    });
+
+    slotEl.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const sourceSlotId = event.dataTransfer.getData(DRAG_DATA_MIME) || dragSourceSlotId;
+        transferInventoryItem(sourceSlotId, slotId);
+    });
+
+    slotEl.addEventListener('dragend', () => {
+        dragSourceSlotId = null;
+    });
+
+    slotEl.addEventListener('touchend', (event) => {
+        event.preventDefault();
+        handleInventorySlotPickup(slotId);
+    });
+
+    slotEl.addEventListener('click', () => {
+        handleInventorySlotPickup(slotId);
+    });
+}
+
+function transferInventoryItem(sourceSlotId, targetSlotId) {
+    if (!sourceSlotId || !targetSlotId || sourceSlotId === targetSlotId) return;
+    if (!inventoryItemsBySlotId.has(sourceSlotId) || !inventoryItemsBySlotId.has(targetSlotId)) return;
+
+    const sourceItem = inventoryItemsBySlotId.get(sourceSlotId);
+    const targetItem = inventoryItemsBySlotId.get(targetSlotId);
+    inventoryItemsBySlotId.set(targetSlotId, sourceItem ?? null);
+    inventoryItemsBySlotId.set(sourceSlotId, targetItem ?? null);
+    renderInventorySlots();
+}
+
+function renderInventorySlots() {
+    for (const [slotId, slotEl] of bottomHotbarSlotEls.entries()) {
+        const blockType = inventoryItemsBySlotId.get(slotId);
+        renderSlotPreview(slotEl, blockType, true);
+    }
+
+    for (const [slotId, slotEl] of inventoryHotbarSlotEls.entries()) {
+        const blockType = inventoryItemsBySlotId.get(slotId);
+        renderSlotPreview(slotEl, blockType, false);
+    }
+
+    for (const [slotId, slotEl] of extraInventorySlotEls.entries()) {
+        const blockType = inventoryItemsBySlotId.get(slotId);
+        renderSlotPreview(slotEl, blockType, false);
+    }
+
+    updateSelectedBlock(Math.max(0, Math.min(TOTAL_HOTBAR_SLOTS - 1, selectedHotbarSlotIndex)));
+}
+
+function handleInventorySlotPickup(slotId) {
+    if (!inventoryScreen || !inventoryScreen.classList.contains('visible')) return;
+    if (!inventoryItemsBySlotId.has(slotId)) return;
+
+    if (!Number.isInteger(heldInventoryItemType)) {
+        const slotItem = inventoryItemsBySlotId.get(slotId);
+        if (!Number.isInteger(slotItem)) return;
+        heldInventoryItemType = slotItem;
+        inventoryItemsBySlotId.set(slotId, null);
+        renderInventorySlots();
+        return;
+    }
+
+    const targetItem = inventoryItemsBySlotId.get(slotId);
+    inventoryItemsBySlotId.set(slotId, heldInventoryItemType);
+    heldInventoryItemType = Number.isInteger(targetItem) ? targetItem : null;
+    renderInventorySlots();
+}
+
+function renderSlotPreview(slotEl, blockType, preserveInnerHtml) {
+    const currentPreview = slotEl.querySelector('.block-preview');
+    if (currentPreview) currentPreview.remove();
+
+    if (!Number.isInteger(blockType) || blockType < 0 || blockType >= BLOCK_PREVIEW_CLASS_BY_TYPE.length) return;
+    const previewEl = document.createElement('div');
+    previewEl.className = `block-preview ${BLOCK_PREVIEW_CLASS_BY_TYPE[blockType]}`;
+
+    if (preserveInnerHtml) {
+        const label = slotEl.querySelector('.slot-label');
+        if (label) slotEl.insertBefore(previewEl, label);
+        else slotEl.appendChild(previewEl);
+        return;
+    }
+
+    slotEl.appendChild(previewEl);
 }
