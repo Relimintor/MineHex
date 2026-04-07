@@ -1,5 +1,6 @@
 import { inputState } from '../state.js';
-import { applyLookDelta, mineBlockFromCenter, placeBlockFromCenter, setKeyState, updateSelectedBlock } from '../input.js';
+import { applyLookDelta, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
+import { toggleCameraPerspective } from '../playerView.js';
 
 const HOLD_TO_MINE_DELAY_MS = 320;
 const MINE_REPEAT_MS = 120;
@@ -19,6 +20,14 @@ function createMobileControls() {
         <button id="jump-btn" type="button" aria-label="Jump">
             <img src="assets/mobile/controls/jump_btn.png" alt="Jump">
         </button>
+        <div id="mobile-top-buttons" aria-label="Mobile top controls">
+            <button id="inventory-btn" type="button" aria-label="Toggle inventory">
+                <img src="assets/mobile/controls/inventory_btn.png" alt="Inventory">
+            </button>
+            <button id="camera-btn" type="button" aria-label="Toggle camera perspective">
+                <img src="assets/mobile/controls/camera_btn.png" alt="Camera perspective">
+            </button>
+        </div>
     `;
 
     document.body.appendChild(container);
@@ -28,14 +37,16 @@ function createMobileControls() {
         joystick: container.querySelector('#joystick'),
         joystickBase: container.querySelector('#joystick-base'),
         joystickCenter: container.querySelector('#joystick-center'),
-        jumpButton: container.querySelector('#jump-btn')
+        jumpButton: container.querySelector('#jump-btn'),
+        inventoryButton: container.querySelector('#inventory-btn'),
+        cameraButton: container.querySelector('#camera-btn')
     };
 }
 
 export function registerMobileInputHandlers() {
     inputState.isLocked = true;
 
-    const { joystick, joystickBase, joystickCenter, jumpButton } = createMobileControls();
+    const { joystick, joystickBase, joystickCenter, jumpButton, inventoryButton, cameraButton } = createMobileControls();
     const activeTouches = new Map();
     const touchStartPositions = new Map();
 
@@ -122,6 +133,16 @@ export function registerMobileInputHandlers() {
 
             if (jumpButton.contains(target)) {
                 setKeyState('Space', true);
+                continue;
+            }
+
+            if (inventoryButton.contains(target)) {
+                toggleInventoryScreen();
+                continue;
+            }
+
+            if (cameraButton.contains(target)) {
+                toggleCameraPerspective();
                 continue;
             }
 
