@@ -2,8 +2,9 @@ const THREE = window.THREE;
 
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
+import { normalizeChunkKey, packBlockKey, packChunkKey, unpackChunkKey } from './keys.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
-import { worldState } from './state.js';
+import { profilerMeasure, profilerRecord, worldState } from './state.js';
 import { addBlock, getBlockMaterial, recomputeChunkGreedyFaceQuads, refreshBlockVisibilityForKeys, removeBlock } from './blocks.js';
 import { hexGeometry } from './geometry.js';
 import { createMegaHexMaterial, createOcclusionProxyMaterial } from './shaders/materials.js';
@@ -62,7 +63,7 @@ const DIRTY_CHUNK_APPLY_BUDGET = 1;
 
 const reusableOcclusionQueries = [];
 const gpuVisibilityMask = new Map();
-const chunkInstanceDummy = new THREE.Object3D();
+const instanceMatrixTmp = new THREE.Matrix4();
 const projectedChunkCenter = new THREE.Vector3();
 const hizCenter = new THREE.Vector3();
 const cameraForwardXZ = new THREE.Vector3();
@@ -114,10 +115,10 @@ const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
 });
 
 function ensureChunkMeta(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.chunkMeta.has(chunkKey)) return;
 
-    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+    const neighbors = CHUNK_NEIGHBOR_OFFSETS.map(([dq, dr]) => packChunkKey(cq + dq, cr + dr));
     worldState.chunkMeta.set(chunkKey, {
         cq,
         cr,
@@ -138,12 +139,14 @@ function ensureChunkMeta(cq, cr) {
 }
 
 function recomputeChunkBounds(chunkKey) {
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkBlockKeys = worldState.chunkBlocks.get(normalizedChunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) return null;
 
-    const chunkMeta = worldState.chunkMeta.get(chunkKey);
-    const cq = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
-    const cr = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
+    const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
+    const unpacked = unpackChunkKey(normalizedChunkKey);
+    const cq = chunkMeta?.cq ?? unpacked.cq;
+    const cr = chunkMeta?.cr ?? unpacked.cr;
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
 
@@ -228,12 +231,6 @@ function getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR) {
     return 0;
 }
 
-function hasTopFace(mesh) {
-    const faces = mesh.userData.visibleFaces;
-    if (!Array.isArray(faces)) return false;
-    return faces.some((face) => face.direction?.[0] === 0 && face.direction?.[1] === 0 && face.direction?.[2] === 1);
-}
-
 function ensureMegaHexMesh(chunkKey) {
     const chunkMeta = worldState.chunkMeta.get(chunkKey);
     if (!chunkMeta?.bounds) return null;
@@ -260,25 +257,8 @@ function rebuildChunkDetailedMeshes(chunkKey) {
 
     disposeDetailedChunkMeshes(chunkMeta);
 
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
-        chunkMeta.dirty = false;
-        return;
-    }
-
-    const perTypeInstances = new Map();
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
-        if (!hasExposedFace) continue;
-
-        const typeIndex = mesh.userData.typeIndex ?? 0;
-        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
-        perTypeInstances.get(typeIndex).push(mesh);
-    }
-
-    if (perTypeInstances.size === 0) {
+    const renderBatches = worldState.chunkRenderBatches.get(chunkKey);
+    if (!renderBatches || renderBatches.length === 0) {
         chunkMeta.dirty = false;
         return;
     }
@@ -287,21 +267,19 @@ function rebuildChunkDetailedMeshes(chunkKey) {
     group.visible = false;
     const createdMeshes = [];
 
-    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
-
-        for (let i = 0; i < sourceMeshes.length; i++) {
-            const sourceMesh = sourceMeshes[i];
-            chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.set(0, 0, 0);
-            chunkInstanceDummy.scale.set(1, 1, 1);
-            chunkInstanceDummy.updateMatrix();
-            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+    for (const batch of renderBatches) {
+        const instanceCount = batch.allKeys.length;
+        if (instanceCount === 0) continue;
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(batch.typeIndex), instanceCount);
+        const positions = batch.allPositions;
+        for (let i = 0; i < instanceCount; i++) {
+            instanceMatrixTmp.makeTranslation(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+            instanced.setMatrixAt(i, instanceMatrixTmp);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
-        instanced.userData.typeIndex = typeIndex;
-        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
+        instanced.userData.typeIndex = batch.typeIndex;
+        instanced.userData.instanceKeys = batch.allKeys;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -325,27 +303,8 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
 
     disposeInstancedLodMeshes(chunkMeta);
 
-    const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
-    if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
-        chunkMeta.dirty = false;
-        return;
-    }
-
-    const perTypeInstances = new Map();
-    const requireTopFaceForInstancedLod = !FORCE_BATCHED_CHUNK_RENDERING;
-    for (const blockKey of chunkBlockKeys) {
-        const mesh = worldState.worldBlocks.get(blockKey);
-        if (!mesh) continue;
-        const hasExposedFace = mesh.userData.hasExposedFace ?? true;
-        if (!hasExposedFace) continue;
-        if (requireTopFaceForInstancedLod && !hasTopFace(mesh)) continue;
-
-        const typeIndex = mesh.userData.typeIndex ?? 0;
-        if (!perTypeInstances.has(typeIndex)) perTypeInstances.set(typeIndex, []);
-        perTypeInstances.get(typeIndex).push(mesh);
-    }
-
-    if (perTypeInstances.size === 0) {
+    const renderBatches = worldState.chunkRenderBatches.get(chunkKey);
+    if (!renderBatches || renderBatches.length === 0) {
         chunkMeta.dirty = false;
         return;
     }
@@ -354,21 +313,22 @@ function rebuildChunkInstancedLodMeshes(chunkKey) {
     group.visible = false;
     const createdMeshes = [];
 
-    for (const [typeIndex, sourceMeshes] of perTypeInstances) {
-        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(typeIndex), sourceMeshes.length);
+    const requireTopFaceForInstancedLod = !FORCE_BATCHED_CHUNK_RENDERING;
+    for (const batch of renderBatches) {
+        const positions = requireTopFaceForInstancedLod ? batch.topPositions : batch.allPositions;
+        const instanceKeys = requireTopFaceForInstancedLod ? batch.topKeys : batch.allKeys;
+        const instanceCount = instanceKeys.length;
+        if (instanceCount === 0) continue;
 
-        for (let i = 0; i < sourceMeshes.length; i++) {
-            const sourceMesh = sourceMeshes[i];
-            chunkInstanceDummy.position.copy(sourceMesh.position);
-            chunkInstanceDummy.rotation.set(0, 0, 0);
-            chunkInstanceDummy.scale.set(1, 1, 1);
-            chunkInstanceDummy.updateMatrix();
-            instanced.setMatrixAt(i, chunkInstanceDummy.matrix);
+        const instanced = new THREE.InstancedMesh(hexGeometry, getBlockMaterial(batch.typeIndex), instanceCount);
+        for (let i = 0; i < instanceCount; i++) {
+            instanceMatrixTmp.makeTranslation(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+            instanced.setMatrixAt(i, instanceMatrixTmp);
         }
 
         instanced.instanceMatrix.needsUpdate = true;
-        instanced.userData.typeIndex = typeIndex;
-        instanced.userData.instanceKeys = sourceMeshes.map((mesh) => mesh.userData.key);
+        instanced.userData.typeIndex = batch.typeIndex;
+        instanced.userData.instanceKeys = instanceKeys;
         group.add(instanced);
         createdMeshes.push(instanced);
     }
@@ -400,7 +360,7 @@ function updateChunkLodLevels(cameraChunkQ, cameraChunkR) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta) continue;
 
-        const [chunkQ, chunkR] = chunkKey.split(',').map(Number);
+        const { cq: chunkQ, cr: chunkR } = unpackChunkKey(chunkKey);
         let nextLodLevel = ENABLE_COMPLEX_LOD
             ? getChunkLodLevel(cameraChunkQ, cameraChunkR, chunkQ, chunkR)
             : 0;
@@ -607,6 +567,7 @@ function passHierarchicalZOcclusion(chunkMeta) {
 
 export function runChunkOcclusionCulling() {
     if (!ENABLE_OCCLUSION_CULLING) return;
+    const occlusionStart = performance.now();
 
     const gl = renderer.getContext();
     if (!(gl instanceof WebGL2RenderingContext)) return;
@@ -614,6 +575,7 @@ export function runChunkOcclusionCulling() {
     const queryTarget = gl[OCCLUSION_QUERY_TARGET] ?? gl.ANY_SAMPLES_PASSED;
     if (!queryTarget) return;
     hiZDepthSectors.fill(1);
+    const resultStart = performance.now();
 
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
@@ -650,8 +612,10 @@ export function runChunkOcclusionCulling() {
         proxy.visible = true;
         occlusionProxiesToTest.push(proxy);
     }
+    profilerRecord('occlusion_results', performance.now() - resultStart);
 
     occlusionProxiesToTest.length = 0;
+    const setupStart = performance.now();
     for (const chunkKey of worldState.loadedChunks) {
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
         if (!chunkMeta?.frustumVisible || !chunkMeta.bounds) continue;
@@ -684,8 +648,12 @@ export function runChunkOcclusionCulling() {
         proxy.visible = true;
         occlusionProxiesToTest.push(proxy);
     }
+    profilerRecord('occlusion_setup', performance.now() - setupStart);
 
-    if (occlusionProxiesToTest.length === 0) return;
+    if (occlusionProxiesToTest.length === 0) {
+        profilerRecord('occlusion_total', performance.now() - occlusionStart);
+        return;
+    }
 
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
@@ -693,6 +661,7 @@ export function runChunkOcclusionCulling() {
     renderer.autoClear = prevAutoClear;
 
     for (const proxy of occlusionProxiesToTest) proxy.visible = false;
+    profilerRecord('occlusion_total', performance.now() - occlusionStart);
 }
 
 function getHeight(q, r) {
@@ -772,7 +741,7 @@ function getBiomeAt(climateBiome, height) {
 }
 
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
     if (worldState.worldBlocks.has(key)) chunkBlockKeys.add(key);
 }
@@ -784,10 +753,11 @@ function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusi
 }
 
 function getChunkCoordsFromKey(chunkKey) {
-    const chunkMeta = worldState.chunkMeta.get(chunkKey);
+    const normalizedChunkKey = normalizeChunkKey(chunkKey);
+    const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
     if (chunkMeta) return { cq: chunkMeta.cq, cr: chunkMeta.cr, chunkMeta };
-    const [cqRaw, crRaw] = chunkKey.split(',');
-    return { cq: Number(cqRaw), cr: Number(crRaw), chunkMeta: null };
+    const { cq, cr } = unpackChunkKey(normalizedChunkKey);
+    return { cq, cr, chunkMeta: null };
 }
 
 function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
@@ -898,13 +868,14 @@ function initChunkGenerationWorker() {
             },
             onMessage: (event) => {
                 const { chunkKey, cq, cr, columns } = event.data ?? {};
-                if (!chunkKey || !pendingChunkGenerationInFlight.has(chunkKey)) return;
-                pendingChunkGenerationInFlight.delete(chunkKey);
+                const normalizedChunkKey = normalizeChunkKey(chunkKey);
+                if (!chunkKey || !pendingChunkGenerationInFlight.has(normalizedChunkKey)) return;
+                pendingChunkGenerationInFlight.delete(normalizedChunkKey);
                 if (!isChunkWithinRenderDistance(cq, cr)) return;
-                if (worldState.loadedChunks.has(chunkKey)) return;
-                if (pendingChunkApplySet.has(chunkKey)) return;
-                pendingChunkApplySet.add(chunkKey);
-                pendingChunkApplyQueue.push({ chunkKey, cq, cr, columns });
+                if (worldState.loadedChunks.has(normalizedChunkKey)) return;
+                if (pendingChunkApplySet.has(normalizedChunkKey)) return;
+                pendingChunkApplySet.add(normalizedChunkKey);
+                pendingChunkApplyQueue.push({ chunkKey: normalizedChunkKey, cq, cr, columns });
             },
             onError: (error) => {
                 console.warn('Chunk generation worker pool crashed, using main-thread chunk generation fallback.', error);
@@ -922,7 +893,7 @@ function initChunkGenerationWorker() {
 }
 
 function applyGeneratedChunkColumns(cq, cr, columns) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
     const chunkBlockKeys = recycledChunkBlockSets.pop() ?? new Set();
@@ -951,7 +922,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             : column.addTree;
 
         for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-            const blockKey = `${q},${r},${h}`;
+            const blockKey = packBlockKey(q, r, h);
             let blockType = BLOCK_INDEX.stone;
             if (h === height) {
                 blockType = topBlockType;
@@ -968,7 +939,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
-        const nethrockKey = `${q},${r},${NETHROCK_LEVEL_HEX}`;
+        const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
         if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
         if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
@@ -1001,7 +972,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
 }
 
 export function generateChunk(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.loadedChunks.has(chunkKey)) return;
     ensureChunkMeta(cq, cr);
     worldState.loadedChunks.add(chunkKey);
@@ -1032,7 +1003,7 @@ export function generateChunk(cq, cr) {
 
                 // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
                 for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
-                    const blockKey = `${absQ},${absR},${h}`;
+                    const blockKey = packBlockKey(absQ, absR, h);
                     let blockType = BLOCK_INDEX.stone;
                     if (h === height) {
                         blockType = topBlockType;
@@ -1049,7 +1020,7 @@ export function generateChunk(cq, cr) {
                     if (worldState.worldBlocks.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
-                const nethrockKey = `${absQ},${absR},${NETHROCK_LEVEL_HEX}`;
+                const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
                 if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
                 if (worldState.worldBlocks.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
 
@@ -1085,7 +1056,7 @@ export function generateChunk(cq, cr) {
 }
 
 export function unloadChunk(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (!worldState.loadedChunks.has(chunkKey)) return;
 
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey) ?? new Set();
@@ -1097,6 +1068,7 @@ export function unloadChunk(cq, cr) {
     if (chunkBlockKeys.size > 0) chunkBlockKeys.clear();
     if (recycledChunkBlockSets.length < 128) recycledChunkBlockSets.push(chunkBlockKeys);
     worldState.chunkFaceQuads.delete(chunkKey);
+    worldState.chunkRenderBatches.delete(chunkKey);
     worldState.loadedChunks.delete(chunkKey);
     worldState.dirtyChunks.delete(chunkKey);
 
@@ -1131,14 +1103,14 @@ function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
 }
 
 function enqueueChunkGeneration(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (worldState.loadedChunks.has(chunkKey) || pendingChunkGenerationSet.has(chunkKey) || pendingChunkGenerationInFlight.has(chunkKey)) return;
     pendingChunkGenerationSet.add(chunkKey);
     pendingChunkGenerationQueue.push({ cq, cr, chunkKey });
 }
 
 function enqueueChunkUnload(cq, cr) {
-    const chunkKey = `${cq},${cr}`;
+    const chunkKey = packChunkKey(cq, cr);
     if (!worldState.loadedChunks.has(chunkKey) || pendingChunkUnloadSet.has(chunkKey)) return;
     pendingChunkUnloadSet.add(chunkKey);
     pendingChunkUnloadQueue.push({ cq, cr, chunkKey });
@@ -1153,7 +1125,7 @@ function rebuildStreamingQueue(cq, cr) {
             if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > RENDER_DIST) continue;
             const visibleCq = cq + dq;
             const visibleCr = cr + dr;
-            const chunkKey = `${visibleCq},${visibleCr}`;
+            const chunkKey = packChunkKey(visibleCq, visibleCr);
             visibleChunkKeys.add(chunkKey);
             enqueueChunkGeneration(visibleCq, visibleCr);
         }
@@ -1163,8 +1135,9 @@ function rebuildStreamingQueue(cq, cr) {
         if (visibleChunkKeys.has(chunkKey)) continue;
 
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
-        const chunkQ = chunkMeta?.cq ?? Number(chunkKey.split(',')[0]);
-        const chunkR = chunkMeta?.cr ?? Number(chunkKey.split(',')[1]);
+        const unpacked = unpackChunkKey(chunkKey);
+        const chunkQ = chunkMeta?.cq ?? unpacked.cq;
+        const chunkR = chunkMeta?.cr ?? unpacked.cr;
         enqueueChunkUnload(chunkQ, chunkR);
     }
 
@@ -1311,31 +1284,39 @@ function getCurrentChunkCoords() {
 }
 
 export function tickChunkApplyBudget() {
-    initChunkGenerationWorker();
-    applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
-    flushChunkApplyBudget();
+    profilerMeasure('dirty_apply', () => {
+        initChunkGenerationWorker();
+        applyDirtyChunks(DIRTY_CHUNK_APPLY_BUDGET);
+        flushChunkApplyBudget();
+    });
 }
 
 export function tickChunkStreaming() {
-    initChunkGenerationWorker();
-    const { cq, cr } = getCurrentChunkCoords();
-    const currentChunkKey = `${cq},${cr}`;
-    const chunkChanged = currentChunkKey !== lastStreamChunkKey;
+    profilerMeasure('stream_total', () => {
+        initChunkGenerationWorker();
+        const { cq, cr } = getCurrentChunkCoords();
+        const currentChunkKey = packChunkKey(cq, cr);
+        const chunkChanged = currentChunkKey !== lastStreamChunkKey;
 
-    if (chunkChanged) {
-        rebuildStreamingQueue(cq, cr);
-        lastStreamChunkKey = currentChunkKey;
-    }
+        if (chunkChanged) {
+            profilerMeasure('stream_rebuild_queue', () => rebuildStreamingQueue(cq, cr));
+            lastStreamChunkKey = currentChunkKey;
+        }
 
-    flushChunkUnloadBudget();
-    flushChunkGenerationBudget();
+        profilerMeasure('stream_generation', () => {
+            flushChunkUnloadBudget();
+            flushChunkGenerationBudget();
+        });
+    });
 }
 
 export function tickChunkVisibility() {
-    const { cq, cr } = getCurrentChunkCoords();
-    const lodChangedChunks = updateChunkLodLevels(cq, cr);
-    for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
-    applyChunkFrustumCulling();
+    profilerMeasure('visibility_lod', () => {
+        const { cq, cr } = getCurrentChunkCoords();
+        const lodChangedChunks = updateChunkLodLevels(cq, cr);
+        for (const chunkKey of lodChangedChunks) updateChunkMeshVisibility(chunkKey);
+        applyChunkFrustumCulling();
+    });
 }
 
 export function updateChunks() {

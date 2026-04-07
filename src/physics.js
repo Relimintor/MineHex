@@ -17,9 +17,10 @@ import {
 } from './config.js';
 import { collectChunkRaycastCandidates } from './blocks.js';
 import { worldToAxial } from './coords.js';
+import { packChunkKey, packColumnKey } from './keys.js';
 import { camera } from './scene.js';
 import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
-import { inputState, worldState } from './state.js';
+import { inputState, profilerRecord, worldState } from './state.js';
 import { isKeyDown } from './input.js';
 
 const GROUND_STICK_DISTANCE = 0.08;
@@ -50,12 +51,12 @@ function isChunkLoadedAtWorldPosition(x, y, z) {
     const { q, r } = worldToAxial(collisionProbePoint);
     const cq = Math.round(q / CHUNK_SIZE);
     const cr = Math.round(r / CHUNK_SIZE);
-    return worldState.loadedChunks.has(`${cq},${cr}`);
+    return worldState.loadedChunks.has(packChunkKey(cq, cr));
 }
 
 function getFallbackGroundDistanceFromTopSolidColumn() {
     const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const topSolidH = worldState.topSolidHeightByColumn.get(`${q},${r}`);
+    const topSolidH = worldState.topSolidHeightByColumn.get(packColumnKey(q, r));
     if (topSolidH === undefined) return null;
     if (!isSolidBlockAt(q, r, topSolidH)) return null;
     return camera.position.y - (topSolidH * HEX_HEIGHT);
@@ -100,6 +101,7 @@ function resolveGroundCollision() {
 }
 
 export function handlePhysics(deltaTimeSeconds = 1 / 60) {
+    const physicsStart = performance.now();
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
 
@@ -175,4 +177,5 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
     }
+    profilerRecord('physics', performance.now() - physicsStart);
 }

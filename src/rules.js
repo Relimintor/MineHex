@@ -1,5 +1,6 @@
 import { PLAYER_HEIGHT, BLOCK_TYPES } from './config.js';
 import { axialToWorld, worldToAxial } from './coords.js';
+import { packBlockKey, packColumnKey } from './keys.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
 
@@ -21,11 +22,11 @@ const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(
 );
 
 function getBlockAt(q, r, h) {
-    return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
+    return worldState.worldBlocks.get(packBlockKey(q, r, h)) ?? null;
 }
 
 function getColumnKey(q, r) {
-    return `${q},${r}`;
+    return packColumnKey(q, r);
 }
 
 export function updateTopSolidHeightOnAdd(q, r, h, typeIndex) {

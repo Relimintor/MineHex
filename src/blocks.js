@@ -1,5 +1,6 @@
 import { BLOCK_TYPES, CHUNK_SIZE } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld } from './coords.js';
+import { normalizeBlockKey, packBlockKey, packChunkKey, unpackBlockKey } from './keys.js';
 import { createBlockMaterials } from './shaders/materials.js';
 import { worldState } from './state.js';
 import { isSolidTypeIndex, updateTopSolidHeightOnAdd, updateTopSolidHeightOnRemove } from './rules.js';
@@ -12,11 +13,11 @@ const getChunkCoords = (q, r) => ({
 
 const getChunkKey = (q, r) => {
     const { cq, cr } = getChunkCoords(q, r);
-    return `${cq},${cr}`;
+    return packChunkKey(cq, cr);
 };
 
 function trackRemovedBlock(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     worldState.removedBlocks.add(key);
     const chunkKey = getChunkKey(q, r);
     if (!worldState.removedBlocksByChunk.has(chunkKey)) worldState.removedBlocksByChunk.set(chunkKey, new Set());
@@ -24,7 +25,7 @@ function trackRemovedBlock(q, r, h) {
 }
 
 function clearRemovedBlockMark(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (!worldState.removedBlocks.has(key)) return;
     worldState.removedBlocks.delete(key);
     const chunkKey = getChunkKey(q, r);
@@ -44,14 +45,15 @@ const FACE_DIRECTIONS = [
     [0, 0, 1],
     [0, 0, -1]
 ];
+const TOP_FACE_MASK = 1 << 4;
 
 
 function parseBlockKey(key) {
-    const cached = worldState.blockCoordsByKey.get(key);
+    const normalizedKey = normalizeBlockKey(key);
+    const cached = worldState.blockCoordsByKey.get(normalizedKey);
     if (cached) return cached;
-    const [q, r, h] = key.split(',').map(Number);
-    const parsed = { q, r, h };
-    worldState.blockCoordsByKey.set(key, parsed);
+    const parsed = unpackBlockKey(normalizedKey);
+    worldState.blockCoordsByKey.set(normalizedKey, parsed);
     return parsed;
 }
 
@@ -120,11 +122,12 @@ const FACE_GEOMETRY = [
         ]
     }
 ];
+const FACE_INDEX_BY_DIRECTION = new Map(FACE_GEOMETRY.map((face, idx) => [face.direction.join(','), idx]));
 
 function getNeighborChunkKeys(cq, cr) {
-    const chunk = worldState.chunkMeta.get(`${cq},${cr}`);
+    const chunk = worldState.chunkMeta.get(packChunkKey(cq, cr));
     if (chunk?.neighbors?.length) return chunk.neighbors;
-    return NEIGHBOR_OFFSETS.map(([dq, dr]) => `${cq + dq},${cr + dr}`);
+    return NEIGHBOR_OFFSETS.map(([dq, dr]) => packChunkKey(cq + dq, cr + dr));
 }
 
 
@@ -143,7 +146,7 @@ function recordDirtyChunkOp(chunkKey, op, h) {
 function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
     const { cq, cr } = getChunkCoords(q, r);
 
-    const selfChunkKey = `${cq},${cr}`;
+    const selfChunkKey = packChunkKey(cq, cr);
     worldState.dirtyChunks.add(selfChunkKey);
     const selfChunk = worldState.chunkMeta.get(selfChunkKey);
     if (selfChunk) selfChunk.dirty = true;
@@ -158,7 +161,7 @@ function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
 }
 
 function getBlockAt(q, r, h) {
-    return worldState.worldBlocks.get(`${q},${r},${h}`) ?? null;
+    return worldState.worldBlocks.get(packBlockKey(q, r, h)) ?? null;
 }
 
 function isFaceVisible(q, r, h, [dq, dr, dh]) {
@@ -198,14 +201,20 @@ function getVisibleFaces(q, r, h) {
 }
 
 function updateBlockVisibilityAt(q, r, h) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     const block = worldState.worldBlocks.get(key);
     if (!block) return;
 
     const visibleFaces = getVisibleFaces(q, r, h);
+    let visibleFaceMask = 0;
+    for (const face of visibleFaces) {
+        const idx = FACE_INDEX_BY_DIRECTION.get(face.direction.join(','));
+        if (idx >= 0) visibleFaceMask |= (1 << idx);
+    }
     const hasTopOrBottomExposure = isFaceVisible(q, r, h, [0, 0, 1]) || isFaceVisible(q, r, h, [0, 0, -1]);
     const hasSideExposure = AXIAL_SIDE_DIRECTIONS.some((direction) => isFaceVisible(q, r, h, direction));
     block.userData.hasExposedFace = hasTopOrBottomExposure || hasSideExposure;
+    block.userData.visibleFaceMask = visibleFaceMask;
     block.visible = block.userData.hasExposedFace;
     block.userData.visibleFaces = visibleFaces;
 }
@@ -321,16 +330,40 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
     const chunkBlockKeys = worldState.chunkBlocks.get(chunkKey);
     if (!chunkBlockKeys || chunkBlockKeys.size === 0) {
         worldState.chunkFaceQuads.delete(chunkKey);
+        worldState.chunkRenderBatches.delete(chunkKey);
         return;
     }
 
     const faceGroups = new Map();
+    const perType = new Map();
 
     for (const blockKey of chunkBlockKeys) {
         const blockMesh = worldState.worldBlocks.get(blockKey);
-        if (!blockMesh || !Array.isArray(blockMesh.userData.visibleFaces)) continue;
+        if (!blockMesh || !blockMesh.userData.hasExposedFace) continue;
 
-        for (const face of blockMesh.userData.visibleFaces) {
+        const typeIndex = blockMesh.userData.typeIndex ?? 0;
+        if (!perType.has(typeIndex)) {
+            perType.set(typeIndex, {
+                allPositions: [],
+                allKeys: [],
+                topPositions: [],
+                topKeys: []
+            });
+        }
+        const perTypeBucket = perType.get(typeIndex);
+        const { x, y, z } = blockMesh.position;
+        perTypeBucket.allPositions.push(x, y, z);
+        perTypeBucket.allKeys.push(blockKey);
+
+        const faceMask = blockMesh.userData.visibleFaceMask ?? 0;
+        if ((faceMask & TOP_FACE_MASK) !== 0) {
+            perTypeBucket.topPositions.push(x, y, z);
+            perTypeBucket.topKeys.push(blockKey);
+        }
+
+        for (let faceIdx = 0; faceIdx < FACE_GEOMETRY.length; faceIdx++) {
+            if ((faceMask & (1 << faceIdx)) === 0) continue;
+            const face = FACE_GEOMETRY[faceIdx];
             const cell = buildFaceCell(blockMesh, face.direction);
             const groupKey = `${cell.plane}:${cell.planeValue}:${cell.direction.join(',')}:${cell.typeIndex}`;
             if (!faceGroups.has(groupKey)) faceGroups.set(groupKey, []);
@@ -349,6 +382,22 @@ export function recomputeChunkGreedyFaceQuads(chunkKey) {
     }
 
     worldState.chunkFaceQuads.set(chunkKey, mergedQuads);
+    if (perType.size === 0) {
+        worldState.chunkRenderBatches.delete(chunkKey);
+        return;
+    }
+
+    const renderBatches = [];
+    for (const [typeIndex, bucket] of perType) {
+        renderBatches.push({
+            typeIndex,
+            allPositions: new Float32Array(bucket.allPositions),
+            allKeys: bucket.allKeys,
+            topPositions: new Float32Array(bucket.topPositions),
+            topKeys: bucket.topKeys
+        });
+    }
+    worldState.chunkRenderBatches.set(chunkKey, renderBatches);
 }
 
 export function refreshBlockVisibilityForKeys(blockKeys) {
@@ -359,7 +408,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
         const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
 
         for (const [targetQ, targetR, targetH] of targets) {
-            const targetKey = `${targetQ},${targetR},${targetH}`;
+            const targetKey = packBlockKey(targetQ, targetR, targetH);
             if (visited.has(targetKey)) continue;
             visited.add(targetKey);
             updateBlockVisibilityAt(targetQ, targetR, targetH);
@@ -368,7 +417,7 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
 }
 
 export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = true, refreshVisibility = true) {
-    const key = `${q},${r},${h}`;
+    const key = packBlockKey(q, r, h);
     if (worldState.worldBlocks.has(key)) return;
 
     const safeTypeIndex = blockMaterials[typeIndex] ? typeIndex : 0;
@@ -403,22 +452,23 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
 }
 
 export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true, trackRemoval = true } = {}) {
-    const mesh = worldState.worldBlocks.get(key);
+    const normalizedKey = normalizeBlockKey(key);
+    const mesh = worldState.worldBlocks.get(normalizedKey);
     if (mesh) {
         const blockType = BLOCK_TYPES[mesh.userData.typeIndex];
         if (blockType?.unbreakable && !force) return false;
 
-        worldState.worldBlocks.delete(key);
+        worldState.worldBlocks.delete(normalizedKey);
 
         const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
         const chunkBlockSet = worldState.chunkBlocks.get(chunkKey);
         if (chunkBlockSet) {
-            chunkBlockSet.delete(key);
+            chunkBlockSet.delete(normalizedKey);
             if (chunkBlockSet.size === 0) worldState.chunkBlocks.delete(chunkKey);
         }
 
         updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, mesh.userData.typeIndex);
-        worldState.blockCoordsByKey.delete(key);
+        worldState.blockCoordsByKey.delete(normalizedKey);
 
         if (trackDirty) {
             markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r, 'remove', mesh.userData.h);
@@ -429,10 +479,10 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
         }
 
         if (mesh.userData.isPermanent && !preservePermanent) {
-            worldState.permanentBlocks.delete(key);
+            worldState.permanentBlocks.delete(normalizedKey);
             const chunkPermanentBlocks = worldState.permanentBlocksByChunk.get(chunkKey);
             if (chunkPermanentBlocks) {
-                chunkPermanentBlocks.delete(key);
+                chunkPermanentBlocks.delete(normalizedKey);
                 if (chunkPermanentBlocks.size === 0) worldState.permanentBlocksByChunk.delete(chunkKey);
             }
         }
@@ -460,7 +510,7 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
             const ds = -dq - dr;
             if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > chunkRadius) continue;
 
-            const chunkKey = `${centerChunkQ + dq},${centerChunkR + dr}`;
+            const chunkKey = packChunkKey(centerChunkQ + dq, centerChunkR + dr);
             const chunkMeta = worldState.chunkMeta.get(chunkKey);
             if (!chunkMeta) continue;
 
