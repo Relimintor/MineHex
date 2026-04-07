@@ -199,7 +199,7 @@ canvas { display: block; }
     align-items: center;
     align-content: start;
     gap: 4px;
-    margin-top: 5px;
+    margin-top: 25px;
     padding-bottom: 2px;
 }
 
@@ -209,7 +209,7 @@ canvas { display: block; }
 }
 
 .inventory-row:nth-child(2) {
-    margin-left: 25px;
+    margin-left: 15px;
 }
 
 .inventory-hex-slot {
