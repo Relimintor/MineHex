@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 const PI: f32 = core::f32::consts::PI;
-const DAY_LENGTH_SECONDS: f32 = 120.0;
+const DAY_LENGTH_SECONDS: f32 = 480.0;
 
 #[derive(Clone, Copy, Debug)]
 struct Vec3 {
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn cycle_wraps_for_negative_time() {
-        assert_eq!(sky_color_hex(-5.0), sky_color_hex(115.0));
+        assert_eq!(sky_color_hex(-5.0), sky_color_hex(DAY_LENGTH_SECONDS - 5.0));
     }
 
     #[test]
