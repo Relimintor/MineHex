@@ -668,11 +668,51 @@ export function getBlockTypeIndexAt(q, r, h) {
     return getTypeIndexAtKey(packBlockKey(q, r, h));
 }
 
-export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, outCandidates, { collidableOnly = false } = {}) {
+const raycastCandidateCache = new Map();
+const chunkAabbTestRay = new THREE.Ray();
+const chunkAabbHitPoint = new THREE.Vector3();
+
+function doesChunkBoundsIntersectRayRange(bounds, rayOrigin, rayDirection, rayNear, rayFar) {
+    if (!bounds || !rayOrigin || !rayDirection) return true;
+    chunkAabbTestRay.origin.copy(rayOrigin);
+    chunkAabbTestRay.direction.copy(rayDirection);
+    const hitPoint = chunkAabbTestRay.intersectBox(bounds, chunkAabbHitPoint);
+    if (!hitPoint) return false;
+    const hitDistance = rayOrigin.distanceTo(hitPoint);
+    return hitDistance >= rayNear && hitDistance <= rayFar;
+}
+
+export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, outCandidates, {
+    collidableOnly = false,
+    cacheKey = '',
+    reuseFrames = 0,
+    rayOrigin = null,
+    rayDirection = null,
+    rayNear = 0,
+    rayFar = Number.POSITIVE_INFINITY
+} = {}) {
     if (!Array.isArray(outCandidates)) return;
     outCandidates.length = 0;
 
     const { cq: centerChunkQ, cr: centerChunkR } = getChunkCoords(centerQ, centerR);
+    const normalizedRayNear = Math.max(0, rayNear);
+    const normalizedRayFar = Math.max(normalizedRayNear, rayFar);
+    const nowFrame = worldState.frame ?? 0;
+    if (cacheKey) {
+        const cached = raycastCandidateCache.get(cacheKey);
+        if (
+            cached
+            && cached.centerChunkQ === centerChunkQ
+            && cached.centerChunkR === centerChunkR
+            && cached.chunkRadius === chunkRadius
+            && cached.collidableOnly === collidableOnly
+            && (nowFrame - cached.frame) <= reuseFrames
+        ) {
+            outCandidates.push(...cached.candidates);
+            return;
+        }
+    }
+
     for (let dq = -chunkRadius; dq <= chunkRadius; dq++) {
         for (let dr = -chunkRadius; dr <= chunkRadius; dr++) {
             const ds = -dq - dr;
@@ -681,6 +721,7 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
             const chunkKey = packChunkKey(centerChunkQ + dq, centerChunkR + dr);
             const chunkMeta = worldState.chunkMeta.get(chunkKey);
             if (!chunkMeta) continue;
+            if (!doesChunkBoundsIntersectRayRange(chunkMeta.bounds, rayOrigin, rayDirection, normalizedRayNear, normalizedRayFar)) continue;
 
             const chunkMeshes = chunkMeta.lodLevel === 1
                 ? (chunkMeta.instancedLodMeshes ?? [])
@@ -692,6 +733,17 @@ export function collectChunkRaycastCandidates(centerQ, centerR, chunkRadius, out
                 outCandidates.push(mesh);
             }
         }
+    }
+
+    if (cacheKey) {
+        raycastCandidateCache.set(cacheKey, {
+            frame: nowFrame,
+            centerChunkQ,
+            centerChunkR,
+            chunkRadius,
+            collidableOnly,
+            candidates: outCandidates.slice()
+        });
     }
 }
 
