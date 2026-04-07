@@ -26,6 +26,8 @@ export const worldState = {
     collidableBlocks: new Set(),
     blockCoordsByKey: new Map(),
     chunkBlocks: new Map(),
+    chunkBlockData: new Map(),
+    blockIndexByKey: new Map(),
     chunkFaceQuads: new Map(),
     chunkRenderBatches: new Map(),
     chunkMeta: new Map(),
