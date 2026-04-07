@@ -58,15 +58,11 @@ float cloud_map(vec2 uv) {
     return smoothstep(0.54, 0.69, combined);
 }
 float stars(vec3 dir, float night, float t) {
-    float angle = t * 0.0004;
-    float c = cos(angle);
-    float s = sin(angle);
-    vec3 rotated = vec3((dir.x * c) - (dir.z * s), dir.y, (dir.x * s) + (dir.z * c));
+    vec3 rotated = dir;
     float large = smoothstep(0.9966, 1.0, hash3(rotated * 640.0));
     float small = smoothstep(0.9985, 1.0, hash3(rotated * 1180.0));
-    float twinkle = 0.85 + 0.15 * sin(t * 0.05 + rotated.x * 67.0 + rotated.z * 41.0);
     float starField = max(large * 0.85, small);
-    return starField * night * twinkle;
+    return starField * night;
 }
 
 float sun_disc(vec3 dir, vec3 sunDir) {

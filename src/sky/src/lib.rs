@@ -202,10 +202,8 @@ fn hash3(v: Vec3) -> f32 {
 }
 
 fn stars_mask(direction: Vec3, night: f32, time_seconds: f32) -> f32 {
-    let angle = time_seconds * 0.0004;
-    let c = angle.cos();
-    let s = angle.sin();
-    let rotated = Vec3::new((direction.x * c) - (direction.z * s), direction.y, (direction.x * s) + (direction.z * c));
+    let _ = time_seconds;
+    let rotated = direction;
     let n = hash3(rotated * 1000.0);
     let star = smoothstep((n - 0.99833) / 0.00167);
     star * night
