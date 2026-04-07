@@ -1,1 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
 
+        #intro-gif {
+            position: fixed;
+            top: -5;
+            left: -5;
+            width: 105vw;
+            height: 105vh;
+            object-fit: cover;
+            z-index: -1;
+        }
+
+        .content {
+            position: relative;
+            z-index: 1;
+            color: white;
+            font-size: 2rem;
+            text-align: center;
+            margin-top: 40vh;
+        }
+    </style>
+</head>
+<body>
+
+    <img id="intro-gif" src="assets/intro/4a1d3b747e1aaaad55eb167b95b53de2_original.gif">
+
+    <script>
+        const gif = document.getElementById("intro-gif");
+
+        gif.addEventListener("load", () => {
+            // Estimate GIF duration (in ms)
+            // If you know the exact duration, put it here
+            const duration = 15000; // 5 seconds example
+
+            setTimeout(() => {
+                gif.style.display = "none"; // hide after it finishes
+            }, duration);
+        });
+    </script>
+
+</body>
+</html>
