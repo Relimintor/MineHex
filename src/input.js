@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
-import { HEX_HEIGHT } from './config.js';
+import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
@@ -13,6 +13,7 @@ const placeNormal = new THREE.Vector3();
 const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
 const inventoryScreen = document.getElementById('inventory-screen');
+const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
 const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
@@ -44,6 +45,7 @@ let dragSourceSlotId = null;
 let selectedHotbarSlotIndex = 0;
 let inventoryUiInitialized = false;
 let heldInventoryItemType = null;
+let heldItemNameTimeoutId = null;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -73,10 +75,31 @@ export function updateSelectedBlock(index) {
     const selectedSlotId = `hotbar-${index}`;
     const selectedType = inventoryItemsBySlotId.get(selectedSlotId);
     worldState.selectedBlockIndex = Number.isInteger(selectedType) ? selectedType : -1;
+    showHeldItemName(worldState.selectedBlockIndex);
     document.querySelectorAll('.slot').forEach((slot, i) => slot.classList.toggle('active', i === index));
     document
         .querySelectorAll('.inventory-hex-slot.is-hotbar')
         .forEach((slot) => slot.classList.toggle('active', Number(slot.dataset.slot) === index));
+}
+
+function showHeldItemName(blockTypeIndex) {
+    if (!heldItemNameEl) return;
+    if (!Number.isInteger(blockTypeIndex) || blockTypeIndex < 0 || blockTypeIndex >= BLOCK_TYPES.length) {
+        heldItemNameEl.classList.remove('visible');
+        if (heldItemNameTimeoutId) {
+            clearTimeout(heldItemNameTimeoutId);
+            heldItemNameTimeoutId = null;
+        }
+        return;
+    }
+
+    heldItemNameEl.textContent = BLOCK_TYPES[blockTypeIndex].name;
+    heldItemNameEl.classList.add('visible');
+    if (heldItemNameTimeoutId) clearTimeout(heldItemNameTimeoutId);
+    heldItemNameTimeoutId = setTimeout(() => {
+        heldItemNameEl.classList.remove('visible');
+        heldItemNameTimeoutId = null;
+    }, 2500);
 }
 
 export function toggleInventoryScreen() {
