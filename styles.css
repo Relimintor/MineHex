@@ -129,8 +129,8 @@ canvas { display: block; }
     width: 220px;
     height: 320px;
     border-radius: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.35);
-    background: radial-gradient(circle at 40% 25%, rgba(170, 170, 170, 0.5), rgba(95, 95, 95, 0.7));
+    border: none;
+    background: transparent;
     overflow: hidden;
     position: absolute;
     left: 50%;
@@ -190,7 +190,7 @@ canvas { display: block; }
     justify-content: center;
     gap: 8px;
     align-self: end;
-    transform: translateY(-20px);
+    transform: translateY(-5px);
 }
 
 .inventory-honeycomb {
@@ -199,7 +199,7 @@ canvas { display: block; }
     align-items: center;
     align-content: start;
     gap: 4px;
-    margin-top: 20px;
+    margin-top: 5px;
     padding-bottom: 2px;
 }
 
@@ -208,8 +208,8 @@ canvas { display: block; }
     gap: 8px;
 }
 
-.inventory-row:nth-child(even) {
-    margin-left: 29px;
+.inventory-row:nth-child(2) {
+    margin-left: 25px;
 }
 
 .inventory-hex-slot {
