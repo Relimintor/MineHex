@@ -26,6 +26,25 @@ function chooseControlMode() {
     const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
     return new Promise((resolve) => {
         const buttons = modeScreen.querySelectorAll('[data-mode]');
+        const secretControlToggle = modeScreen.querySelector('#secret-control-toggle');
+        const youtubeControl = modeScreen.querySelector('#youtube-control');
+        const status = modeScreen.querySelector('#mode-status');
+
+        if (secretControlToggle && youtubeControl) {
+            secretControlToggle.addEventListener('dblclick', () => {
+                youtubeControl.classList.add('revealed');
+                youtubeControl.setAttribute('aria-hidden', 'false');
+                if (status) status.textContent = 'Hidden control unlocked: YouTube.';
+            });
+
+            youtubeControl.addEventListener('click', () => {
+                localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
+                localStorage.setItem(CONTROL_MODE_KEY, 'youtube');
+                if (status) status.textContent = 'YouTube mode enabled. Reloading...';
+                window.location.reload();
+            });
+        }
+
         if (savedMode) {
             for (const button of buttons) {
                 button.classList.toggle('active', button.dataset.mode === savedMode);
@@ -36,7 +55,6 @@ function chooseControlMode() {
             button.addEventListener('click', () => {
                 const mode = button.dataset.mode;
                 if (mode === 'console') {
-                    const status = modeScreen.querySelector('#mode-status');
                     if (status) status.textContent = 'Console controls are coming next.';
                     return;
                 }
@@ -206,7 +224,7 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
-    } else if (mode === 'celeron_cb') {
+    } else if (mode === 'celeron_cb' || mode === 'youtube') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
     } else {
