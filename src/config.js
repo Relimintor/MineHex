@@ -38,7 +38,7 @@ export const ENABLE_POST_BLOOM = ENABLE_POST_PROCESSING;
 export const ENABLE_POST_SSAO = ENABLE_POST_PROCESSING && !useLowEndChunkProfile;
 export const ENABLE_POST_COLOR_GRADING = ENABLE_POST_PROCESSING;
 export const ENABLE_POST_VIGNETTE_GRAIN = ENABLE_POST_PROCESSING;
-export const ENABLE_POST_DOF = false;
+export const ENABLE_POST_DOF = ENABLE_POST_PROCESSING && !useLowEndChunkProfile;
 
 // Chunk profile alignment:
 // - celeron + mobile share the same budgets/features for stable low-end behavior.
