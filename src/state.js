@@ -135,5 +135,6 @@ export const inputState = {
     pitch: 0,
     yaw: 0,
     canJump: false,
+    isSprinting: false,
     velocity: new THREE.Vector3()
 };

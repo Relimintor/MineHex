@@ -22,6 +22,7 @@ import { camera } from './scene.js';
 import { enforceSpawnOnSolidBlock, isCameraInLiquid, isSolidBlockAt } from './rules.js';
 import { inputState, profilerRecord, worldState } from './state.js';
 import { isKeyDown } from './input.js';
+import { triggerCameraImpulse } from './playerView.js';
 
 const GROUND_STICK_DISTANCE = 0.08;
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -38,6 +39,9 @@ const collisionProbePoint = new THREE.Vector3();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
+const SPRINT_MULTIPLIER = 1.42;
+const SPRINT_ACCEL_MULTIPLIER = 1.16;
+const LANDING_IMPACT_THRESHOLD = -0.52;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -145,10 +149,13 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         moveDir.applyEuler(moveEuler).normalize();
     }
 
-    const moveSpeed = isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED;
+    const wantsSprint = !isInLiquid && hasMovementInput && (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight'));
+    inputState.isSprinting = wantsSprint;
+    const sprintBoost = wantsSprint ? SPRINT_MULTIPLIER : 1;
+    const moveSpeed = (isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED) * sprintBoost;
     const targetVelocityX = hasMovementInput ? moveDir.x * moveSpeed : 0;
     const targetVelocityZ = hasMovementInput ? moveDir.z * moveSpeed : 0;
-    const accelerationFactor = 1 - Math.pow(1 - MOVE_ACCELERATION, frameScale);
+    const accelerationFactor = 1 - Math.pow(1 - (MOVE_ACCELERATION * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
     const frictionFactor = Math.pow(1 - MOVE_FRICTION, frameScale);
 
     inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
@@ -172,6 +179,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     } else if (isKeyDown('Space') && inputState.canJump) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
+        triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
     }
@@ -197,8 +205,13 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const previousY = camera.position.y;
     camera.position.y += inputState.velocity.y * frameScale;
 
+    const verticalVelocityBeforeCollision = inputState.velocity.y;
     const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;
     const isSupportedByGround = shouldResolveGroundCollision ? resolveGroundCollision() : false;
+    if (isSupportedByGround && verticalVelocityBeforeCollision < LANDING_IMPACT_THRESHOLD) {
+        const landingStrength = THREE.MathUtils.clamp((-verticalVelocityBeforeCollision - Math.abs(LANDING_IMPACT_THRESHOLD)) * 0.42, 0.08, 0.95);
+        triggerCameraImpulse(landingStrength);
+    }
     if (!shouldResolveGroundCollision) {
         inputState.canJump = false;
     }
@@ -218,6 +231,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         const didRespawnNearby = enforceSpawnOnSolidBlock(currentAxial.q, currentAxial.r);
         if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
+        inputState.isSprinting = false;
     }
     profilerRecord('physics', performance.now() - physicsStart);
 }

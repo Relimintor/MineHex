@@ -28,11 +28,35 @@ const ARM_ANIMATION = {
     swingDownY: 0.03,
     maxWalkSpeed: 0.22
 };
+const CAMERA_MOTION = {
+    bobFrequency: 8.2,
+    bobAmountY: 0.026,
+    bobAmountX: 0.011,
+    bobSmoothing: 0.18,
+    inertiaSmoothing: 0.14,
+    inertiaTilt: 0.035,
+    inertiaShift: 0.055,
+    sprintFovBoost: 8.5,
+    airFovBoost: 2.2,
+    fovSmoothing: 0.08,
+    thirdIdleYaw: 0.045,
+    thirdIdlePitch: 0.028,
+    thirdIdleRoll: 0.015,
+    thirdIdleFrequency: 0.22,
+    shakeDecay: 2.3
+};
 
 let firstPersonArmRoot = null;
 let firstPersonArmSwingUntil = 0;
 let walkCycleTime = 0;
 let lastPerspectiveUpdateTime = performance.now();
+let smoothedBobY = 0;
+let smoothedBobX = 0;
+let inertiaOffsetX = 0;
+let inertiaOffsetY = 0;
+let targetFov = camera.fov;
+let cameraShake = 0;
+let cameraShakeSeed = 0;
 
 export const CAMERA_PERSPECTIVES = {
     FIRST_PERSON: 'first_person',
@@ -215,12 +239,39 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
 
     if (currentPerspective === CAMERA_PERSPECTIVES.FIRST_PERSON) {
         avatarRoot.visible = false;
+        const horizontalSpeed = Math.hypot(inputState.velocity.x, inputState.velocity.z);
+        const movementNorm = Math.min(1, horizontalSpeed / Math.max(0.001, ARM_ANIMATION.maxWalkSpeed));
+        walkCycleTime += dt * CAMERA_MOTION.bobFrequency * (0.35 + movementNorm);
+        const bobWave = Math.sin(walkCycleTime * Math.PI * 2);
+        const bobWaveCos = Math.cos(walkCycleTime * Math.PI * 2);
+        const bobTargetY = bobWave * CAMERA_MOTION.bobAmountY * movementNorm;
+        const bobTargetX = bobWaveCos * CAMERA_MOTION.bobAmountX * movementNorm;
+        smoothedBobY += (bobTargetY - smoothedBobY) * (1 - Math.pow(1 - CAMERA_MOTION.bobSmoothing, dt * 60));
+        smoothedBobX += (bobTargetX - smoothedBobX) * (1 - Math.pow(1 - CAMERA_MOTION.bobSmoothing, dt * 60));
+
+        const inertiaTargetX = THREE.MathUtils.clamp(inputState.velocity.x * -CAMERA_MOTION.inertiaShift, -0.085, 0.085);
+        const inertiaTargetY = THREE.MathUtils.clamp(inputState.velocity.z * CAMERA_MOTION.inertiaTilt, -0.06, 0.06);
+        inertiaOffsetX += (inertiaTargetX - inertiaOffsetX) * (1 - Math.pow(1 - CAMERA_MOTION.inertiaSmoothing, dt * 60));
+        inertiaOffsetY += (inertiaTargetY - inertiaOffsetY) * (1 - Math.pow(1 - CAMERA_MOTION.inertiaSmoothing, dt * 60));
+
+        cameraShake = Math.max(0, cameraShake - (CAMERA_MOTION.shakeDecay * dt));
+        cameraShakeSeed += dt * (18 + cameraShake * 10);
+        const shakeYaw = Math.sin(cameraShakeSeed * 1.9) * 0.01 * cameraShake;
+        const shakePitch = Math.cos(cameraShakeSeed * 2.3) * 0.008 * cameraShake;
+
         camera.position.copy(playerPosition);
-        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        camera.position.x += smoothedBobX + inertiaOffsetX;
+        camera.position.y += smoothedBobY + Math.abs(inertiaOffsetY) * 0.15;
+        camera.rotation.set(pitch + shakePitch + inertiaOffsetY, yaw + shakeYaw, 0, 'YXZ');
+
+        const sprintFactor = inputState.isSprinting ? 1 : 0;
+        const jumpFactor = inputState.canJump ? 0 : THREE.MathUtils.clamp(inputState.velocity.y * 0.08, -0.15, 1);
+        targetFov = 75 + (CAMERA_MOTION.sprintFovBoost * sprintFactor) + (CAMERA_MOTION.airFovBoost * Math.max(0, jumpFactor));
+        camera.fov += (targetFov - camera.fov) * (1 - Math.pow(1 - CAMERA_MOTION.fovSmoothing, dt * 60));
+        camera.updateProjectionMatrix();
 
         if (firstPersonArmRoot) {
             firstPersonArmRoot.visible = true;
-            const horizontalSpeed = Math.hypot(inputState.velocity.x, inputState.velocity.z);
             const walkStrength = Math.min(1, horizontalSpeed / ARM_ANIMATION.maxWalkSpeed);
             walkCycleTime += dt * ARM_ANIMATION.walkFrequency * walkStrength;
             const walkWave = Math.sin(walkCycleTime * Math.PI * 2);
@@ -251,6 +302,8 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
 
     if (firstPersonArmRoot) firstPersonArmRoot.visible = false;
     avatarRoot.visible = true;
+    cameraShake = Math.max(0, cameraShake - (CAMERA_MOTION.shakeDecay * dt * 0.6));
+    cameraShakeSeed += dt * (12 + cameraShake * 6);
     cameraTarget.copy(playerPosition);
 
     const horizontalDistance = PLAYER_HEIGHT * 2.4;
@@ -258,13 +311,28 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
     const isSecondPerson = currentPerspective === CAMERA_PERSPECTIVES.SECOND_PERSON;
     const forwardOrBehindDistance = isSecondPerson ? -horizontalDistance : horizontalDistance;
     cameraOffset.set(0, verticalOffset, forwardOrBehindDistance);
-    cameraEuler.set(pitch * 0.75, yaw, 0);
+    const horizontalSpeed = Math.hypot(inputState.velocity.x, inputState.velocity.z);
+    const idleAmount = 1.0 - Math.min(1, horizontalSpeed / 0.08);
+    const idleTime = now * 0.001 * CAMERA_MOTION.thirdIdleFrequency;
+    const idleYaw = Math.sin(idleTime * 1.7) * CAMERA_MOTION.thirdIdleYaw * idleAmount;
+    const idlePitch = Math.cos(idleTime * 1.3) * CAMERA_MOTION.thirdIdlePitch * idleAmount;
+    const idleRoll = Math.sin(idleTime * 1.1) * CAMERA_MOTION.thirdIdleRoll * idleAmount;
+    const shakeYaw = Math.sin(cameraShakeSeed * 1.9) * 0.008 * cameraShake;
+    const shakePitch = Math.cos(cameraShakeSeed * 2.3) * 0.006 * cameraShake;
+    cameraEuler.set((pitch * 0.75) + idlePitch + shakePitch, yaw + idleYaw + shakeYaw, idleRoll);
     cameraOffset.applyEuler(cameraEuler);
 
     camera.position.copy(cameraTarget).add(cameraOffset);
     camera.lookAt(cameraTarget);
+    targetFov = 70 + (cameraShake * 1.5);
+    camera.fov += (targetFov - camera.fov) * (1 - Math.pow(1 - CAMERA_MOTION.fovSmoothing, dt * 60));
+    camera.updateProjectionMatrix();
 }
 
 export function triggerFirstPersonArmSwing() {
     firstPersonArmSwingUntil = performance.now() + (ARM_ANIMATION.swingDuration * 1000);
+}
+
+export function triggerCameraImpulse(amount = 0.2) {
+    cameraShake = Math.min(1.5, cameraShake + Math.max(0, amount));
 }
