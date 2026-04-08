@@ -33,6 +33,12 @@ export const TARGET_FPS = isCeleronChunkProfile ? 30 : 60;
 export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = !useStrictLowEndRendering;
 export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
+export const ENABLE_POST_PROCESSING = !useStrictLowEndRendering;
+export const ENABLE_POST_BLOOM = ENABLE_POST_PROCESSING;
+export const ENABLE_POST_SSAO = ENABLE_POST_PROCESSING && !useLowEndChunkProfile;
+export const ENABLE_POST_COLOR_GRADING = ENABLE_POST_PROCESSING;
+export const ENABLE_POST_VIGNETTE_GRAIN = ENABLE_POST_PROCESSING;
+export const ENABLE_POST_DOF = false;
 
 // Chunk profile alignment:
 // - celeron + mobile share the same budgets/features for stable low-end behavior.

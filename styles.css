@@ -103,6 +103,45 @@ canvas { display: block; }
     display: none;
 }
 
+#postfx-panel {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    min-width: 220px;
+    color: #e5efff;
+    background: rgba(8, 14, 24, 0.86);
+    border: 1px solid rgba(148, 190, 255, 0.45);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: 13px/1.35 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    z-index: 1250;
+    display: grid;
+    gap: 6px;
+}
+
+#postfx-panel.hidden {
+    display: none;
+}
+
+.postfx-panel-title {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 2px;
+}
+
+#postfx-panel label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.postfx-panel-note {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #ffdca9;
+}
+
 #crosshair {
     position: absolute;
     top: 50%;
