@@ -8,8 +8,8 @@ const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const firstPersonArmOffset = new THREE.Vector3(-0.08, -0.42, -0.58);
-const firstPersonArmRotationOffset = new THREE.Euler(-0.5, Math.PI + 0.22, -0.2, 'YXZ');
+const firstPersonArmOffset = new THREE.Vector3(0.46, -0.58, -0.78);
+const firstPersonArmRotationOffset = new THREE.Euler(-0.95, Math.PI + 0.4, -0.35, 'YXZ');
 
 let firstPersonArmRoot = null;
 
@@ -104,7 +104,7 @@ function createFirstPersonArm() {
         (gltf) => {
             firstPersonArmRoot = gltf.scene;
             firstPersonArmRoot.visible = false;
-            firstPersonArmRoot.scale.setScalar(0.5);
+            firstPersonArmRoot.scale.setScalar(0.62);
 
             firstPersonArmRoot.traverse((child) => {
                 if (!child.isMesh) return;
