@@ -5,6 +5,7 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
+import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
@@ -227,6 +228,9 @@ chooseControlMode().then((mode) => {
     } else if (mode === 'celeron_cb' || mode === 'youtube') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
+    } else if (mode === 'youtube') {
+        registerYoutubeInputHandlers();
+        coordinatesHudFrameInterval = 10;
     } else {
         registerDesktopInputHandlers();
     }
