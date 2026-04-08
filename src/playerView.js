@@ -2,6 +2,7 @@ const THREE = window.THREE;
 
 import { PLAYER_HEIGHT } from './config.js';
 import { camera, scene } from './scene.js';
+import { inputState } from './state.js';
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
@@ -9,8 +10,29 @@ const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const firstPersonArmOffset = new THREE.Vector3(0.35, -0.35, -0.6);
+const baseArmScale = 0.35;
+
+const ARM_ANIMATION = {
+    idlePitch: -0.38,
+    idleYaw: -0.16,
+    idleRoll: 0.16,
+    walkPitch: 0.08,
+    walkRoll: 0.06,
+    walkBobY: 0.05,
+    walkBobZ: 0.03,
+    walkFrequency: 9.2,
+    swingDuration: 0.22,
+    swingPitch: -1.0,
+    swingYaw: 0.12,
+    swingForwardZ: 0.06,
+    swingDownY: 0.03,
+    maxWalkSpeed: 0.22
+};
 
 let firstPersonArmRoot = null;
+let firstPersonArmSwingUntil = 0;
+let walkCycleTime = 0;
+let lastPerspectiveUpdateTime = performance.now();
 
 export const CAMERA_PERSPECTIVES = {
     FIRST_PERSON: 'first_person',
@@ -103,7 +125,7 @@ function createFirstPersonArm() {
         (gltf) => {
             firstPersonArmRoot = gltf.scene;
             firstPersonArmRoot.visible = false;
-            firstPersonArmRoot.scale.setScalar(0.35);
+            firstPersonArmRoot.scale.setScalar(baseArmScale);
             firstPersonArmRoot.rotation.set(0, Math.PI, 0);
 
             firstPersonArmRoot.traverse((child) => {
@@ -183,6 +205,10 @@ export function toggleCameraPerspective() {
 }
 
 export function updateCameraPerspective(playerPosition, pitch, yaw) {
+    const now = performance.now();
+    const dt = Math.min(0.05, Math.max(0, (now - lastPerspectiveUpdateTime) / 1000));
+    lastPerspectiveUpdateTime = now;
+
     const feetY = playerPosition.y - PLAYER_HEIGHT;
     avatarRoot.position.set(playerPosition.x, feetY, playerPosition.z);
     avatarRoot.rotation.set(0, yaw, 0);
@@ -194,9 +220,31 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
 
         if (firstPersonArmRoot) {
             firstPersonArmRoot.visible = true;
-            const worldOffset = firstPersonArmOffset.clone().applyEuler(camera.rotation);
+            const horizontalSpeed = Math.hypot(inputState.velocity.x, inputState.velocity.z);
+            const walkStrength = Math.min(1, horizontalSpeed / ARM_ANIMATION.maxWalkSpeed);
+            walkCycleTime += dt * ARM_ANIMATION.walkFrequency * walkStrength;
+            const walkWave = Math.sin(walkCycleTime * Math.PI * 2);
+
+            const swingProgress = 1 - Math.max(0, (firstPersonArmSwingUntil - now) / (ARM_ANIMATION.swingDuration * 1000));
+            const swingEase = firstPersonArmSwingUntil > now
+                ? Math.sin(Math.min(1, swingProgress) * Math.PI)
+                : 0;
+
+            const animatedOffset = firstPersonArmOffset.clone();
+            animatedOffset.y += walkWave * ARM_ANIMATION.walkBobY * walkStrength;
+            animatedOffset.z += Math.abs(walkWave) * ARM_ANIMATION.walkBobZ * walkStrength;
+            animatedOffset.y -= swingEase * ARM_ANIMATION.swingDownY;
+            animatedOffset.z -= swingEase * ARM_ANIMATION.swingForwardZ;
+
+            const worldOffset = animatedOffset.applyEuler(camera.rotation);
             firstPersonArmRoot.position.copy(playerPosition).add(worldOffset);
-            firstPersonArmRoot.rotation.copy(camera.rotation);
+
+            firstPersonArmRoot.rotation.set(
+                camera.rotation.x + ARM_ANIMATION.idlePitch + (walkWave * ARM_ANIMATION.walkPitch * walkStrength) + (swingEase * ARM_ANIMATION.swingPitch),
+                camera.rotation.y + ARM_ANIMATION.idleYaw + (swingEase * ARM_ANIMATION.swingYaw),
+                camera.rotation.z + ARM_ANIMATION.idleRoll + (walkWave * ARM_ANIMATION.walkRoll * walkStrength),
+                'YXZ'
+            );
         }
         return;
     }
@@ -215,4 +263,8 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
 
     camera.position.copy(cameraTarget).add(cameraOffset);
     camera.lookAt(cameraTarget);
+}
+
+export function triggerFirstPersonArmSwing() {
+    firstPersonArmSwingUntil = performance.now() + (ARM_ANIMATION.swingDuration * 1000);
 }
