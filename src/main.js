@@ -7,7 +7,7 @@ import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, USE_ULTRA_LOW_PROFILE } from './config.js';
+import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, toggleProfilerEnabled, worldState } from './state.js';
@@ -75,6 +75,7 @@ function chooseControlMode() {
 const playerPosition = new THREE.Vector3().copy(camera.position);
 
 let lastFrameTime = performance.now();
+const FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
 const OCCLUSION_CULLING_INTERVAL_FRAMES = 2;
 const CHUNK_BUDGET_GOVERNOR_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 2;
 const CHUNK_APPLY_INTERVAL_FRAMES = USE_ULTRA_LOW_PROFILE ? 4 : 2;
@@ -143,11 +144,13 @@ function updateCoordinatesHud() {
 
 function animate(now = performance.now()) {
     requestAnimationFrame(animate);
+    const elapsedMs = now - lastFrameTime;
+    if (elapsedMs < FRAME_INTERVAL_MS) return;
     let profilerOverheadMs = 0;
     const profilerBeginStart = performance.now();
     profilerBeginFrame(now);
     profilerOverheadMs += performance.now() - profilerBeginStart;
-    const deltaTimeSeconds = Math.min(0.1, (now - lastFrameTime) / 1000);
+    const deltaTimeSeconds = Math.min(0.1, elapsedMs / 1000);
     lastFrameTime = now;
 
     worldState.frame += 1;

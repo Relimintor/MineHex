@@ -27,6 +27,7 @@ const isMobileChunkProfile = !isCeleronChunkProfile && (isMobileOverride || (!is
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
+export const TARGET_FPS = isCeleronChunkProfile ? 30 : 60;
 export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = !useStrictLowEndRendering;
 export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
