@@ -5,6 +5,7 @@ import { inputState } from './state.js';
 import { registerDesktopInputHandlers } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
+import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
 import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
@@ -26,6 +27,25 @@ function chooseControlMode() {
     const savedMode = localStorage.getItem(CONTROL_MODE_KEY);
     return new Promise((resolve) => {
         const buttons = modeScreen.querySelectorAll('[data-mode]');
+        const secretControlToggle = modeScreen.querySelector('#secret-control-toggle');
+        const youtubeControl = modeScreen.querySelector('#youtube-control');
+        const status = modeScreen.querySelector('#mode-status');
+
+        if (secretControlToggle && youtubeControl) {
+            secretControlToggle.addEventListener('dblclick', () => {
+                youtubeControl.classList.add('revealed');
+                youtubeControl.setAttribute('aria-hidden', 'false');
+                if (status) status.textContent = 'Hidden control unlocked: YouTube.';
+            });
+
+            youtubeControl.addEventListener('click', () => {
+                localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
+                localStorage.setItem(CONTROL_MODE_KEY, 'youtube');
+                if (status) status.textContent = 'YouTube mode enabled. Reloading...';
+                window.location.reload();
+            });
+        }
+
         if (savedMode) {
             for (const button of buttons) {
                 button.classList.toggle('active', button.dataset.mode === savedMode);
@@ -36,7 +56,6 @@ function chooseControlMode() {
             button.addEventListener('click', () => {
                 const mode = button.dataset.mode;
                 if (mode === 'console') {
-                    const status = modeScreen.querySelector('#mode-status');
                     if (status) status.textContent = 'Console controls are coming next.';
                     return;
                 }
@@ -209,6 +228,9 @@ chooseControlMode().then((mode) => {
     } else if (mode === 'celeron_cb') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
+    } else if (mode === 'youtube') {
+        registerYoutubeInputHandlers();
+        coordinatesHudFrameInterval = 10;
     } else {
         registerDesktopInputHandlers();
     }

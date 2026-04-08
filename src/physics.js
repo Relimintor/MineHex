@@ -57,6 +57,19 @@ function isChunkLoadedAtWorldPosition(x, y, z) {
     return worldState.loadedChunks.has(packChunkKey(cq, cr));
 }
 
+function hasLoadedChunkInRadiusAtWorldPosition(x, y, z, chunkRadius = 1) {
+    collisionProbePoint.set(x, y, z);
+    const { q, r } = worldToAxial(collisionProbePoint);
+    const centerCq = Math.round(q / CHUNK_SIZE);
+    const centerCr = Math.round(r / CHUNK_SIZE);
+    for (let dq = -chunkRadius; dq <= chunkRadius; dq += 1) {
+        for (let dr = -chunkRadius; dr <= chunkRadius; dr += 1) {
+            if (worldState.loadedChunks.has(packChunkKey(centerCq + dq, centerCr + dr))) return true;
+        }
+    }
+    return false;
+}
+
 function getFallbackGroundDistanceFromTopSolidColumn() {
     const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     const topSolidH = worldState.topSolidHeightByColumn.get(packColumnKey(q, r));
@@ -89,7 +102,7 @@ function resolveGroundCollision() {
     const fallbackDistanceToGround = groundHit ? null : getFallbackGroundDistanceFromTopSolidColumn();
     if (!groundHit && fallbackDistanceToGround === null) {
         inputState.canJump = false;
-        return;
+        return false;
     }
 
     const standingDistance = PLAYER_HEIGHT;
@@ -97,19 +110,20 @@ function resolveGroundCollision() {
     const usingFallbackDistance = !groundHit;
     if (usingFallbackDistance && distanceToGround < standingDistance - MAX_FALLBACK_SNAP_UP) {
         inputState.canJump = false;
-        return;
+        return false;
     }
     const isInsideGround = distanceToGround < standingDistance;
     const shouldStickToGround = distanceToGround <= standingDistance + GROUND_STICK_DISTANCE && inputState.velocity.y <= 0;
 
     if (!isInsideGround && !shouldStickToGround) {
         inputState.canJump = false;
-        return;
+        return false;
     }
 
     camera.position.y += standingDistance - distanceToGround;
     inputState.velocity.y = 0;
     inputState.canJump = true;
+    return true;
 }
 
 export function handlePhysics(deltaTimeSeconds = 1 / 60) {
@@ -178,9 +192,19 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.z = 0;
     }
 
+    const previousY = camera.position.y;
     camera.position.y += inputState.velocity.y * frameScale;
 
-    resolveGroundCollision();
+    const isSupportedByGround = resolveGroundCollision();
+    if (
+        !isSupportedByGround
+        && inputState.velocity.y < 0
+        && !hasLoadedChunkInRadiusAtWorldPosition(camera.position.x, previousY, camera.position.z)
+    ) {
+        camera.position.y = previousY;
+        inputState.velocity.y = 0;
+        inputState.canJump = true;
+    }
 
     const worldEndY = (NETHROCK_LEVEL_HEX - VOID_RESPAWN_BUFFER_HEX) * HEX_HEIGHT;
     if (camera.position.y < worldEndY) {
