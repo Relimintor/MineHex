@@ -1,3 +1,5 @@
+import { updateCinematicMaterialResponse } from './materials.js';
+
 const THREE = window.THREE;
 
 function saturate(v) {
@@ -92,6 +94,8 @@ export function applySceneLighting(scene) {
             moon.position.set(moonDir.x * posScale, moonDir.y * posScale, moonDir.z * posScale);
             moon.intensity = THREE.MathUtils.smoothstep(night, 0.4, 1.0) * 0.42;
             moon.color.setRGB(0.69, 0.79, 1.0);
+
+            updateCinematicMaterialResponse({ dayFactor: day, rainStrength: 0 });
         },
     };
 }
