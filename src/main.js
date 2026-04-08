@@ -225,7 +225,7 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
-    } else if (mode === 'celeron_cb') {
+    } else if (mode === 'celeron_cb' || mode === 'youtube') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
     } else if (mode === 'youtube') {
