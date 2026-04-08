@@ -9,7 +9,7 @@ const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const firstPersonArmOffset = new THREE.Vector3(0.43, -0.37, -0.58);
+const firstPersonArmOffset = new THREE.Vector3(0.43, -0.37, -0.62);
 const baseArmScale = 0.39;
 
 const ARM_ANIMATION = {
