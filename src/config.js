@@ -54,7 +54,7 @@ export const BLOCK_TYPES = [
     { name: 'Cloud', color: 0xffffff, roughness: 0.92, metalness: 0.0 },
     { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true, roughness: 0.08, metalness: 0.0, envMapIntensity: 1.2, transmission: 0.18, thickness: 0.25, ior: 1.33 },
     { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true, roughness: 0.92, metalness: 0.0 },
-    { name: 'Oak Wood', color: 0x5b3a24, roughness: 0.82, metalness: 0.0, capTexture: 'assets/hexes/log/oak/oak_log_top_bottom.png', capTextureScale: 1.08,capTextureOffset: { x: 0.005, y: -0.009 } },
+    { name: 'Oak Wood', color: 0x5b3a24, roughness: 0.82, metalness: 0.0, capTexture: 'assets/hexes/log/oak/oak_log_top_bottom.png', capTextureScale: 1.08,capTextureOffset: { x: 0.005, y: 0.009 } },
     { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true, roughness: 0.86, metalness: 0.0, alphaTest: 0.35 },
     { name: 'Snow', color: 0xf5f8ff, roughness: 0.52, metalness: 0.0 },
     { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true, roughness: 0.16, metalness: 0.02, envMapIntensity: 1.15, transmission: 0.32, thickness: 0.32, ior: 1.31 },
