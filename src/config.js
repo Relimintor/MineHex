@@ -61,12 +61,12 @@ export const BLOCK_TYPES = [
     { name: 'Dirt', color: 0x795548, roughness: 0.95, metalness: 0.0 },
     { name: 'Stone', color: 0x9e9e9e, roughness: 0.84, metalness: 0.02 },
     { name: 'Cloud', color: 0xffffff, roughness: 0.92, metalness: 0.0 },
-    { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true, roughness: 0.08, metalness: 0.0, envMapIntensity: 1.2, transmission: 0.18, thickness: 0.25, ior: 1.33 },
+    { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true, roughness: 0.05, metalness: 0.0, envMapIntensity: 1.35, transmission: 0.2, thickness: 0.25, ior: 1.33 },
     { name: 'Nethrock', color: 0x3b1f1f, unbreakable: true, roughness: 0.92, metalness: 0.0 },
     { name: 'Oak Wood', color: 0x5b3a24, roughness: 0.82, metalness: 0.0, capTexture: 'assets/hexes/log/oak/oak_log_top_bottom.png', capTextureScale: 1.165,capTextureOffset: { x: 0.0001, y: 0.013 } },
     { name: 'Oak Leaves', color: 0x2e7d32, opacity: 0.9, transparent: true, roughness: 0.86, metalness: 0.0, alphaTest: 0.35 },
     { name: 'Snow', color: 0xf5f8ff, roughness: 0.52, metalness: 0.0 },
-    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true, roughness: 0.16, metalness: 0.02, envMapIntensity: 1.15, transmission: 0.32, thickness: 0.32, ior: 1.31 },
+    { name: 'Ice', color: 0xb3e5fc, opacity: 0.7, transparent: true, roughness: 0.1, metalness: 0.03, envMapIntensity: 1.35, transmission: 0.34, thickness: 0.32, ior: 1.31 },
     { name: 'Sand', color: 0xdcc38b, roughness: 0.95, metalness: 0.0 },
     { name: 'Sandstone', color: 0xcaa472, roughness: 0.9, metalness: 0.0 }
 ];
