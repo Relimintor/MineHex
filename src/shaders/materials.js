@@ -77,7 +77,7 @@ function applyCinematicSurfaceShader(material, cinematicProfile = {}) {
             )
             .replace(
                 '#include <worldpos_vertex>',
-                '#include <worldpos_vertex>\n\tvWorldPosCinematic = worldPosition.xyz;'
+                '#include <worldpos_vertex>\n\tvWorldPosCinematic = (modelMatrix * vec4(transformed, 1.0)).xyz;'
             );
 
         shader.fragmentShader = shader.fragmentShader
@@ -116,7 +116,8 @@ float cinematicNoise(vec3 p) {
     return mix(nxy0, nxy1, f.z);
 }
 
-void main() {`
+void main() {
+    float triNoiseCinematic = 0.5;`
             )
             .replace(
                 '#include <normal_fragment_maps>',
@@ -127,14 +128,14 @@ void main() {`
     float nX = cinematicNoise(vec3(vWorldPosCinematic.yz * 0.11, uSurfaceSeed));
     float nY = cinematicNoise(vec3(vWorldPosCinematic.xz * 0.11, uSurfaceSeed + 1.7));
     float nZ = cinematicNoise(vec3(vWorldPosCinematic.xy * 0.11, uSurfaceSeed + 3.4));
-    float triNoise = nX * triW.x + nY * triW.y + nZ * triW.z;
+    triNoiseCinematic = nX * triW.x + nY * triW.y + nZ * triW.z;
     vec3 microNudge = normalize(vec3(nY - 0.5, nZ - 0.5, nX - 0.5));
     normal = normalize(mix(normal, normalize(normal + microNudge * uMicroStrength), 0.55));`
             )
             .replace(
                 '#include <roughnessmap_fragment>',
                 `#include <roughnessmap_fragment>
-    float breakup = mix(1.0 - uBreakupStrength, 1.0 + uBreakupStrength, triNoise);
+    float breakup = mix(1.0 - uBreakupStrength, 1.0 + uBreakupStrength, triNoiseCinematic);
     roughnessFactor = clamp(roughnessFactor * breakup, 0.02, 1.0);
     roughnessFactor = mix(roughnessFactor, max(0.03, roughnessFactor * 0.55), uNightWetness);`
             )
