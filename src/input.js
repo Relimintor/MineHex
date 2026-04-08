@@ -5,7 +5,7 @@ import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { inputState, worldState } from './state.js';
-import { toggleCameraPerspective } from './playerView.js';
+import { toggleCameraPerspective, triggerFirstPersonArmSwing } from './playerView.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -148,6 +148,7 @@ export function placeBlockFromCenter() {
 }
 
 export function mineBlockFromCenter() {
+    triggerFirstPersonArmSwing();
     const intersect = getCenterIntersection();
     if (!intersect) return false;
     const blockKey = getIntersectedBlockKey(intersect);
