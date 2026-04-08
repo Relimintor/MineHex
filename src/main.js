@@ -14,6 +14,7 @@ import { worldToAxial, worldToCube } from './coords.js';
 import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, toggleProfilerEnabled, worldState } from './state.js';
 import { updateCameraPerspective } from './playerView.js';
 import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
+import { createPostProcessor } from './postprocessing.js';
 
 camera.position.set(0, 48, 0);
 
@@ -107,6 +108,8 @@ let coordinatesHudFrameInterval = 1;
 let profilerOverlay = null;
 let lastProfilerOverlayUpdate = 0;
 const PROFILER_OVERLAY_UPDATE_MS = 250;
+const postProcessor = createPostProcessor(renderer, scene, camera);
+let isPhotoModeEnabled = false;
 
 function ensureProfilerOverlay() {
     if (profilerOverlay) return profilerOverlay;
@@ -204,7 +207,11 @@ function animate(now = performance.now()) {
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
     skyController?.update(now * 0.001, camera);
     const renderStart = performance.now();
-    renderer.render(scene, camera);
+    if (postProcessor) {
+        postProcessor.render(now * 0.001);
+    } else {
+        renderer.render(scene, camera);
+    }
     const renderDuration = performance.now() - renderStart;
     const renderRecordStart = performance.now();
     profilerRecord('render', renderDuration);
@@ -225,7 +232,7 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
-    } else if (mode === 'celeron_cb' || mode === 'youtube') {
+    } else if (mode === 'celeron_cb') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
     } else if (mode === 'youtube') {
@@ -252,9 +259,16 @@ window.addEventListener('keydown', (event) => {
     updateProfilerOverlay(performance.now());
 });
 
+window.addEventListener('keydown', (event) => {
+    if (event.code !== 'F7') return;
+    isPhotoModeEnabled = !isPhotoModeEnabled;
+    postProcessor?.setPhotoMode(isPhotoModeEnabled);
+});
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    postProcessor?.resize(window.innerWidth, window.innerHeight);
 });
