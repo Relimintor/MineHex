@@ -36,6 +36,14 @@ canvas { display: block; }
     cursor: pointer;
 }
 
+.mode-panel .hidden-control {
+    display: none;
+}
+
+.mode-panel .hidden-control.revealed {
+    display: block;
+}
+
 #mode-status {
     min-height: 20px;
     color: #ffe082;
