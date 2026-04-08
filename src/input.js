@@ -20,6 +20,7 @@ const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
 const INTERACTION_RAY_NEAR = 0.05;
+const localInteractionIntersections = [];
 const DESKTOP_MINE_REPEAT_MS = 75;
 const DESKTOP_PLACE_REPEAT_MS = 75;
 const TOTAL_HOTBAR_SLOTS = 9;
@@ -135,8 +136,9 @@ function getCenterIntersection() {
         rayFar: raycaster.far
     });
     if (localInteractionCandidates.length === 0) return null;
-    const intersects = raycaster.intersectObjects(localInteractionCandidates, false);
-    return intersects[0] ?? null;
+    localInteractionIntersections.length = 0;
+    raycaster.intersectObjects(localInteractionCandidates, false, localInteractionIntersections);
+    return localInteractionIntersections[0] ?? null;
 }
 
 function clearDesktopActionIntervals() {
