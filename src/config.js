@@ -12,9 +12,10 @@ const performanceProfileOverride = runtimeStorage?.getItem('minehexPerformancePr
 const isCeleronOverride = performanceProfileOverride === 'celeron_cb';
 const isMobileOverride = controlModeOverride === 'mobile';
 const isPcOverride = controlModeOverride === 'pc';
+const isYoutubeOverride = controlModeOverride === 'youtube';
 const hasLimitedCpu = (runtimeNavigator?.hardwareConcurrency ?? 8) <= 4;
 const hasLimitedMemory = (runtimeNavigator?.deviceMemory ?? 8) <= 4;
-const useUltraLowChunkProfile = isCeleronOverride || (!controlModeOverride && isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
+const useUltraLowChunkProfile = isCeleronOverride || isYoutubeOverride || (!controlModeOverride && isChromebook && (isCeleronUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useLowEndChunkProfile = useUltraLowChunkProfile || isMobileOverride || (!isPcOverride && !controlModeOverride && (isMobileUserAgent || hasLimitedCpu || hasLimitedMemory));
 const useStrictLowEndRendering = useLowEndChunkProfile || isCeleronOverride;
 
@@ -27,6 +28,7 @@ const isMobileChunkProfile = !isCeleronChunkProfile && (isMobileOverride || (!is
 export const USE_ULTRA_LOW_PROFILE = useUltraLowChunkProfile;
 export const USE_LOW_END_PROFILE = useLowEndChunkProfile;
 export const USE_STRICT_LOW_END_RENDERING = useStrictLowEndRendering;
+export const USE_YOUTUBE_RECORDING_MODE = isYoutubeOverride;
 export const TARGET_FPS = isCeleronChunkProfile ? 30 : 60;
 export const ENABLE_ANTIALIAS = !useStrictLowEndRendering;
 export const ENABLE_SHADOW_MAP = !useStrictLowEndRendering;
@@ -36,7 +38,7 @@ export const MAX_DEVICE_PIXEL_RATIO = useStrictLowEndRendering ? 1 : 2;
 // - celeron + mobile share the same budgets/features for stable low-end behavior.
 // - mobile gets slightly bigger chunks and +1 render distance compared to celeron.
 export const CHUNK_SIZE = isCeleronChunkProfile ? 4 : (isMobileChunkProfile ? 6 : (useLowEndChunkProfile ? 8 : 16));
-export const RENDER_DIST = isCeleronChunkProfile ? 1 : (isMobileChunkProfile ? 2 : (useLowEndChunkProfile ? 2 : 4));
+export const RENDER_DIST = isYoutubeOverride ? 4 : (isCeleronChunkProfile ? 1 : (isMobileChunkProfile ? 2 : (useLowEndChunkProfile ? 2 : 4)));
 export const CHUNK_CREATION_BUDGET = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
 export const CHUNK_APPLY_BUDGET = (isCeleronChunkProfile || isMobileChunkProfile) ? 1 : 2;
 export const ENABLE_OCCLUSION_CULLING = !(useLowEndChunkProfile || isMobileChunkProfile);

@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 
-import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, WORLDGEN_WORKER_COUNT } from './config.js';
+import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, USE_YOUTUBE_RECORDING_MODE, WORLDGEN_WORKER_COUNT } from './config.js';
 import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
 import { normalizeChunkKey, packBlockKey, packChunkKey, unpackBlockKey, unpackChunkKey } from './keys.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
@@ -35,6 +35,7 @@ const BLOCK_INDEX = {
     sand: 10,
     sandstone: 11
 };
+const YOUTUBE_SURFACE_LAYER_DEPTH = 3;
 
 const CHUNK_NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
 
@@ -815,6 +816,11 @@ function addGeneratedFluidColumn(chunkBlockKeys, q, r, fromHeight, downToExclusi
     }
 }
 
+function getColumnStartHeight(height) {
+    if (!USE_YOUTUBE_RECORDING_MODE) return NETHROCK_LEVEL_HEX + 1;
+    return Math.max(NETHROCK_LEVEL_HEX + 1, height - (YOUTUBE_SURFACE_LAYER_DEPTH - 1));
+}
+
 function getChunkCoordsFromKey(chunkKey) {
     const normalizedChunkKey = normalizeChunkKey(chunkKey);
     const chunkMeta = worldState.chunkMeta.get(normalizedChunkKey);
@@ -984,7 +990,7 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             ? ((flags[index] & 2) !== 0 ? 'forest' : (((flags[index] & 4) !== 0) ? 'snow' : null))
             : column.addTree;
 
-        for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
+        for (let h = getColumnStartHeight(height); h <= height; h++) {
             const blockKey = packBlockKey(q, r, h);
             let blockType = BLOCK_INDEX.stone;
             if (h === height) {
@@ -1002,9 +1008,11 @@ function applyGeneratedChunkColumns(cq, cr, columns) {
             if (worldState.blockIndexByKey.has(blockKey)) chunkBlockKeys.add(blockKey);
         }
 
-        const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
-        if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
-        if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+        if (!USE_YOUTUBE_RECORDING_MODE) {
+            const nethrockKey = packBlockKey(q, r, NETHROCK_LEVEL_HEX);
+            if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(q, r, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
+            if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+        }
 
         if (addSurfaceFluid) {
             addGeneratedFluidColumn(chunkBlockKeys, q, r, SEA_LEVEL, height, surfaceFluidType);
@@ -1065,7 +1073,7 @@ export function generateChunk(cq, cr) {
                     : (height < SEA_LEVEL ? BLOCK_INDEX.sand : (isSnowBiome ? BLOCK_INDEX.snow : BLOCK_INDEX.grass));
 
                 // Fill terrain columns with stone core + dirt/surface cap to avoid floating arches.
-                for (let h = NETHROCK_LEVEL_HEX + 1; h <= height; h++) {
+                for (let h = getColumnStartHeight(height); h <= height; h++) {
                     const blockKey = packBlockKey(absQ, absR, h);
                     let blockType = BLOCK_INDEX.stone;
                     if (h === height) {
@@ -1083,9 +1091,11 @@ export function generateChunk(cq, cr) {
                     if (worldState.blockIndexByKey.has(blockKey)) chunkBlockKeys.add(blockKey);
                 }
 
-                const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
-                if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
-                if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+                if (!USE_YOUTUBE_RECORDING_MODE) {
+                    const nethrockKey = packBlockKey(absQ, absR, NETHROCK_LEVEL_HEX);
+                    if (!worldState.permanentBlocks.has(nethrockKey) && !worldState.removedBlocks.has(nethrockKey)) addBlock(absQ, absR, NETHROCK_LEVEL_HEX, BLOCK_INDEX.nethrock, false, false, false);
+                    if (worldState.blockIndexByKey.has(nethrockKey)) chunkBlockKeys.add(nethrockKey);
+                }
 
                 if (biome === 'ocean') {
                     const surfaceFluidType = climate.temp < -0.6 ? BLOCK_INDEX.ice : BLOCK_INDEX.water;

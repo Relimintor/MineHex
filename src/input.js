@@ -21,6 +21,7 @@ const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
 const INTERACTION_RAY_NEAR = 0.05;
 const DESKTOP_MINE_REPEAT_MS = 75;
+const DESKTOP_PLACE_REPEAT_MS = 75;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
@@ -48,6 +49,7 @@ let inventoryUiInitialized = false;
 let heldInventoryItemType = null;
 let heldItemNameTimeoutId = null;
 let desktopMiningIntervalId = null;
+let desktopPlacingIntervalId = null;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -137,6 +139,17 @@ function getCenterIntersection() {
     return intersects[0] ?? null;
 }
 
+function clearDesktopActionIntervals() {
+    if (desktopMiningIntervalId) {
+        clearInterval(desktopMiningIntervalId);
+        desktopMiningIntervalId = null;
+    }
+    if (desktopPlacingIntervalId) {
+        clearInterval(desktopPlacingIntervalId);
+        desktopPlacingIntervalId = null;
+    }
+}
+
 export function placeBlockFromCenter() {
     if (!Number.isInteger(worldState.selectedBlockIndex) || worldState.selectedBlockIndex < 0) return false;
     const intersect = getCenterIntersection();
@@ -216,7 +229,26 @@ export function registerDesktopInputHandlers() {
             return;
         }
 
-        if (event.button === 2) placeBlockFromCenter();
+        if (event.button === 2) {
+            placeBlockFromCenter();
+            if (desktopPlacingIntervalId) clearInterval(desktopPlacingIntervalId);
+            desktopPlacingIntervalId = window.setInterval(() => placeBlockFromCenter(), DESKTOP_PLACE_REPEAT_MS);
+        }
+    });
+
+    window.addEventListener('mouseup', (event) => {
+        if (event.button === 0 && desktopMiningIntervalId) {
+            clearInterval(desktopMiningIntervalId);
+            desktopMiningIntervalId = null;
+        }
+        if (event.button === 2 && desktopPlacingIntervalId) {
+            clearInterval(desktopPlacingIntervalId);
+            desktopPlacingIntervalId = null;
+        }
+    });
+
+    window.addEventListener('blur', () => {
+        clearDesktopActionIntervals();
     });
 
     window.addEventListener('mouseup', (event) => {

@@ -38,7 +38,10 @@ function chooseControlMode() {
             });
 
             youtubeControl.addEventListener('click', () => {
-                if (status) status.textContent = 'YouTube control selected.';
+                localStorage.setItem(PERFORMANCE_PROFILE_KEY, 'celeron_cb');
+                localStorage.setItem(CONTROL_MODE_KEY, 'youtube');
+                if (status) status.textContent = 'YouTube mode enabled. Reloading...';
+                window.location.reload();
             });
         }
 
@@ -221,7 +224,7 @@ function animate(now = performance.now()) {
 chooseControlMode().then((mode) => {
     if (mode === 'mobile') {
         registerMobileInputHandlers();
-    } else if (mode === 'celeron_cb') {
+    } else if (mode === 'celeron_cb' || mode === 'youtube') {
         registerCeleronInputHandlers();
         coordinatesHudFrameInterval = 8;
     } else {
