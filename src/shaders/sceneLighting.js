@@ -1,5 +1,14 @@
 const THREE = window.THREE;
 
+function saturate(v) {
+    return THREE.MathUtils.clamp(v, 0, 1);
+}
+
+function smoothWindow(value, start, end) {
+    if (end <= start) return 0;
+    return saturate((value - start) / (end - start));
+}
+
 export function applySceneLighting(scene) {
     const ambient = new THREE.AmbientLight(0xdde7ff, 0.18);
     scene.add(ambient);
@@ -22,20 +31,67 @@ export function applySceneLighting(scene) {
     sun.shadow.camera.bottom = -180;
     scene.add(sun);
 
+    // Adds cold moon key light so water/ice specular can read at night.
+    const moon = new THREE.DirectionalLight(0xaecdff, 0.0);
+    moon.position.set(-40, 90, -40);
+    scene.add(moon);
+
     return {
         ambient,
         hemi,
         sun,
+        moon,
         syncSun(skyValues) {
             if (!skyValues) return;
             const { sunDir, sunEnergy, dayFactor } = skyValues;
-            const posScale = 180;
-            sun.position.set(sunDir.x * posScale, Math.max(10, sunDir.y * posScale), sunDir.z * posScale);
-            sun.intensity = 0.08 + sunEnergy * 1.55;
-            ambient.intensity = 0.05 + dayFactor * 0.2;
-            hemi.intensity = 0.04 + dayFactor * 0.14;
-            sun.color.setRGB(1.0, 0.88 + dayFactor * 0.1, 0.72 + dayFactor * 0.2);
-            hemi.color.setRGB(0.62 + dayFactor * 0.32, 0.70 + dayFactor * 0.22, 0.84 + dayFactor * 0.12);
+            const day = saturate(dayFactor);
+            const night = 1 - day;
+            const horizon = 1 - saturate(Math.abs(sunDir.y) / 0.42);
+
+            // Separate warm windows for dawn and dusk to push contrast in transition moments.
+            const dawnWindow = smoothWindow(sunDir.y, -0.22, 0.10) * smoothWindow(-sunDir.y, -0.08, 0.22);
+            const duskWindow = smoothWindow(-sunDir.y, -0.22, 0.10) * smoothWindow(sunDir.y, -0.08, 0.22);
+            const transitionWindow = Math.max(dawnWindow, duskWindow) * (0.45 + 0.55 * horizon);
+            const goldenHour = transitionWindow * (0.6 + 0.4 * saturate(sunEnergy + 0.15));
+
+            const posScale = 190;
+            sun.position.set(sunDir.x * posScale, Math.max(8, sunDir.y * posScale), sunDir.z * posScale);
+
+            // Stronger direct key at low sun angle for cinematic rim-light silhouettes.
+            sun.intensity = (0.05 + sunEnergy * 1.45) + (goldenHour * 0.9);
+
+            // Cooler nighttime ambient and stronger dawn/dusk contrast against direct light.
+            const ambientNight = 0.05;
+            const ambientDay = 0.22;
+            ambient.intensity = THREE.MathUtils.lerp(ambientNight, ambientDay, day) - (transitionWindow * 0.025);
+            hemi.intensity = THREE.MathUtils.lerp(0.085, 0.21, day) - (transitionWindow * 0.03);
+
+            // Warm sun tint during golden hour.
+            const warmBoost = goldenHour * (0.55 + 0.45 * horizon);
+            sun.color.setRGB(
+                1.0,
+                0.8 + day * 0.17 + warmBoost * 0.1,
+                0.62 + day * 0.26 + warmBoost * 0.22
+            );
+
+            // Push cool ambience at night.
+            const nightBlue = THREE.MathUtils.smoothstep(night, 0.35, 1.0);
+            hemi.color.setRGB(
+                0.5 + day * 0.38,
+                0.58 + day * 0.29 + nightBlue * 0.02,
+                0.72 + day * 0.16 + nightBlue * 0.16
+            );
+            hemi.groundColor.setRGB(
+                0.08 + day * 0.2,
+                0.1 + day * 0.16,
+                0.14 + day * 0.14 + nightBlue * 0.08
+            );
+
+            // Moon key light (opposite side of sun) to enhance water/ice night highlights.
+            const moonDir = new THREE.Vector3(-sunDir.x, Math.max(0.06, -sunDir.y * 0.9 + 0.12), -sunDir.z).normalize();
+            moon.position.set(moonDir.x * posScale, moonDir.y * posScale, moonDir.z * posScale);
+            moon.intensity = THREE.MathUtils.smoothstep(night, 0.4, 1.0) * 0.42;
+            moon.color.setRGB(0.69, 0.79, 1.0);
         },
     };
 }
