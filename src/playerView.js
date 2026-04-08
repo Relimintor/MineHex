@@ -8,6 +8,10 @@ const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const firstPersonArmOffset = new THREE.Vector3(-0.08, -0.42, -0.58);
+const firstPersonArmRotationOffset = new THREE.Euler(-0.5, Math.PI + 0.22, -0.2, 'YXZ');
+
+let firstPersonArmRoot = null;
 
 export const CAMERA_PERSPECTIVES = {
     FIRST_PERSON: 'first_person',
@@ -90,6 +94,33 @@ function createChestMaterials() {
     ];
 }
 
+
+function createFirstPersonArm() {
+    if (!THREE.GLTFLoader) return;
+
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+        'assets/skin/fp/model.glb',
+        (gltf) => {
+            firstPersonArmRoot = gltf.scene;
+            firstPersonArmRoot.visible = false;
+            firstPersonArmRoot.scale.setScalar(0.5);
+
+            firstPersonArmRoot.traverse((child) => {
+                if (!child.isMesh) return;
+                child.castShadow = false;
+                child.receiveShadow = false;
+            });
+
+            scene.add(firstPersonArmRoot);
+        },
+        undefined,
+        (error) => {
+            console.warn('Failed to load first-person arm model.', error);
+        }
+    );
+}
+
 function createAvatarMesh() {
     // Minecraft body proportions in "pixels":
     // head 8x8x8, torso 8x12x4, arm 4x12x4, leg 4x12x4, total height 32.
@@ -135,6 +166,7 @@ function createAvatarMesh() {
 }
 
 createAvatarMesh();
+createFirstPersonArm();
 
 export function toggleCameraPerspective() {
     if (currentPerspective === CAMERA_PERSPECTIVES.FIRST_PERSON) {
@@ -159,9 +191,22 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
         avatarRoot.visible = false;
         camera.position.copy(playerPosition);
         camera.rotation.set(pitch, yaw, 0, 'YXZ');
+
+        if (firstPersonArmRoot) {
+            firstPersonArmRoot.visible = true;
+            const worldOffset = firstPersonArmOffset.clone().applyEuler(camera.rotation);
+            firstPersonArmRoot.position.copy(playerPosition).add(worldOffset);
+            firstPersonArmRoot.rotation.set(
+                camera.rotation.x + firstPersonArmRotationOffset.x,
+                camera.rotation.y + firstPersonArmRotationOffset.y,
+                camera.rotation.z + firstPersonArmRotationOffset.z,
+                'YXZ'
+            );
+        }
         return;
     }
 
+    if (firstPersonArmRoot) firstPersonArmRoot.visible = false;
     avatarRoot.visible = true;
     cameraTarget.copy(playerPosition);
 
