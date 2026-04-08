@@ -112,27 +112,34 @@ export function createPostProcessor(renderer, scene, camera) {
         ssaoPass.kernelRadius = 9;
         ssaoPass.minDistance = 0.003;
         ssaoPass.maxDistance = 0.08;
+        ssaoPass.enabled = true;
         composer.addPass(ssaoPass);
     }
 
+    let bloomPass = null;
     if (ENABLE_POST_BLOOM && THREE.UnrealBloomPass) {
-        const bloomPass = new THREE.UnrealBloomPass(
+        bloomPass = new THREE.UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
             BLOOM_STRENGTH,
             BLOOM_RADIUS,
             BLOOM_THRESHOLD
         );
+        bloomPass.enabled = true;
         composer.addPass(bloomPass);
     }
 
+    let colorGradingPass = null;
     if (ENABLE_POST_COLOR_GRADING) {
-        composer.addPass(new THREE.ShaderPass(COLOR_GRADING_SHADER));
+        colorGradingPass = new THREE.ShaderPass(COLOR_GRADING_SHADER);
+        colorGradingPass.enabled = true;
+        composer.addPass(colorGradingPass);
     }
 
     let vignetteGrainPass = null;
     if (ENABLE_POST_VIGNETTE_GRAIN) {
         vignetteGrainPass = new THREE.ShaderPass(VIGNETTE_GRAIN_SHADER);
         vignetteGrainPass.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+        vignetteGrainPass.enabled = true;
         composer.addPass(vignetteGrainPass);
     }
 
@@ -149,12 +156,35 @@ export function createPostProcessor(renderer, scene, camera) {
         composer.addPass(dofPass);
     }
 
+    const options = {
+        enabled: true,
+        bloom: Boolean(bloomPass),
+        ssao: Boolean(ssaoPass),
+        colorGrading: Boolean(colorGradingPass),
+        vignetteGrain: Boolean(vignetteGrainPass),
+        dof: false
+    };
+
+    function applyOptions() {
+        if (bloomPass) bloomPass.enabled = options.enabled && options.bloom;
+        if (ssaoPass) ssaoPass.enabled = options.enabled && options.ssao;
+        if (colorGradingPass) colorGradingPass.enabled = options.enabled && options.colorGrading;
+        if (vignetteGrainPass) vignetteGrainPass.enabled = options.enabled && options.vignetteGrain;
+        if (dofPass) dofPass.enabled = options.enabled && options.dof;
+    }
+
+    applyOptions();
+
     return {
         render(nowSeconds = 0) {
             if (vignetteGrainPass) {
                 vignetteGrainPass.uniforms.time.value = nowSeconds;
             }
-            composer.render();
+            if (options.enabled) {
+                composer.render();
+                return;
+            }
+            renderer.render(scene, camera);
         },
         resize(width, height) {
             composer.setSize(width, height);
@@ -167,7 +197,20 @@ export function createPostProcessor(renderer, scene, camera) {
             }
         },
         setPhotoMode(enabled) {
-            if (dofPass) dofPass.enabled = Boolean(enabled);
+            options.dof = Boolean(enabled);
+            applyOptions();
+        },
+        getOptions() {
+            return { ...options };
+        },
+        setOptions(nextOptions = {}) {
+            if (typeof nextOptions.enabled === 'boolean') options.enabled = nextOptions.enabled;
+            if (typeof nextOptions.bloom === 'boolean') options.bloom = nextOptions.bloom;
+            if (typeof nextOptions.ssao === 'boolean') options.ssao = nextOptions.ssao;
+            if (typeof nextOptions.colorGrading === 'boolean') options.colorGrading = nextOptions.colorGrading;
+            if (typeof nextOptions.vignetteGrain === 'boolean') options.vignetteGrain = nextOptions.vignetteGrain;
+            if (typeof nextOptions.dof === 'boolean') options.dof = nextOptions.dof;
+            applyOptions();
         }
     };
 }

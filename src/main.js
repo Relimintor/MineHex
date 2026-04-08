@@ -109,7 +109,58 @@ let profilerOverlay = null;
 let lastProfilerOverlayUpdate = 0;
 const PROFILER_OVERLAY_UPDATE_MS = 250;
 const postProcessor = createPostProcessor(renderer, scene, camera);
-let isPhotoModeEnabled = false;
+const POST_FX_PANEL_KEY = 'minehexPostFxPanelOpen';
+let postFxPanel = null;
+
+function ensurePostFxPanel() {
+    if (postFxPanel) return postFxPanel;
+    postFxPanel = document.createElement('div');
+    postFxPanel.id = 'postfx-panel';
+    postFxPanel.classList.add('hidden');
+    postFxPanel.innerHTML = `
+        <div class="postfx-panel-title">Post FX (Shift+7)</div>
+        <label><input type="checkbox" data-postfx-option="enabled"> Enable post-processing</label>
+        <label><input type="checkbox" data-postfx-option="bloom"> Bloom</label>
+        <label><input type="checkbox" data-postfx-option="ssao"> SSAO</label>
+        <label><input type="checkbox" data-postfx-option="colorGrading"> Color grading</label>
+        <label><input type="checkbox" data-postfx-option="vignetteGrain"> Vignette + grain</label>
+        <label><input type="checkbox" data-postfx-option="dof"> DOF (Shift+8)</label>
+    `;
+    document.body.appendChild(postFxPanel);
+
+    if (!postProcessor) {
+        postFxPanel.insertAdjacentHTML('beforeend', '<div class="postfx-panel-note">Post FX unavailable on this profile/device.</div>');
+        return postFxPanel;
+    }
+
+    postFxPanel.querySelectorAll('input[data-postfx-option]').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            const optionKey = checkbox.getAttribute('data-postfx-option');
+            if (!optionKey) return;
+            postProcessor.setOptions({ [optionKey]: checkbox.checked });
+        });
+    });
+
+    return postFxPanel;
+}
+
+function syncPostFxPanel() {
+    if (!postProcessor || !postFxPanel) return;
+    const options = postProcessor.getOptions();
+    postFxPanel.querySelectorAll('input[data-postfx-option]').forEach((checkbox) => {
+        const optionKey = checkbox.getAttribute('data-postfx-option');
+        if (!optionKey) return;
+        checkbox.checked = Boolean(options[optionKey]);
+    });
+}
+
+function togglePostFxPanel() {
+    const panel = ensurePostFxPanel();
+    const shouldShow = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !shouldShow);
+    if (shouldShow) syncPostFxPanel();
+    localStorage.setItem(POST_FX_PANEL_KEY, shouldShow ? '1' : '0');
+}
 
 function ensureProfilerOverlay() {
     if (profilerOverlay) return profilerOverlay;
@@ -250,6 +301,11 @@ chooseControlMode().then((mode) => {
     playerPosition.copy(camera.position);
     initInventoryAvatarPreview();
     ensureProfilerOverlay();
+    if (localStorage.getItem(POST_FX_PANEL_KEY) === '1') {
+        ensurePostFxPanel();
+        postFxPanel.classList.remove('hidden');
+        syncPostFxPanel();
+    }
     animate();
 });
 
@@ -260,9 +316,17 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('keydown', (event) => {
-    if (event.code !== 'F7') return;
-    isPhotoModeEnabled = !isPhotoModeEnabled;
-    postProcessor?.setPhotoMode(isPhotoModeEnabled);
+    if (event.code === 'Digit7' && event.shiftKey) {
+        event.preventDefault();
+        togglePostFxPanel();
+        return;
+    }
+    if (event.code !== 'Digit8' || !event.shiftKey) return;
+    event.preventDefault();
+    if (!postProcessor) return;
+    const options = postProcessor.getOptions();
+    postProcessor.setPhotoMode(!options.dof);
+    syncPostFxPanel();
 });
 
 window.addEventListener('resize', () => {
