@@ -110,9 +110,31 @@ let lastProfilerOverlayUpdate = 0;
 const PROFILER_OVERLAY_UPDATE_MS = 250;
 const postProcessor = createPostProcessor(renderer, scene, camera);
 const POST_FX_PANEL_KEY = 'minehexPostFxPanelOpen';
+const POST_FX_OPTIONS_KEY = 'minehexPostFxOptions';
 let postFxPanel = null;
+let currentControlMode = 'pc';
+
+function loadSavedPostFxOptions() {
+    if (!postProcessor) return;
+    const raw = localStorage.getItem(POST_FX_OPTIONS_KEY);
+    if (!raw) return;
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            postProcessor.setOptions(parsed);
+        }
+    } catch {
+        localStorage.removeItem(POST_FX_OPTIONS_KEY);
+    }
+}
+
+function persistPostFxOptions() {
+    if (!postProcessor) return;
+    localStorage.setItem(POST_FX_OPTIONS_KEY, JSON.stringify(postProcessor.getOptions()));
+}
 
 function ensurePostFxPanel() {
+    if (currentControlMode === 'mobile') return null;
     if (postFxPanel) return postFxPanel;
     postFxPanel = document.createElement('div');
     postFxPanel.id = 'postfx-panel';
@@ -134,10 +156,11 @@ function ensurePostFxPanel() {
     }
 
     postFxPanel.querySelectorAll('input[data-postfx-option]').forEach((checkbox) => {
-        checkbox.addEventListener('change', () => {
+        checkbox.addEventListener('input', () => {
             const optionKey = checkbox.getAttribute('data-postfx-option');
             if (!optionKey) return;
             postProcessor.setOptions({ [optionKey]: checkbox.checked });
+            persistPostFxOptions();
         });
     });
 
@@ -156,6 +179,7 @@ function syncPostFxPanel() {
 
 function togglePostFxPanel() {
     const panel = ensurePostFxPanel();
+    if (!panel) return;
     const shouldShow = panel.classList.contains('hidden');
     panel.classList.toggle('hidden', !shouldShow);
     if (shouldShow) syncPostFxPanel();
@@ -281,6 +305,7 @@ function animate(now = performance.now()) {
 
 
 chooseControlMode().then((mode) => {
+    currentControlMode = mode;
     if (mode === 'mobile') {
         registerMobileInputHandlers();
     } else if (mode === 'celeron_cb') {
@@ -301,9 +326,10 @@ chooseControlMode().then((mode) => {
     playerPosition.copy(camera.position);
     initInventoryAvatarPreview();
     ensureProfilerOverlay();
-    if (localStorage.getItem(POST_FX_PANEL_KEY) === '1') {
+    loadSavedPostFxOptions();
+    if (mode !== 'mobile' && localStorage.getItem(POST_FX_PANEL_KEY) === '1') {
         ensurePostFxPanel();
-        postFxPanel.classList.remove('hidden');
+        postFxPanel?.classList.remove('hidden');
         syncPostFxPanel();
     }
     animate();
@@ -316,6 +342,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('keydown', (event) => {
+    if (currentControlMode === 'mobile') return;
     if (event.code === 'Digit7' && event.shiftKey) {
         event.preventDefault();
         togglePostFxPanel();
@@ -326,6 +353,7 @@ window.addEventListener('keydown', (event) => {
     if (!postProcessor) return;
     const options = postProcessor.getOptions();
     postProcessor.setPhotoMode(!options.dof);
+    persistPostFxOptions();
     syncPostFxPanel();
 });
 
