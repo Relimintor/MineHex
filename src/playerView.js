@@ -9,18 +9,18 @@ const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const firstPersonArmOffset = new THREE.Vector3(0.35, -0.35, -0.6);
-const baseArmScale = 0.35;
+const firstPersonArmOffset = new THREE.Vector3(0.43, -0.37, -0.58);
+const baseArmScale = 0.39;
 
 const ARM_ANIMATION = {
     idlePitch: -0.38,
     idleYaw: -0.16,
     idleRoll: 0.16,
-    walkPitch: 0.08,
-    walkRoll: 0.06,
-    walkBobY: 0.05,
-    walkBobZ: 0.03,
-    walkFrequency: 9.2,
+    walkPitch: 0.03,
+    walkRoll: 0.02,
+    walkBobY: 0.018,
+    walkBobZ: 0.012,
+    walkFrequency: 7.8,
     swingDuration: 0.22,
     swingPitch: -1.0,
     swingYaw: 0.12,
