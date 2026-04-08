@@ -8,7 +8,8 @@ const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-const firstPersonArmOffset = new THREE.Vector3(0.35, -0.35, -0.6);
+const firstPersonArmOffset = new THREE.Vector3(-0.08, -0.42, -0.58);
+const firstPersonArmRotationOffset = new THREE.Euler(-0.5, Math.PI + 0.22, -0.2, 'YXZ');
 
 let firstPersonArmRoot = null;
 
@@ -103,8 +104,7 @@ function createFirstPersonArm() {
         (gltf) => {
             firstPersonArmRoot = gltf.scene;
             firstPersonArmRoot.visible = false;
-            firstPersonArmRoot.scale.setScalar(0.35);
-            firstPersonArmRoot.rotation.set(0, Math.PI, 0);
+            firstPersonArmRoot.scale.setScalar(0.5);
 
             firstPersonArmRoot.traverse((child) => {
                 if (!child.isMesh) return;
@@ -196,7 +196,12 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
             firstPersonArmRoot.visible = true;
             const worldOffset = firstPersonArmOffset.clone().applyEuler(camera.rotation);
             firstPersonArmRoot.position.copy(playerPosition).add(worldOffset);
-            firstPersonArmRoot.rotation.copy(camera.rotation);
+            firstPersonArmRoot.rotation.set(
+                camera.rotation.x + firstPersonArmRotationOffset.x,
+                camera.rotation.y + firstPersonArmRotationOffset.y,
+                camera.rotation.z + firstPersonArmRotationOffset.z,
+                'YXZ'
+            );
         }
         return;
     }
