@@ -1,4 +1,5 @@
 const THREE = window.THREE;
+import { updateAtmosphericMaterialResponse } from '../shaders/materials.js';
 
 export const SKY_COLOR = 0x87ceeb;
 const DAY_LENGTH_SECONDS = 480.0;
@@ -252,6 +253,14 @@ function deriveLightingInputs(sunDir) {
     return { sunDir, dayFactor, sunEnergy };
 }
 
+function deriveAtmosphereInputs(timeSeconds, skyValues) {
+    const dayFactor = THREE.MathUtils.clamp(skyValues?.dayFactor ?? 1, 0, 1);
+    const cloudPulse = 0.5 + 0.5 * Math.sin(timeSeconds * 0.021 + 1.3);
+    const cloudDrift = 0.5 + 0.5 * Math.sin(timeSeconds * 0.008 - 0.6);
+    const weatherFactor = THREE.MathUtils.clamp((cloudPulse * 0.62) + (cloudDrift * 0.38), 0, 1);
+    return { dayFactor, weatherFactor };
+}
+
 
 function resolveFogColor(timeSeconds) {
     if (!wasmSkyModule || typeof wasmSkyModule.sky_color_hex_for_direction !== 'function') {
@@ -310,6 +319,15 @@ export function applySkyAtmosphere(scene, lightingBridge) {
                 scene.background.setHex(fogHex);
                 scene.fog.color.setHex(fogHex);
             }
+
+            const atmospheric = deriveAtmosphereInputs(timeSeconds, skyValues);
+            updateAtmosphericMaterialResponse({
+                fogColor: scene.fog?.color ?? null,
+                sunDir: skyValues.sunDir,
+                dayFactor: atmospheric.dayFactor,
+                weatherFactor: atmospheric.weatherFactor,
+                timeSeconds
+            });
         },
     };
 }

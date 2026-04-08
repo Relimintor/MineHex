@@ -7,6 +7,7 @@ const DEFAULT_MEGA_HEX_METALNESS = 0.05;
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 const dynamicWetMaterials = new Set();
+const dynamicAtmosphereMaterials = new Set();
 
 function getTexture(texturePath) {
     if (!texturePath) return null;
@@ -63,6 +64,11 @@ function applyCinematicSurfaceShader(material, cinematicProfile = {}) {
         shader.uniforms.uMicroStrength = { value: cinematicProfile.microStrength ?? 0.04 };
         shader.uniforms.uBreakupStrength = { value: cinematicProfile.breakupStrength ?? 0.05 };
         shader.uniforms.uFresnelBoost = { value: cinematicProfile.fresnelBoost ?? 0.0 };
+        shader.uniforms.uFogColorCinematic = { value: new THREE.Color(0x87ceeb) };
+        shader.uniforms.uSunDirCinematic = { value: new THREE.Vector3(0, 1, 0) };
+        shader.uniforms.uDayFactorCinematic = { value: 1 };
+        shader.uniforms.uWeatherCinematic = { value: 0.2 };
+        shader.uniforms.uAtmosTimeCinematic = { value: 0 };
 
         material.userData.cinematicUniforms = shader.uniforms;
 
@@ -90,6 +96,11 @@ uniform float uSurfaceSeed;
 uniform float uMicroStrength;
 uniform float uBreakupStrength;
 uniform float uFresnelBoost;
+uniform vec3 uFogColorCinematic;
+uniform vec3 uSunDirCinematic;
+uniform float uDayFactorCinematic;
+uniform float uWeatherCinematic;
+uniform float uAtmosTimeCinematic;
 
 float cinematicHash(vec3 p) {
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
@@ -145,6 +156,28 @@ void main() {
     float fresnelTerm = pow(1.0 - clamp(dot(normalize(vViewPosition), normalize(normal)), 0.0, 1.0), 3.0);
     float fresnelWetBoost = fresnelTerm * (uNightWetness * 0.2 + uFresnelBoost * 0.35);
     totalEmissiveRadiance += vec3(0.38, 0.52, 0.72) * fresnelWetBoost;`
+            )
+            .replace(
+                '#include <fog_fragment>',
+                `#include <fog_fragment>
+    float viewDistCinematic = length(vViewPosition);
+    float valleyMask = smoothstep(26.0, -8.0, vWorldPosCinematic.y);
+    float fogPocketNoise = cinematicNoise(vec3(vWorldPosCinematic.xz * 0.035, uAtmosTimeCinematic * 0.03));
+    float fogPocket = smoothstep(0.48, 0.78, fogPocketNoise) * valleyMask;
+    float weatherHaze = mix(0.12, 0.42, clamp(uWeatherCinematic, 0.0, 1.0));
+    float distHaze = 1.0 - exp(-viewDistCinematic * mix(0.0025, 0.0065, weatherHaze));
+    vec3 dayHazeColor = mix(vec3(0.94, 0.78, 0.62), vec3(0.72, 0.80, 0.92), uDayFactorCinematic);
+    vec3 nightHazeColor = vec3(0.08, 0.11, 0.16);
+    vec3 hazeColor = mix(nightHazeColor, dayHazeColor, uDayFactorCinematic);
+    float shaftWindow = (1.0 - smoothstep(0.18, 0.42, abs(uSunDirCinematic.y)));
+    float facingSun = pow(max(dot(normalize(-vViewPosition), normalize(uSunDirCinematic)), 0.0), 8.0);
+    float shaft = shaftWindow * facingSun * (0.25 + 0.75 * (1.0 - uWeatherCinematic));
+    float cloudNoise = cinematicNoise(vec3(vWorldPosCinematic.xz * 0.018 + uSunDirCinematic.xz * uAtmosTimeCinematic * 0.01, 4.0 + uAtmosTimeCinematic * 0.002));
+    float cloudShadow = mix(1.0, 0.72, smoothstep(0.52, 0.78, cloudNoise) * (0.35 + 0.65 * uDayFactorCinematic));
+    outgoingLight *= cloudShadow;
+    vec3 atmosphereTint = mix(uFogColorCinematic, hazeColor, 0.55);
+    outgoingLight = mix(outgoingLight, atmosphereTint, clamp(distHaze + fogPocket * 0.35, 0.0, 0.92));
+    outgoingLight += vec3(1.0, 0.78, 0.52) * shaft * 0.2;`
             );
     }, `cinematic-surface-${cinematicProfile.key ?? 'generic'}`);
 
@@ -154,6 +187,7 @@ void main() {
         material.userData.baseClearcoat = material.clearcoat ?? 0;
         dynamicWetMaterials.add(material);
     }
+    dynamicAtmosphereMaterials.add(material);
 }
 
 export function updateCinematicMaterialResponse({ dayFactor = 1, rainStrength = 0 } = {}) {
@@ -174,6 +208,25 @@ export function updateCinematicMaterialResponse({ dayFactor = 1, rainStrength = 
         }
         const uniforms = material.userData.cinematicUniforms;
         if (uniforms?.uNightWetness) uniforms.uNightWetness.value = wetness;
+    }
+}
+
+export function updateAtmosphericMaterialResponse({
+    fogColor = null,
+    sunDir = null,
+    dayFactor = 1,
+    weatherFactor = 0.2,
+    timeSeconds = 0
+} = {}) {
+    for (const material of dynamicAtmosphereMaterials) {
+        if (!material || material.disposed) continue;
+        const uniforms = material.userData.cinematicUniforms;
+        if (!uniforms) continue;
+        if (uniforms.uFogColorCinematic && fogColor) uniforms.uFogColorCinematic.value.copy(fogColor);
+        if (uniforms.uSunDirCinematic && sunDir) uniforms.uSunDirCinematic.value.copy(sunDir);
+        if (uniforms.uDayFactorCinematic) uniforms.uDayFactorCinematic.value = THREE.MathUtils.clamp(dayFactor, 0, 1);
+        if (uniforms.uWeatherCinematic) uniforms.uWeatherCinematic.value = THREE.MathUtils.clamp(weatherFactor, 0, 1);
+        if (uniforms.uAtmosTimeCinematic) uniforms.uAtmosTimeCinematic.value = timeSeconds;
     }
 }
 
@@ -233,11 +286,20 @@ export function createOcclusionProxyMaterial() {
 }
 
 export function createMegaHexMaterial() {
-    return new THREE.MeshPhysicalMaterial({
+    const material = new THREE.MeshPhysicalMaterial({
         color: 0x6d8f5f,
         roughness: DEFAULT_MEGA_HEX_ROUGHNESS,
         metalness: DEFAULT_MEGA_HEX_METALNESS,
         clearcoat: 0.15,
         clearcoatRoughness: 0.6
     });
+    applyCinematicSurfaceShader(material, {
+        key: 'megahex',
+        surfaceSeed: 11.7,
+        microStrength: 0.03,
+        breakupStrength: 0.04,
+        fresnelBoost: 0.0,
+        wetResponsive: false
+    });
+    return material;
 }
