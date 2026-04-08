@@ -33,6 +33,7 @@ const GROUND_RAYCAST_CHUNK_RADIUS = 1;
 const GROUND_CANDIDATE_CACHE_KEY = 'ground';
 const GROUND_CANDIDATE_CACHE_FRAMES = 6;
 const GROUND_RAY_NEAR = 0.01;
+const LOCAL_GROUND_INTERSECTIONS = [];
 const collisionProbePoint = new THREE.Vector3();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
@@ -93,8 +94,9 @@ function getGroundHit() {
         rayFar: groundRaycaster.far
     });
     if (localGroundCandidates.length === 0) return null;
-    const intersections = groundRaycaster.intersectObjects(localGroundCandidates, false);
-    return intersections[0] ?? null;
+    LOCAL_GROUND_INTERSECTIONS.length = 0;
+    groundRaycaster.intersectObjects(localGroundCandidates, false, LOCAL_GROUND_INTERSECTIONS);
+    return LOCAL_GROUND_INTERSECTIONS[0] ?? null;
 }
 
 function resolveGroundCollision() {
@@ -195,7 +197,11 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const previousY = camera.position.y;
     camera.position.y += inputState.velocity.y * frameScale;
 
-    const isSupportedByGround = resolveGroundCollision();
+    const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;
+    const isSupportedByGround = shouldResolveGroundCollision ? resolveGroundCollision() : false;
+    if (!shouldResolveGroundCollision) {
+        inputState.canJump = false;
+    }
     if (
         !isSupportedByGround
         && inputState.velocity.y < 0
