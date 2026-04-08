@@ -251,6 +251,19 @@ export function registerDesktopInputHandlers() {
         clearDesktopActionIntervals();
     });
 
+    window.addEventListener('mouseup', (event) => {
+        if (event.button !== 0) return;
+        if (!desktopMiningIntervalId) return;
+        clearInterval(desktopMiningIntervalId);
+        desktopMiningIntervalId = null;
+    });
+
+    window.addEventListener('blur', () => {
+        if (!desktopMiningIntervalId) return;
+        clearInterval(desktopMiningIntervalId);
+        desktopMiningIntervalId = null;
+    });
+
     window.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
