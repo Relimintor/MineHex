@@ -2,8 +2,7 @@ import { inputState } from '../state.js';
 import { applyLookDelta, initInventoryUi, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
 import { toggleCameraPerspective } from '../playerView.js';
 
-const HOLD_TO_MINE_DELAY_MS = 320;
-const MINE_REPEAT_MS = 120;
+const MINE_REPEAT_MS = 90;
 const LOOK_SENSITIVITY = 0.003;
 const JOYSTICK_DEADZONE = 0.14;
 const JOYSTICK_MAX_RADIUS = 48;
@@ -55,15 +54,9 @@ export function registerMobileInputHandlers() {
 
     let movementTouchId = null;
     let lookTouchId = null;
-    let mineTimeout = null;
     let mineInterval = null;
 
     function clearMiningTimers() {
-        if (mineTimeout) {
-            clearTimeout(mineTimeout);
-            mineTimeout = null;
-        }
-
         if (mineInterval) {
             clearInterval(mineInterval);
             mineInterval = null;
@@ -105,10 +98,8 @@ export function registerMobileInputHandlers() {
 
     function startMiningHold() {
         clearMiningTimers();
-        mineTimeout = window.setTimeout(() => {
-            mineBlockFromCenter();
-            mineInterval = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
-        }, HOLD_TO_MINE_DELAY_MS);
+        mineBlockFromCenter();
+        mineInterval = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
     }
 
     function handleCanvasTap() {
