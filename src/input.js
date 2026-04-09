@@ -4,6 +4,7 @@ import { camera, renderer } from './scene.js';
 import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
+import { getMiningDurationMsForType } from './hardness.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
 
@@ -52,6 +53,8 @@ let heldItemNameTimeoutId = null;
 let desktopMiningIntervalId = null;
 let desktopPlacingIntervalId = null;
 let lastPointerUnlockAtMs = 0;
+let miningTargetBlockKey = null;
+let miningStartedAtMs = 0;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -153,7 +156,13 @@ function clearDesktopActionIntervals() {
     }
 }
 
+export function cancelMiningProgress() {
+    miningTargetBlockKey = null;
+    miningStartedAtMs = 0;
+}
+
 export function placeBlockFromCenter() {
+    cancelMiningProgress();
     if (!Number.isInteger(worldState.selectedBlockIndex) || worldState.selectedBlockIndex < 0) return false;
     const intersect = getCenterIntersection();
     if (!intersect) return false;
@@ -168,10 +177,36 @@ export function placeBlockFromCenter() {
 export function mineBlockFromCenter() {
     triggerFirstPersonArmSwing();
     const intersect = getCenterIntersection();
-    if (!intersect) return false;
+    if (!intersect) {
+        cancelMiningProgress();
+        return false;
+    }
     const blockKey = getIntersectedBlockKey(intersect);
-    if (!blockKey) return false;
-    removeBlock(blockKey);
+    if (!blockKey) {
+        cancelMiningProgress();
+        return false;
+    }
+
+    if (miningTargetBlockKey !== blockKey) {
+        miningTargetBlockKey = blockKey;
+        miningStartedAtMs = performance.now();
+        return false;
+    }
+
+    const blockMesh = worldState.worldBlocks.get(blockKey);
+    const typeIndex = blockMesh?.userData?.typeIndex;
+    const miningDurationMs = getMiningDurationMsForType(typeIndex);
+    if (!Number.isFinite(miningDurationMs)) {
+        cancelMiningProgress();
+        return false;
+    }
+
+    const elapsedMs = performance.now() - miningStartedAtMs;
+    if (elapsedMs < miningDurationMs) return false;
+
+    const didRemove = removeBlock(blockKey);
+    cancelMiningProgress();
+    if (!didRemove) return false;
     triggerCameraImpulse(0.16);
     return true;
 }
@@ -256,6 +291,7 @@ export function registerDesktopInputHandlers() {
         if (event.button === 0 && desktopMiningIntervalId) {
             clearInterval(desktopMiningIntervalId);
             desktopMiningIntervalId = null;
+            cancelMiningProgress();
         }
         if (event.button === 2 && desktopPlacingIntervalId) {
             clearInterval(desktopPlacingIntervalId);
@@ -265,6 +301,7 @@ export function registerDesktopInputHandlers() {
 
     window.addEventListener('blur', () => {
         clearDesktopActionIntervals();
+        cancelMiningProgress();
     });
 
     window.addEventListener('contextmenu', (event) => event.preventDefault());

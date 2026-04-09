@@ -1,6 +1,7 @@
 import { renderer } from '../scene.js';
 import {
     applyLookDelta,
+    cancelMiningProgress,
     mineBlockFromCenter,
     placeBlockFromCenter,
     setKeyState,
@@ -88,6 +89,7 @@ export function registerCeleronInputHandlers() {
             if (miningIntervalId) {
                 clearInterval(miningIntervalId);
                 miningIntervalId = null;
+                cancelMiningProgress();
             }
             if (placingIntervalId) {
                 clearInterval(placingIntervalId);
@@ -123,6 +125,7 @@ export function registerCeleronInputHandlers() {
         if (event.button === 0 && miningIntervalId) {
             clearInterval(miningIntervalId);
             miningIntervalId = null;
+            cancelMiningProgress();
         }
         if (event.button === 2 && placingIntervalId) {
             clearInterval(placingIntervalId);
@@ -134,6 +137,7 @@ export function registerCeleronInputHandlers() {
         if (miningIntervalId) {
             clearInterval(miningIntervalId);
             miningIntervalId = null;
+            cancelMiningProgress();
         }
         if (placingIntervalId) {
             clearInterval(placingIntervalId);

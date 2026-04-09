@@ -159,7 +159,8 @@ const adaptiveChunkBudget = {
 const CHUNK_LOCAL_AXIALS = [];
 for (let q = -CHUNK_SIZE; q <= CHUNK_SIZE; q++) {
     for (let r = -CHUNK_SIZE; r <= CHUNK_SIZE; r++) {
-        if (Math.abs(q + r) > CHUNK_SIZE) continue;
+        // Use a rhombus chunk footprint so chunk ownership based on rounded
+        // q/r coordinates does not leave uncovered axial cells at chunk seams.
         CHUNK_LOCAL_AXIALS.push([q, r]);
     }
 }
