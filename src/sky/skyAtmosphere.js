@@ -1,6 +1,6 @@
 const THREE = window.THREE;
 import { updateAtmosphericMaterialResponse } from '../shaders/materials.js';
-import { createBloodMoonTexture, getBloodMoonUniforms, resolveBloodMoonBoost } from './bloodmoon/index.js';
+import { createBloodMoonSmokeController, createBloodMoonTexture, getBloodMoonUniforms, resolveBloodMoonBoost } from './bloodmoon/index.js';
 
 export const SKY_COLOR = 0x87ceeb;
 const DAY_LENGTH_SECONDS = 480.0;
@@ -398,6 +398,7 @@ export function applySkyAtmosphere(scene, lightingBridge) {
     mesh.renderOrder = -1000;
 
     scene.add(mesh);
+    const bloodMoonSmoke = createBloodMoonSmokeController(scene);
 
     const initialColor = new THREE.Color(SKY_COLOR);
     scene.background = initialColor;
@@ -419,6 +420,7 @@ export function applySkyAtmosphere(scene, lightingBridge) {
             uniforms.uAuroraStrength.value = eventMoments.auroraStrength;
 
             if (camera) mesh.position.copy(camera.position);
+            bloodMoonSmoke.update(timeSeconds, camera?.position ?? null, eventMoments.bloodMoonBoost);
 
             lightingBridge?.syncSun?.({
                 ...deriveLightingInputs(skyValues.sunDir),
