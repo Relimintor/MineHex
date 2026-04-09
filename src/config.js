@@ -78,8 +78,10 @@ export const GRAVITY = -0.02;
 // Target jump apex: about 1.5 hexes (~2.4 world units) from takeoff.
 export const JUMP_FORCE = 0.31;
 export const MOVE_SPEED = 0.12;
-export const MOVE_ACCELERATION = 0.35;
-export const MOVE_FRICTION = 0.2;
+export const MOVE_INITIAL_ACCELERATION = 0.46;
+export const MOVE_DIRECTION_CHANGE_ACCELERATION = 0.33;
+export const MOVE_DECELERATION = 0.24;
+export const AIR_CONTROL_MULTIPLIER = 0.55;
 export const SWIM_MOVE_SPEED = 0.06;
 export const SWIM_UP_FORCE = 0.03;
 export const SWIM_GRAVITY = -0.004;
