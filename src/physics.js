@@ -1,12 +1,14 @@
 const THREE = window.THREE;
 
 import {
+    AIR_CONTROL_MULTIPLIER,
     CHUNK_SIZE,
     GRAVITY,
     HEX_HEIGHT,
     JUMP_FORCE,
-    MOVE_ACCELERATION,
-    MOVE_FRICTION,
+    MOVE_DECELERATION,
+    MOVE_DIRECTION_CHANGE_ACCELERATION,
+    MOVE_INITIAL_ACCELERATION,
     MOVE_SPEED,
     NETHROCK_LEVEL_HEX,
     PLAYER_HEIGHT,
@@ -36,12 +38,20 @@ const GROUND_CANDIDATE_CACHE_FRAMES = 6;
 const GROUND_RAY_NEAR = 0.01;
 const LOCAL_GROUND_INTERSECTIONS = [];
 const collisionProbePoint = new THREE.Vector3();
+const horizontalVelocity = new THREE.Vector2();
+const horizontalTargetVelocity = new THREE.Vector2();
+const horizontalCurrentDir = new THREE.Vector2();
+const horizontalTargetDir = new THREE.Vector2();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
 const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
+const MIN_DIRECTION_EVAL_SPEED = 0.012;
+const COYOTE_WINDOW_SECONDS = 0.12;
+let wasJumpPressed = false;
+let timeSinceGrounded = Number.POSITIVE_INFINITY;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -136,6 +146,8 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const physicsStart = performance.now();
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
+    const isJumpPressed = isKeyDown('Space');
+    const jumpPressedThisFrame = isJumpPressed && !wasJumpPressed;
 
     moveDir.set(0, 0, 0);
     if (isKeyDown('KeyW')) moveDir.z -= 1;
@@ -152,22 +164,39 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const wantsSprint = !isInLiquid && hasMovementInput && (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight'));
     inputState.isSprinting = wantsSprint;
     const sprintBoost = wantsSprint ? SPRINT_MULTIPLIER : 1;
+    const groundedControlMultiplier = inputState.canJump ? 1 : AIR_CONTROL_MULTIPLIER;
+    const movementControlMultiplier = isInLiquid ? 1 : groundedControlMultiplier;
     const moveSpeed = (isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED) * sprintBoost;
     const targetVelocityX = hasMovementInput ? moveDir.x * moveSpeed : 0;
     const targetVelocityZ = hasMovementInput ? moveDir.z * moveSpeed : 0;
-    const accelerationFactor = 1 - Math.pow(1 - (MOVE_ACCELERATION * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
-    const frictionFactor = Math.pow(1 - MOVE_FRICTION, frameScale);
+    horizontalVelocity.set(inputState.velocity.x, inputState.velocity.z);
+    horizontalTargetVelocity.set(targetVelocityX, targetVelocityZ);
 
-    inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
-    inputState.velocity.z += (targetVelocityZ - inputState.velocity.z) * accelerationFactor;
+    if (hasMovementInput) {
+        let acceleration = MOVE_INITIAL_ACCELERATION;
+        const currentSpeed = horizontalVelocity.length();
+        if (currentSpeed > MIN_DIRECTION_EVAL_SPEED) {
+            horizontalCurrentDir.copy(horizontalVelocity).multiplyScalar(1 / currentSpeed);
+            horizontalTargetDir.copy(horizontalTargetVelocity).normalize();
+            const alignment = horizontalCurrentDir.dot(horizontalTargetDir);
+            if (alignment < 0.92) {
+                acceleration = MOVE_DIRECTION_CHANGE_ACCELERATION;
+            }
+        }
 
-    if (!hasMovementInput) {
-        inputState.velocity.x *= frictionFactor;
-        inputState.velocity.z *= frictionFactor;
+        const accelerationFactor = 1 - Math.pow(1 - (acceleration * movementControlMultiplier * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
+        inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
+        inputState.velocity.z += (targetVelocityZ - inputState.velocity.z) * accelerationFactor;
+    } else {
+        const decelerationFactor = Math.pow(1 - (MOVE_DECELERATION * movementControlMultiplier), frameScale);
+        inputState.velocity.x *= decelerationFactor;
+        inputState.velocity.z *= decelerationFactor;
+        if (Math.abs(inputState.velocity.x) < 0.0005) inputState.velocity.x = 0;
+        if (Math.abs(inputState.velocity.z) < 0.0005) inputState.velocity.z = 0;
     }
 
     if (isInLiquid) {
-        if (isKeyDown('Space')) {
+        if (isJumpPressed) {
             inputState.velocity.y += SWIM_UP_FORCE * frameScale;
         }
         if (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight')) {
@@ -176,9 +205,10 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (isKeyDown('Space') && inputState.canJump) {
+    } else if (jumpPressedThisFrame && (inputState.canJump || timeSinceGrounded <= COYOTE_WINDOW_SECONDS)) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
+        timeSinceGrounded = Number.POSITIVE_INFINITY;
         triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
@@ -212,6 +242,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         const landingStrength = THREE.MathUtils.clamp((-verticalVelocityBeforeCollision - Math.abs(LANDING_IMPACT_THRESHOLD)) * 0.42, 0.08, 0.95);
         triggerCameraImpulse(landingStrength);
     }
+    timeSinceGrounded = isSupportedByGround ? 0 : (timeSinceGrounded + deltaTimeSeconds);
     if (!shouldResolveGroundCollision) {
         inputState.canJump = false;
     }
@@ -233,5 +264,6 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y = 0;
         inputState.isSprinting = false;
     }
+    wasJumpPressed = isJumpPressed;
     profilerRecord('physics', performance.now() - physicsStart);
 }

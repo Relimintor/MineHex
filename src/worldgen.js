@@ -804,6 +804,24 @@ function getBiomeAt(climateBiome, height) {
     return climateBiome;
 }
 
+export function getBiomeAtWorldPosition(worldX, worldZ) {
+    const axial = worldToAxial(new THREE.Vector3(worldX, 0, worldZ));
+    const q = Math.round(axial.q);
+    const r = Math.round(axial.r);
+    const climate = getClimate(q, r);
+    const biomeWeights = getBiomeWeights(climate.temp, climate.moist);
+    const climateBiome = getDominantBiome(biomeWeights);
+    const baseHeight = getHeight(q, r);
+    const heightWithBiome = baseHeight + biomeHeightModifier(biomeWeights, q, r, baseHeight);
+    const height = getSmoothedHeight(heightWithBiome);
+    const biome = getBiomeAt(climateBiome, height);
+    return {
+        biome,
+        temperature: climate.temp,
+        moisture: climate.moist,
+    };
+}
+
 function addGeneratedBlock(chunkBlockKeys, q, r, h, typeIndex) {
     const key = packBlockKey(q, r, h);
     if (!worldState.permanentBlocks.has(key) && !worldState.removedBlocks.has(key)) addBlock(q, r, h, typeIndex, false, false, false);
