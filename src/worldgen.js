@@ -891,14 +891,6 @@ function processDirtyChunk(chunkKey) {
     return true;
 }
 
-export function flushDirtyChunkAtWorld(q, r) {
-    const cq = Math.round(q / CHUNK_SIZE);
-    const cr = Math.round(r / CHUNK_SIZE);
-    const chunkKey = packChunkKey(cq, cr);
-    if (!worldState.dirtyChunks.has(chunkKey)) return false;
-    return processDirtyChunk(chunkKey);
-}
-
 function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     if (worldState.dirtyChunks.size === 0) return;
     if (budget <= 0) return;
