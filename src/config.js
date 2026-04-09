@@ -58,7 +58,7 @@ export const VOID_RESPAWN_BUFFER_HEX = 2;
 
 export const BLOCK_TYPES = [
     { name: 'Grass', color: 0x4caf50, roughness: 0.96, metalness: 0.0, capTexture: 'assets/hexes/grass/green/grass_top.png', capTextureScale: 1.25 },
-    { name: 'Dirt', color: 0x795548, roughness: 0.95, metalness: 0.0, capTexture: 'assets/hexes/dirt.png },
+    { name: 'Dirt', color: 0x795548, roughness: 0.95, metalness: 0.0, capTexture: 'assets/hexes/dirt.png' },
     { name: 'Stone', color: 0x9e9e9e, roughness: 0.84, metalness: 0.02 },
     { name: 'Cloud', color: 0xffffff, roughness: 0.92, metalness: 0.0 },
     { name: 'Water', color: 0x2196f3, opacity: 0.6, transparent: true, isLiquid: true, roughness: 0.05, metalness: 0.0, envMapIntensity: 1.35, transmission: 0.2, thickness: 0.25, ior: 1.33 },
