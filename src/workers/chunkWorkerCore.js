@@ -76,8 +76,7 @@ function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel }) {
 
     for (let q = -chunkSize; q <= chunkSize; q++) {
         for (let r = -chunkSize; r <= chunkSize; r++) {
-            if (Math.abs(q + r) > chunkSize) continue;
-
+            // Match main-thread chunk footprint to avoid seam holes between chunks.
             const absQ = centerQ + q;
             const absR = centerR + r;
             const climate = getClimate(absQ, absR);
