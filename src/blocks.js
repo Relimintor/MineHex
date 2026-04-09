@@ -190,6 +190,14 @@ function setTopSolidDeltaAtKey(blockKey, delta) {
     chunkData.topSolidHeightDeltaByIndex[indexRef.index] = Math.max(-32768, Math.min(32767, delta));
 }
 
+function getNeighborChunkKeys(cq, cr) {
+    const chunk = worldState.chunkMeta.get(packChunkKey(cq, cr));
+    if (chunk?.neighbors?.length) return chunk.neighbors;
+    return NEIGHBOR_OFFSETS.map(([dq, dr]) => packChunkKey(cq + dq, cr + dr));
+}
+
+
+
 function recordDirtyChunkOp(chunkKey, op, h) {
     if (!worldState.dirtyChunkOps.has(chunkKey)) {
         worldState.dirtyChunkOps.set(chunkKey, {
@@ -210,11 +218,7 @@ function markChunkAndNeighborsDirty(q, r, op = null, h = null) {
     if (selfChunk) selfChunk.dirty = true;
     if (op && Number.isFinite(h)) recordDirtyChunkOp(selfChunkKey, op, h);
 
-    for (const [dq, dr] of NEIGHBOR_OFFSETS) {
-        const neighborCoords = getChunkCoords(q + dq, r + dr);
-        if (neighborCoords.cq === cq && neighborCoords.cr === cr) continue;
-
-        const neighborChunkKey = packChunkKey(neighborCoords.cq, neighborCoords.cr);
+    for (const neighborChunkKey of getNeighborChunkKeys(cq, cr)) {
         worldState.dirtyChunks.add(neighborChunkKey);
 
         const neighborChunk = worldState.chunkMeta.get(neighborChunkKey);
