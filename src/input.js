@@ -51,6 +51,7 @@ let heldInventoryItemType = null;
 let heldItemNameTimeoutId = null;
 let desktopMiningIntervalId = null;
 let desktopPlacingIntervalId = null;
+let lastPointerUnlockAtMs = 0;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -211,11 +212,23 @@ export function registerDesktopInputHandlers() {
     });
 
     renderer.domElement.addEventListener('click', () => {
-        if (!inputState.isLocked) renderer.domElement.requestPointerLock();
+        if (inputState.isLocked) return;
+        if ((performance.now() - lastPointerUnlockAtMs) < 220) return;
+        const lockRequest = renderer.domElement.requestPointerLock();
+        if (typeof lockRequest?.catch === 'function') {
+            lockRequest.catch((error) => {
+                if (error?.name !== 'SecurityError') {
+                    console.warn('Pointer lock request failed:', error);
+                }
+            });
+        }
     });
 
     document.addEventListener('pointerlockchange', () => {
         inputState.isLocked = document.pointerLockElement === renderer.domElement;
+        if (!inputState.isLocked) {
+            lastPointerUnlockAtMs = performance.now();
+        }
     });
 
     document.addEventListener('mousemove', (event) => {
