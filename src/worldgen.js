@@ -856,6 +856,11 @@ function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
     return (closeToCamera || frustumVisible || highDetailLod) ? 'hot' : 'cold';
 }
 
+function getChunkDistanceToCamera(chunkKey, cameraChunkQ, cameraChunkR) {
+    const { cq, cr } = getChunkCoordsFromKey(chunkKey);
+    return axialChunkDistance(cq, cr, cameraChunkQ, cameraChunkR);
+}
+
 function processDirtyChunk(chunkKey) {
     if (!worldState.loadedChunks.has(chunkKey)) {
         worldState.chunkBlocks.delete(chunkKey);
@@ -899,6 +904,11 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
         if (priority === 'hot') hotQueue.push(chunkKey);
         else coldQueue.push(chunkKey);
     }
+
+    hotQueue.sort((leftChunkKey, rightChunkKey) => (
+        getChunkDistanceToCamera(leftChunkKey, cameraChunkQ, cameraChunkR)
+        - getChunkDistanceToCamera(rightChunkKey, cameraChunkQ, cameraChunkR)
+    ));
 
     const processQueue = (queue, remainingBudget) => {
         let consumed = 0;
