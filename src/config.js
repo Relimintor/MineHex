@@ -57,7 +57,7 @@ export const NETHROCK_LEVEL_HEX = -40;
 export const VOID_RESPAWN_BUFFER_HEX = 2;
 
 export const BLOCK_TYPES = [
-    { name: 'Grass', color: 0x4caf50, roughness: 0.96, metalness: 0.0, capTexture: 'assets/hexes/grass/green/grass_top.png', capTextureScale: 1.165 },
+    { name: 'Grass', color: 0x4caf50, roughness: 0.96, metalness: 0.0, capTexture: 'assets/hexes/grass/green/grass_top.png', capTextureScale: 1.175 },
     { name: 'Dirt', color: 0x795548, roughness: 0.95, metalness: 0.0 },
     { name: 'Stone', color: 0x9e9e9e, roughness: 0.84, metalness: 0.02 },
     { name: 'Cloud', color: 0xffffff, roughness: 0.92, metalness: 0.0 },
