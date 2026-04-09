@@ -50,7 +50,9 @@ const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
+const COYOTE_TIME_SECONDS = 0.12;
 let wasJumpPressed = false;
+let timeSinceGrounded = Number.POSITIVE_INFINITY;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -204,11 +206,10 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (jumpPressedThisFrame && inputState.canJump) {
+    } else if (jumpPressedThisFrame && (inputState.canJump || timeSinceGrounded <= COYOTE_TIME_SECONDS)) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
-        jumpBufferAge = Infinity;
-        timeSinceGrounded = Infinity;
+        timeSinceGrounded = Number.POSITIVE_INFINITY;
         triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
@@ -252,6 +253,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         const landingStrength = THREE.MathUtils.clamp((-verticalVelocityBeforeCollision - Math.abs(LANDING_IMPACT_THRESHOLD)) * 0.42, 0.08, 0.95);
         triggerCameraImpulse(landingStrength);
     }
+    timeSinceGrounded = isSupportedByGround ? 0 : (timeSinceGrounded + deltaTimeSeconds);
     if (!shouldResolveGroundCollision) {
         inputState.canJump = false;
     }
