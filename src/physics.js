@@ -2,7 +2,6 @@ const THREE = window.THREE;
 
 import {
     AIR_CONTROL_MULTIPLIER,
-    AIR_DRAG,
     CHUNK_SIZE,
     COYOTE_TIME_SECONDS,
     GRAVITY,
@@ -168,6 +167,8 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const wantsSprint = !isInLiquid && hasMovementInput && (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight'));
     inputState.isSprinting = wantsSprint;
     const sprintBoost = wantsSprint ? SPRINT_MULTIPLIER : 1;
+    const groundedControlMultiplier = inputState.canJump ? 1 : AIR_CONTROL_MULTIPLIER;
+    const movementControlMultiplier = isInLiquid ? 1 : groundedControlMultiplier;
     const moveSpeed = (isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED) * sprintBoost;
     const targetVelocityX = hasMovementInput ? moveDir.x * moveSpeed : 0;
     const targetVelocityZ = hasMovementInput ? moveDir.z * moveSpeed : 0;
@@ -186,11 +187,11 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
             }
         }
 
-        const accelerationFactor = 1 - Math.pow(1 - (acceleration * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
+        const accelerationFactor = 1 - Math.pow(1 - (acceleration * movementControlMultiplier * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
         inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
         inputState.velocity.z += (targetVelocityZ - inputState.velocity.z) * accelerationFactor;
     } else {
-        const decelerationFactor = Math.pow(1 - MOVE_DECELERATION, frameScale);
+        const decelerationFactor = Math.pow(1 - (MOVE_DECELERATION * movementControlMultiplier), frameScale);
         inputState.velocity.x *= decelerationFactor;
         inputState.velocity.z *= decelerationFactor;
         if (Math.abs(inputState.velocity.x) < 0.0005) inputState.velocity.x = 0;
