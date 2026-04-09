@@ -7,7 +7,7 @@ import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
-import { runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
+import { getBiomeAtWorldPosition, runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
@@ -113,6 +113,24 @@ const POST_FX_PANEL_KEY = 'minehexPostFxPanelOpen';
 const POST_FX_OPTIONS_KEY = 'minehexPostFxOptions';
 let postFxPanel = null;
 let currentControlMode = 'pc';
+let lastBiomeGradeUpdate = 0;
+const BIOME_GRADE_UPDATE_MS = 350;
+
+function resolveBiomeGradeName(biome) {
+    if (biome === 'forest' || biome === 'snowy_forest') return biome === 'forest' ? 'forest' : 'snow';
+    if (biome === 'snowy_plains' || biome === 'arctic') return 'snow';
+    if (biome === 'beach') return 'desert';
+    return 'neutral';
+}
+
+function resolveBiomeGradeWeight(sample) {
+    if (!sample) return 0;
+    if (sample.biome === 'forest') return 0.9;
+    if (sample.biome === 'snowy_forest') return 1.0;
+    if (sample.biome === 'snowy_plains' || sample.biome === 'arctic') return 0.95;
+    if (sample.biome === 'beach') return 0.85;
+    return 0.35;
+}
 
 function loadSavedPostFxOptions() {
     if (!postProcessor) return;
@@ -280,6 +298,11 @@ function animate(now = performance.now()) {
     }
 
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
+    if (postProcessor && (now - lastBiomeGradeUpdate) >= BIOME_GRADE_UPDATE_MS) {
+        const sample = getBiomeAtWorldPosition(playerPosition.x, playerPosition.z);
+        postProcessor.setBiomeGrade(resolveBiomeGradeName(sample.biome), resolveBiomeGradeWeight(sample));
+        lastBiomeGradeUpdate = now;
+    }
     skyController?.update(now * 0.001, camera);
     const renderStart = performance.now();
     if (postProcessor) {
