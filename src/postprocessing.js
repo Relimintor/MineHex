@@ -17,6 +17,35 @@ const LUT_LIFT = new THREE.Vector3(0.0, -0.004, -0.012);
 const LUT_GAMMA = new THREE.Vector3(1.0, 1.02, 1.05);
 const LUT_GAIN = new THREE.Vector3(1.02, 1.01, 0.98);
 const LUT_TINT = new THREE.Vector3(1.02, 1.0, 0.97);
+const BIOME_GRADES = {
+    neutral: {
+        lift: new THREE.Vector3(0.0, -0.004, -0.012),
+        gamma: new THREE.Vector3(1.0, 1.02, 1.05),
+        gain: new THREE.Vector3(1.02, 1.01, 0.98),
+        tint: new THREE.Vector3(1.02, 1.0, 0.97),
+    },
+    forest: {
+        // lush green mids + warm highlights
+        lift: new THREE.Vector3(-0.008, -0.004, -0.014),
+        gamma: new THREE.Vector3(1.02, 0.98, 1.05),
+        gain: new THREE.Vector3(1.03, 1.08, 0.97),
+        tint: new THREE.Vector3(1.03, 1.06, 0.95),
+    },
+    snow: {
+        // cool shadows + sparkle pop
+        lift: new THREE.Vector3(-0.006, -0.009, 0.005),
+        gamma: new THREE.Vector3(1.06, 1.04, 0.95),
+        gain: new THREE.Vector3(1.0, 1.02, 1.1),
+        tint: new THREE.Vector3(0.95, 1.0, 1.09),
+    },
+    desert: {
+        // warm haze + compressed highlights
+        lift: new THREE.Vector3(0.012, -0.002, -0.018),
+        gamma: new THREE.Vector3(0.95, 0.98, 1.1),
+        gain: new THREE.Vector3(1.06, 1.01, 0.92),
+        tint: new THREE.Vector3(1.08, 1.01, 0.9),
+    },
+};
 
 const COLOR_GRADING_SHADER = {
     uniforms: {
@@ -175,10 +204,39 @@ export function createPostProcessor(renderer, scene, camera) {
 
     applyOptions();
 
+    const biomeGradeCurrent = {
+        lift: LUT_LIFT.clone(),
+        gamma: LUT_GAMMA.clone(),
+        gain: LUT_GAIN.clone(),
+        tint: LUT_TINT.clone(),
+    };
+    const biomeGradeTarget = {
+        lift: LUT_LIFT.clone(),
+        gamma: LUT_GAMMA.clone(),
+        gain: LUT_GAIN.clone(),
+        tint: LUT_TINT.clone(),
+    };
+
+    function blendBiomeGrade(target, from, to, weight) {
+        const w = THREE.MathUtils.clamp(weight, 0, 1);
+        target.copy(from).lerp(to, w);
+    }
+
     return {
         render(nowSeconds = 0) {
             if (vignetteGrainPass) {
                 vignetteGrainPass.uniforms.time.value = nowSeconds;
+            }
+            if (colorGradingPass) {
+                const uniforms = colorGradingPass.uniforms;
+                biomeGradeCurrent.lift.lerp(biomeGradeTarget.lift, 0.065);
+                biomeGradeCurrent.gamma.lerp(biomeGradeTarget.gamma, 0.065);
+                biomeGradeCurrent.gain.lerp(biomeGradeTarget.gain, 0.065);
+                biomeGradeCurrent.tint.lerp(biomeGradeTarget.tint, 0.065);
+                uniforms.lift.value.copy(biomeGradeCurrent.lift);
+                uniforms.gamma.value.copy(biomeGradeCurrent.gamma);
+                uniforms.gain.value.copy(biomeGradeCurrent.gain);
+                uniforms.tint.value.copy(biomeGradeCurrent.tint);
             }
             if (options.enabled) {
                 composer.render();
@@ -211,6 +269,15 @@ export function createPostProcessor(renderer, scene, camera) {
             if (typeof nextOptions.vignetteGrain === 'boolean') options.vignetteGrain = nextOptions.vignetteGrain;
             if (typeof nextOptions.dof === 'boolean') options.dof = nextOptions.dof;
             applyOptions();
+        },
+        setBiomeGrade(gradeName = 'neutral', weight = 1) {
+            const key = BIOME_GRADES[gradeName] ? gradeName : 'neutral';
+            const grade = BIOME_GRADES[key];
+            const base = BIOME_GRADES.neutral;
+            blendBiomeGrade(biomeGradeTarget.lift, base.lift, grade.lift, weight);
+            blendBiomeGrade(biomeGradeTarget.gamma, base.gamma, grade.gamma, weight);
+            blendBiomeGrade(biomeGradeTarget.gain, base.gain, grade.gain, weight);
+            blendBiomeGrade(biomeGradeTarget.tint, base.tint, grade.tint, weight);
         }
     };
 }
