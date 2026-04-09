@@ -604,48 +604,47 @@ export function addBlock(q, r, h, typeIndex, isPermanent = false, trackDirty = t
 export function removeBlock(key, { preservePermanent = false, force = false, trackDirty = true, refreshVisibility = true, trackRemoval = true } = {}) {
     const normalizedKey = normalizeBlockKey(key);
     const mesh = worldState.worldBlocks.get(normalizedKey);
-    if (mesh) {
-        const simTypeIndex = getTypeIndexAtKey(normalizedKey);
-        const blockType = BLOCK_TYPES[simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex];
-        if (blockType?.unbreakable && !force) return false;
+    if (!mesh) return false;
+    const simTypeIndex = getTypeIndexAtKey(normalizedKey);
+    const blockType = BLOCK_TYPES[simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex];
+    if (blockType?.unbreakable && !force) return false;
 
-        worldState.worldBlocks.delete(normalizedKey);
+    worldState.worldBlocks.delete(normalizedKey);
 
-        const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
-        const chunkBlockSet = worldState.chunkBlocks.get(chunkKey);
-        if (chunkBlockSet) {
-            chunkBlockSet.delete(normalizedKey);
-            if (chunkBlockSet.size === 0) worldState.chunkBlocks.delete(chunkKey);
+    const chunkKey = getChunkKey(mesh.userData.q, mesh.userData.r);
+    const chunkBlockSet = worldState.chunkBlocks.get(chunkKey);
+    if (chunkBlockSet) {
+        chunkBlockSet.delete(normalizedKey);
+        if (chunkBlockSet.size === 0) worldState.chunkBlocks.delete(chunkKey);
+    }
+
+    const columnKey = packColumnKey(mesh.userData.q, mesh.userData.r);
+    const topBefore = worldState.topSolidHeightByColumn.get(columnKey) ?? mesh.userData.h;
+    updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex);
+    const topAfter = worldState.topSolidHeightByColumn.get(columnKey) ?? (mesh.userData.h - 1);
+    setTopSolidDeltaAtKey(normalizedKey, topAfter - topBefore);
+    removeChunkSimBlock(chunkKey, normalizedKey);
+    worldState.blockCoordsByKey.delete(normalizedKey);
+
+    if (trackDirty) {
+        markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r, 'remove', mesh.userData.h);
+    }
+
+    if (refreshVisibility) {
+        updateVisibilityAround(mesh.userData.q, mesh.userData.r, mesh.userData.h);
+    }
+
+    if (mesh.userData.isPermanent && !preservePermanent) {
+        worldState.permanentBlocks.delete(normalizedKey);
+        const chunkPermanentBlocks = worldState.permanentBlocksByChunk.get(chunkKey);
+        if (chunkPermanentBlocks) {
+            chunkPermanentBlocks.delete(normalizedKey);
+            if (chunkPermanentBlocks.size === 0) worldState.permanentBlocksByChunk.delete(chunkKey);
         }
+    }
 
-        const columnKey = packColumnKey(mesh.userData.q, mesh.userData.r);
-        const topBefore = worldState.topSolidHeightByColumn.get(columnKey) ?? mesh.userData.h;
-        updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex);
-        const topAfter = worldState.topSolidHeightByColumn.get(columnKey) ?? (mesh.userData.h - 1);
-        setTopSolidDeltaAtKey(normalizedKey, topAfter - topBefore);
-        removeChunkSimBlock(chunkKey, normalizedKey);
-        worldState.blockCoordsByKey.delete(normalizedKey);
-
-        if (trackDirty) {
-            markChunkAndNeighborsDirty(mesh.userData.q, mesh.userData.r, 'remove', mesh.userData.h);
-        }
-
-        if (refreshVisibility) {
-            updateVisibilityAround(mesh.userData.q, mesh.userData.r, mesh.userData.h);
-        }
-
-        if (mesh.userData.isPermanent && !preservePermanent) {
-            worldState.permanentBlocks.delete(normalizedKey);
-            const chunkPermanentBlocks = worldState.permanentBlocksByChunk.get(chunkKey);
-            if (chunkPermanentBlocks) {
-                chunkPermanentBlocks.delete(normalizedKey);
-                if (chunkPermanentBlocks.size === 0) worldState.permanentBlocksByChunk.delete(chunkKey);
-            }
-        }
-
-        if (!mesh.userData.isPermanent && trackRemoval) {
-            trackRemovedBlock(mesh.userData.q, mesh.userData.r, mesh.userData.h);
-        }
+    if (!mesh.userData.isPermanent && trackRemoval) {
+        trackRemovedBlock(mesh.userData.q, mesh.userData.r, mesh.userData.h);
     }
 
     return true;
