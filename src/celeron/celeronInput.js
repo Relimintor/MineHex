@@ -11,12 +11,13 @@ import { inputState } from '../state.js';
 import { toggleCameraPerspective } from '../playerView.js';
 
 const LOOK_SENSITIVITY = 0.0018;
-const INTERACTION_COOLDOWN_MS = 90;
+const INTERACTION_REPEAT_MS = 45;
 
 let pendingLookX = 0;
 let pendingLookY = 0;
 let hasQueuedLookFrame = false;
-let lastInteractionAt = 0;
+let miningIntervalId = null;
+let placingIntervalId = null;
 
 function flushQueuedLookDelta() {
     hasQueuedLookFrame = false;
@@ -40,11 +41,15 @@ function queueLookDelta(deltaX, deltaY) {
     requestAnimationFrame(flushQueuedLookDelta);
 }
 
-function canInteractNow() {
-    const now = performance.now();
-    if (now - lastInteractionAt < INTERACTION_COOLDOWN_MS) return false;
-    lastInteractionAt = now;
-    return true;
+function clearInteractionIntervals() {
+    if (miningIntervalId) {
+        clearInterval(miningIntervalId);
+        miningIntervalId = null;
+    }
+    if (placingIntervalId) {
+        clearInterval(placingIntervalId);
+        placingIntervalId = null;
+    }
 }
 
 export function registerCeleronInputHandlers() {
@@ -89,15 +94,33 @@ export function registerCeleronInputHandlers() {
 
     window.addEventListener('mousedown', (event) => {
         if (!inputState.isLocked) return;
-        if (!canInteractNow()) return;
 
         if (event.button === 0) {
             mineBlockFromCenter();
+            if (miningIntervalId) clearInterval(miningIntervalId);
+            miningIntervalId = window.setInterval(() => mineBlockFromCenter(), INTERACTION_REPEAT_MS);
             return;
         }
 
-        if (event.button === 2) placeBlockFromCenter();
+        if (event.button === 2) {
+            placeBlockFromCenter();
+            if (placingIntervalId) clearInterval(placingIntervalId);
+            placingIntervalId = window.setInterval(() => placeBlockFromCenter(), INTERACTION_REPEAT_MS);
+        }
     });
 
+    window.addEventListener('mouseup', (event) => {
+        if (event.button === 0 && miningIntervalId) {
+            clearInterval(miningIntervalId);
+            miningIntervalId = null;
+        }
+
+        if (event.button === 2 && placingIntervalId) {
+            clearInterval(placingIntervalId);
+            placingIntervalId = null;
+        }
+    });
+
+    window.addEventListener('blur', clearInteractionIntervals);
     window.addEventListener('contextmenu', (event) => event.preventDefault());
 }
