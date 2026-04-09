@@ -21,8 +21,8 @@ const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
 const INTERACTION_RAY_NEAR = 0.05;
 const localInteractionIntersections = [];
-const DESKTOP_MINE_REPEAT_MS = 75;
-const DESKTOP_PLACE_REPEAT_MS = 75;
+const DESKTOP_MINE_REPEAT_MS = 35;
+const DESKTOP_PLACE_REPEAT_MS = 55;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
