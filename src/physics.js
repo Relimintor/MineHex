@@ -6,6 +6,7 @@ import {
     COYOTE_TIME_SECONDS,
     GRAVITY,
     HEX_HEIGHT,
+    HEX_RADIUS,
     JUMP_FORCE,
     MOVE_DECELERATION,
     MOVE_DIRECTION_CHANGE_ACCELERATION,
@@ -52,6 +53,15 @@ const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
 const COYOTE_WINDOW_SECONDS = 0.12;
 const JUMP_BUFFER_SECONDS = 0.12;
+const FALLBACK_GROUND_PROBE_OFFSETS_XZ = Object.freeze([
+    Object.freeze([0, 0]),
+    Object.freeze([HEX_RADIUS * 0.42, 0]),
+    Object.freeze([-HEX_RADIUS * 0.42, 0]),
+    Object.freeze([HEX_RADIUS * 0.21, HEX_RADIUS * 0.36]),
+    Object.freeze([-HEX_RADIUS * 0.21, HEX_RADIUS * 0.36]),
+    Object.freeze([HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36]),
+    Object.freeze([-HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36])
+]);
 let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
 let hasBufferedJump = false;
@@ -92,11 +102,20 @@ function hasLoadedChunkInRadiusAtWorldPosition(x, y, z, chunkRadius = 1) {
 }
 
 function getFallbackGroundDistanceFromTopSolidColumn() {
-    const { q, r } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const topSolidH = worldState.topSolidHeightByColumn.get(packColumnKey(q, r));
-    if (topSolidH === undefined) return null;
-    if (!isSolidBlockAt(q, r, topSolidH)) return null;
-    return camera.position.y - (topSolidH * HEX_HEIGHT);
+    let topSolidWorldY = Number.NEGATIVE_INFINITY;
+
+    for (const [offsetX, offsetZ] of FALLBACK_GROUND_PROBE_OFFSETS_XZ) {
+        collisionProbePoint.set(camera.position.x + offsetX, camera.position.y, camera.position.z + offsetZ);
+        const { q, r } = worldToAxial(collisionProbePoint);
+        const topSolidH = worldState.topSolidHeightByColumn.get(packColumnKey(q, r));
+        if (topSolidH === undefined) continue;
+        if (!isSolidBlockAt(q, r, topSolidH)) continue;
+        const candidateGroundY = topSolidH * HEX_HEIGHT;
+        if (candidateGroundY > topSolidWorldY) topSolidWorldY = candidateGroundY;
+    }
+
+    if (!Number.isFinite(topSolidWorldY)) return null;
+    return camera.position.y - topSolidWorldY;
 }
 
 function getGroundHit() {

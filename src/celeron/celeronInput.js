@@ -12,11 +12,15 @@ import { toggleCameraPerspective } from '../playerView.js';
 
 const LOOK_SENSITIVITY = 0.0018;
 const INTERACTION_COOLDOWN_MS = 90;
+const MINE_REPEAT_MS = 75;
+const PLACE_REPEAT_MS = 75;
 
 let pendingLookX = 0;
 let pendingLookY = 0;
 let hasQueuedLookFrame = false;
 let lastInteractionAt = 0;
+let miningIntervalId = null;
+let placingIntervalId = null;
 
 function flushQueuedLookDelta() {
     hasQueuedLookFrame = false;
@@ -80,6 +84,16 @@ export function registerCeleronInputHandlers() {
 
     document.addEventListener('pointerlockchange', () => {
         inputState.isLocked = document.pointerLockElement === renderer.domElement;
+        if (!inputState.isLocked) {
+            if (miningIntervalId) {
+                clearInterval(miningIntervalId);
+                miningIntervalId = null;
+            }
+            if (placingIntervalId) {
+                clearInterval(placingIntervalId);
+                placingIntervalId = null;
+            }
+        }
     });
 
     document.addEventListener('mousemove', (event) => {
@@ -93,10 +107,38 @@ export function registerCeleronInputHandlers() {
 
         if (event.button === 0) {
             mineBlockFromCenter();
+            if (miningIntervalId) clearInterval(miningIntervalId);
+            miningIntervalId = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
             return;
         }
 
-        if (event.button === 2) placeBlockFromCenter();
+        if (event.button === 2) {
+            placeBlockFromCenter();
+            if (placingIntervalId) clearInterval(placingIntervalId);
+            placingIntervalId = window.setInterval(() => placeBlockFromCenter(), PLACE_REPEAT_MS);
+        }
+    });
+
+    window.addEventListener('mouseup', (event) => {
+        if (event.button === 0 && miningIntervalId) {
+            clearInterval(miningIntervalId);
+            miningIntervalId = null;
+        }
+        if (event.button === 2 && placingIntervalId) {
+            clearInterval(placingIntervalId);
+            placingIntervalId = null;
+        }
+    });
+
+    window.addEventListener('blur', () => {
+        if (miningIntervalId) {
+            clearInterval(miningIntervalId);
+            miningIntervalId = null;
+        }
+        if (placingIntervalId) {
+            clearInterval(placingIntervalId);
+            placingIntervalId = null;
+        }
     });
 
     window.addEventListener('contextmenu', (event) => event.preventDefault());
