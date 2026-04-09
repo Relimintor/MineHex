@@ -8,9 +8,9 @@ import {
     GRAVITY,
     HEX_HEIGHT,
     JUMP_FORCE,
-    JUMP_BUFFER_SECONDS,
-    MOVE_ACCELERATION,
-    MOVE_FRICTION,
+    MOVE_DECELERATION,
+    MOVE_DIRECTION_CHANGE_ACCELERATION,
+    MOVE_INITIAL_ACCELERATION,
     MOVE_SPEED,
     NETHROCK_LEVEL_HEX,
     PLAYER_HEIGHT,
@@ -40,15 +40,17 @@ const GROUND_CANDIDATE_CACHE_FRAMES = 6;
 const GROUND_RAY_NEAR = 0.01;
 const LOCAL_GROUND_INTERSECTIONS = [];
 const collisionProbePoint = new THREE.Vector3();
+const horizontalVelocity = new THREE.Vector2();
+const horizontalTargetVelocity = new THREE.Vector2();
+const horizontalCurrentDir = new THREE.Vector2();
+const horizontalTargetDir = new THREE.Vector2();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
 const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
-let timeSinceGrounded = Infinity;
-let jumpBufferAge = Infinity;
-let wasJumpPressed = false;
+const MIN_DIRECTION_EVAL_SPEED = 0.012;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -169,18 +171,30 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const moveSpeed = (isInLiquid ? SWIM_MOVE_SPEED : MOVE_SPEED) * sprintBoost;
     const targetVelocityX = hasMovementInput ? moveDir.x * moveSpeed : 0;
     const targetVelocityZ = hasMovementInput ? moveDir.z * moveSpeed : 0;
-    const movementControl = (!isInLiquid && !wasGrounded) ? AIR_CONTROL_MULTIPLIER : 1;
-    const accelerationFactor = 1 - Math.pow(1 - (MOVE_ACCELERATION * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1) * movementControl), frameScale);
-    const frictionFactor = Math.pow(1 - MOVE_FRICTION, frameScale);
-    const airDragFactor = Math.pow(1 - AIR_DRAG, frameScale);
+    horizontalVelocity.set(inputState.velocity.x, inputState.velocity.z);
+    horizontalTargetVelocity.set(targetVelocityX, targetVelocityZ);
 
-    inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
-    inputState.velocity.z += (targetVelocityZ - inputState.velocity.z) * accelerationFactor;
+    if (hasMovementInput) {
+        let acceleration = MOVE_INITIAL_ACCELERATION;
+        const currentSpeed = horizontalVelocity.length();
+        if (currentSpeed > MIN_DIRECTION_EVAL_SPEED) {
+            horizontalCurrentDir.copy(horizontalVelocity).multiplyScalar(1 / currentSpeed);
+            horizontalTargetDir.copy(horizontalTargetVelocity).normalize();
+            const alignment = horizontalCurrentDir.dot(horizontalTargetDir);
+            if (alignment < 0.92) {
+                acceleration = MOVE_DIRECTION_CHANGE_ACCELERATION;
+            }
+        }
 
-    if (!hasMovementInput) {
-        const passiveDamping = (isInLiquid || wasGrounded) ? frictionFactor : airDragFactor;
-        inputState.velocity.x *= passiveDamping;
-        inputState.velocity.z *= passiveDamping;
+        const accelerationFactor = 1 - Math.pow(1 - (acceleration * (wantsSprint ? SPRINT_ACCEL_MULTIPLIER : 1)), frameScale);
+        inputState.velocity.x += (targetVelocityX - inputState.velocity.x) * accelerationFactor;
+        inputState.velocity.z += (targetVelocityZ - inputState.velocity.z) * accelerationFactor;
+    } else {
+        const decelerationFactor = Math.pow(1 - MOVE_DECELERATION, frameScale);
+        inputState.velocity.x *= decelerationFactor;
+        inputState.velocity.z *= decelerationFactor;
+        if (Math.abs(inputState.velocity.x) < 0.0005) inputState.velocity.x = 0;
+        if (Math.abs(inputState.velocity.z) < 0.0005) inputState.velocity.z = 0;
     }
 
     if (isInLiquid) {
