@@ -1,5 +1,5 @@
 import { inputState } from '../state.js';
-import { applyLookDelta, initInventoryUi, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
+import { applyLookDelta, cancelMiningProgress, initInventoryUi, mineBlockFromCenter, placeBlockFromCenter, setKeyState, toggleInventoryScreen, updateSelectedBlock } from '../input.js';
 import { toggleCameraPerspective } from '../playerView.js';
 
 const MINE_REPEAT_MS = 90;
@@ -61,6 +61,7 @@ export function registerMobileInputHandlers() {
             clearInterval(mineInterval);
             mineInterval = null;
         }
+        cancelMiningProgress();
     }
 
     function resetJoystick() {
