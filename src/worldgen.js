@@ -38,6 +38,10 @@ const BLOCK_INDEX = {
 const YOUTUBE_SURFACE_LAYER_DEPTH = 3;
 
 const CHUNK_NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
+const PLAYER_COLLISION_FOOTPRINT_AXIAL_OFFSETS = Object.freeze([
+    Object.freeze([0, 0]),
+    ...AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => Object.freeze([q, r]))
+]);
 
 const CHUNK_AABB_MARGIN = 0.08;
 
@@ -76,6 +80,7 @@ const pendingChunkUnloadQueue = { items: [], head: 0 };
 const pendingChunkUnloadSet = new Set();
 const pendingChunkApplyQueue = { items: [], head: 0 };
 const pendingChunkApplySet = new Set();
+const protectedChunkKeysNearPlayer = new Set();
 const recycledChunkBlockSets = [];
 let chunkGenerationWorkerPool = null;
 const CHUNK_WORKER_SCRIPT_URLS = [
@@ -1207,6 +1212,19 @@ function enqueueChunkUnload(cq, cr) {
     queuePush(pendingChunkUnloadQueue, { cq, cr, chunkKey });
 }
 
+function collectProtectedChunkKeysNearPlayer(outSet) {
+    if (!(outSet instanceof Set)) return;
+    outSet.clear();
+    const cameraAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    for (const [dq, dr] of PLAYER_COLLISION_FOOTPRINT_AXIAL_OFFSETS) {
+        const sampleQ = cameraAxial.q + dq;
+        const sampleR = cameraAxial.r + dr;
+        const sampleChunkQ = Math.round(sampleQ / CHUNK_SIZE);
+        const sampleChunkR = Math.round(sampleR / CHUNK_SIZE);
+        outSet.add(packChunkKey(sampleChunkQ, sampleChunkR));
+    }
+}
+
 function rebuildStreamingQueue(cq, cr) {
     const visibleChunkKeys = new Set();
     const cameraChunkKey = packChunkKey(cq, cr);
@@ -1221,6 +1239,13 @@ function rebuildStreamingQueue(cq, cr) {
             visibleChunkKeys.add(chunkKey);
             enqueueChunkGeneration(visibleCq, visibleCr);
         }
+    }
+
+    collectProtectedChunkKeysNearPlayer(protectedChunkKeysNearPlayer);
+    for (const protectedChunkKey of protectedChunkKeysNearPlayer) {
+        visibleChunkKeys.add(protectedChunkKey);
+        const { cq: protectedChunkQ, cr: protectedChunkR } = unpackChunkKey(protectedChunkKey);
+        enqueueChunkGeneration(protectedChunkQ, protectedChunkR);
     }
 
     for (const chunkKey of Array.from(worldState.loadedChunks)) {
