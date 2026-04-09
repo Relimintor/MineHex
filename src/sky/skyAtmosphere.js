@@ -1,5 +1,6 @@
 const THREE = window.THREE;
 import { updateAtmosphericMaterialResponse } from '../shaders/materials.js';
+import { createBloodMoonTexture, getBloodMoonUniforms, resolveBloodMoonBoost } from './bloodmoon/index.js';
 
 export const SKY_COLOR = 0x87ceeb;
 const DAY_LENGTH_SECONDS = 480.0;
@@ -311,8 +312,11 @@ function resolveEventMoments(timeSeconds, sunDir) {
     const nightFactor = THREE.MathUtils.smoothstep(-sunDir.y, 0.05, 0.92);
     const midnightPulse = pulseAroundMidnight(dayPhase) * nightFactor;
 
-    const bloodMoonNight = hash1(dayIndex * 1.137 + 9.31) > 0.975 ? 1 : 0;
-    const bloodMoonBoost = bloodMoonNight * midnightPulse;
+    const bloodMoonBoost = resolveBloodMoonBoost({
+        timeSeconds,
+        sunDir,
+        dayLengthSeconds: DAY_LENGTH_SECONDS,
+    });
 
     const auroraNight = hash1(dayIndex * 0.719 + 41.8) > 0.93 ? 1 : 0;
     const auroraPhase = 0.55 + 0.45 * Math.sin(timeSeconds * 0.047 + dayIndex * 0.31);
@@ -367,16 +371,12 @@ function resolveFogColor(timeSeconds) {
 }
 
 export function applySkyAtmosphere(scene, lightingBridge) {
-    const bloodMoonTexture = new THREE.TextureLoader().load(new URL('../../assets/sky/bloodmoon.png', import.meta.url).href);
-    bloodMoonTexture.colorSpace = THREE.SRGBColorSpace;
-    bloodMoonTexture.wrapS = THREE.ClampToEdgeWrapping;
-    bloodMoonTexture.wrapT = THREE.ClampToEdgeWrapping;
+    const bloodMoonTexture = createBloodMoonTexture();
 
     const uniforms = {
         uTime: { value: 0 },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uBloodMoonTex: { value: bloodMoonTexture },
-        uBloodMoonBoost: { value: 0 },
+        ...getBloodMoonUniforms(bloodMoonTexture),
         uCometShower: { value: 0 },
         uCometHeadDir: { value: new THREE.Vector3(0.4, 0.6, 0.2).normalize() },
         uThunderFlash: { value: 0 },
