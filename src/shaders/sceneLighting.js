@@ -46,6 +46,10 @@ export function applySceneLighting(scene) {
         syncSun(skyValues) {
             if (!skyValues) return;
             const { sunDir, sunEnergy, dayFactor } = skyValues;
+            const eventMoments = skyValues.eventMoments ?? {};
+            const thunderFlash = saturate(eventMoments.thunderFlash ?? 0);
+            const bloodMoonBoost = saturate(eventMoments.bloodMoonBoost ?? 0);
+            const auroraStrength = saturate(eventMoments.auroraStrength ?? 0);
             const day = saturate(dayFactor);
             const night = 1 - day;
             const horizon = 1 - saturate(Math.abs(sunDir.y) / 0.42);
@@ -60,13 +64,13 @@ export function applySceneLighting(scene) {
             sun.position.set(sunDir.x * posScale, Math.max(8, sunDir.y * posScale), sunDir.z * posScale);
 
             // Stronger direct key at low sun angle for cinematic rim-light silhouettes.
-            sun.intensity = (0.05 + sunEnergy * 1.45) + (goldenHour * 0.9);
+            sun.intensity = (0.05 + sunEnergy * 1.45) + (goldenHour * 0.9) + (thunderFlash * 0.25);
 
             // Cooler nighttime ambient and stronger dawn/dusk contrast against direct light.
             const ambientNight = 0.05;
             const ambientDay = 0.22;
-            ambient.intensity = THREE.MathUtils.lerp(ambientNight, ambientDay, day) - (transitionWindow * 0.025);
-            hemi.intensity = THREE.MathUtils.lerp(0.085, 0.21, day) - (transitionWindow * 0.03);
+            ambient.intensity = THREE.MathUtils.lerp(ambientNight, ambientDay, day) - (transitionWindow * 0.025) + (thunderFlash * 0.12) + (auroraStrength * 0.04);
+            hemi.intensity = THREE.MathUtils.lerp(0.085, 0.21, day) - (transitionWindow * 0.03) + (thunderFlash * 0.09) + (auroraStrength * 0.08);
 
             // Warm sun tint during golden hour.
             const warmBoost = goldenHour * (0.55 + 0.45 * horizon);
@@ -79,9 +83,9 @@ export function applySceneLighting(scene) {
             // Push cool ambience at night.
             const nightBlue = THREE.MathUtils.smoothstep(night, 0.35, 1.0);
             hemi.color.setRGB(
-                0.5 + day * 0.38,
-                0.58 + day * 0.29 + nightBlue * 0.02,
-                0.72 + day * 0.16 + nightBlue * 0.16
+                0.5 + day * 0.38 + (thunderFlash * 0.06),
+                0.58 + day * 0.29 + nightBlue * 0.02 + (auroraStrength * 0.03) + (thunderFlash * 0.04),
+                0.72 + day * 0.16 + nightBlue * 0.16 + (auroraStrength * 0.12) + (thunderFlash * 0.1)
             );
             hemi.groundColor.setRGB(
                 0.08 + day * 0.2,
@@ -92,8 +96,12 @@ export function applySceneLighting(scene) {
             // Moon key light (opposite side of sun) to enhance water/ice night highlights.
             const moonDir = new THREE.Vector3(-sunDir.x, Math.max(0.06, -sunDir.y * 0.9 + 0.12), -sunDir.z).normalize();
             moon.position.set(moonDir.x * posScale, moonDir.y * posScale, moonDir.z * posScale);
-            moon.intensity = THREE.MathUtils.smoothstep(night, 0.4, 1.0) * 0.42;
-            moon.color.setRGB(0.69, 0.79, 1.0);
+            moon.intensity = THREE.MathUtils.smoothstep(night, 0.4, 1.0) * (0.42 + (bloodMoonBoost * 0.2));
+            moon.color.setRGB(
+                0.69 + (bloodMoonBoost * 0.22),
+                0.79 - (bloodMoonBoost * 0.51),
+                1.0 - (bloodMoonBoost * 0.72)
+            );
 
             updateCinematicMaterialResponse({ dayFactor: day, rainStrength: 0 });
         },
