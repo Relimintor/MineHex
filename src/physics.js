@@ -1,7 +1,10 @@
 const THREE = window.THREE;
 
 import {
+    AIR_CONTROL_MULTIPLIER,
+    AIR_DRAG,
     CHUNK_SIZE,
+    COYOTE_TIME_SECONDS,
     GRAVITY,
     HEX_HEIGHT,
     JUMP_FORCE,
@@ -142,6 +145,13 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const physicsStart = performance.now();
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
+    const jumpPressed = isKeyDown('Space');
+    if (jumpPressed && !wasJumpPressed) jumpBufferAge = 0;
+    wasJumpPressed = jumpPressed;
+    if (jumpBufferAge !== Infinity) jumpBufferAge += deltaTimeSeconds;
+    const hasBufferedJump = jumpBufferAge <= JUMP_BUFFER_SECONDS;
+    const wasGrounded = inputState.canJump && !isInLiquid;
+    if (!wasGrounded) timeSinceGrounded += deltaTimeSeconds;
 
     moveDir.set(0, 0, 0);
     if (isKeyDown('KeyW')) moveDir.z -= 1;
@@ -197,9 +207,11 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (isKeyDown('Space') && inputState.canJump) {
+    } else if (hasBufferedJump && (inputState.canJump || timeSinceGrounded <= COYOTE_TIME_SECONDS)) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
+        jumpBufferAge = Infinity;
+        timeSinceGrounded = Infinity;
         triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
@@ -229,6 +241,16 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const verticalVelocityBeforeCollision = inputState.velocity.y;
     const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;
     const isSupportedByGround = shouldResolveGroundCollision ? resolveGroundCollision() : false;
+    if (isSupportedByGround) {
+        timeSinceGrounded = 0;
+        if (!isInLiquid && hasBufferedJump) {
+            inputState.velocity.y = JUMP_FORCE;
+            inputState.canJump = false;
+            jumpBufferAge = Infinity;
+            timeSinceGrounded = Infinity;
+            triggerCameraImpulse(0.1);
+        }
+    }
     if (isSupportedByGround && verticalVelocityBeforeCollision < LANDING_IMPACT_THRESHOLD) {
         const landingStrength = THREE.MathUtils.clamp((-verticalVelocityBeforeCollision - Math.abs(LANDING_IMPACT_THRESHOLD)) * 0.42, 0.08, 0.95);
         triggerCameraImpulse(landingStrength);
@@ -253,6 +275,8 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         if (!didRespawnNearby) enforceSpawnOnSolidBlock(0, 0);
         inputState.velocity.y = 0;
         inputState.isSprinting = false;
+        timeSinceGrounded = 0;
+        jumpBufferAge = Infinity;
     }
     profilerRecord('physics', performance.now() - physicsStart);
 }
