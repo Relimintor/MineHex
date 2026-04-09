@@ -50,7 +50,7 @@ const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
-const COYOTE_TIME_SECONDS = 0.12;
+const COYOTE_WINDOW_SECONDS = 0.12;
 let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
 
@@ -206,7 +206,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (jumpPressedThisFrame && (inputState.canJump || timeSinceGrounded <= COYOTE_TIME_SECONDS)) {
+    } else if (jumpPressedThisFrame && (inputState.canJump || timeSinceGrounded <= COYOTE_WINDOW_SECONDS)) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
         timeSinceGrounded = Number.POSITIVE_INFINITY;
