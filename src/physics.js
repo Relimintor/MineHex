@@ -56,6 +56,8 @@ let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
 let hasBufferedJump = false;
 let jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
+// Legacy alias retained for runtime compatibility with older buffered-jump paths.
+let jumpBufferAge = Number.POSITIVE_INFINITY;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -155,11 +157,14 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     if (jumpPressedThisFrame) {
         hasBufferedJump = true;
         jumpBufferElapsedSeconds = 0;
+        jumpBufferAge = 0;
     } else if (hasBufferedJump) {
         jumpBufferElapsedSeconds += deltaTimeSeconds;
+        jumpBufferAge = jumpBufferElapsedSeconds;
         if (jumpBufferElapsedSeconds > JUMP_BUFFER_SECONDS) {
             hasBufferedJump = false;
             jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
+            jumpBufferAge = Number.POSITIVE_INFINITY;
         }
     }
 
@@ -225,6 +230,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         timeSinceGrounded = Number.POSITIVE_INFINITY;
         hasBufferedJump = false;
         jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
+        jumpBufferAge = Number.POSITIVE_INFINITY;
         triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
