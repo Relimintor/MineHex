@@ -3,7 +3,9 @@ const THREE = window.THREE;
 import { camera, renderer } from './scene.js';
 import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
+import { unpackBlockKey } from './keys.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
+import { flushDirtyChunkAtWorld } from './worldgen.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
 
@@ -162,6 +164,7 @@ export function placeBlockFromCenter() {
     placePos.copy(intersect.point).addScaledVector(placeNormal, HEX_HEIGHT * 0.6);
     const coords = worldToAxial(placePos);
     addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
+    flushDirtyChunkAtWorld(coords.q, coords.r);
     return true;
 }
 
@@ -171,7 +174,10 @@ export function mineBlockFromCenter() {
     if (!intersect) return false;
     const blockKey = getIntersectedBlockKey(intersect);
     if (!blockKey) return false;
-    removeBlock(blockKey);
+    const removed = removeBlock(blockKey);
+    if (!removed) return false;
+    const { q, r } = unpackBlockKey(blockKey);
+    flushDirtyChunkAtWorld(q, r);
     triggerCameraImpulse(0.16);
     return true;
 }
