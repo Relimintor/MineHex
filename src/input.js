@@ -5,6 +5,7 @@ import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
+import { packBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
 
@@ -22,8 +23,11 @@ const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
 const INTERACTION_RAY_NEAR = 0.05;
 const localInteractionIntersections = [];
+const INTERSECTION_BLOCK_HEIGHT_SCAN = Object.freeze([0, -1, 1, -2, 2]);
+const INTERSECTION_SOLID_PULLBACK = Math.max(0.04, HEX_HEIGHT * 0.16);
 const DESKTOP_MINE_REPEAT_MS = 75;
 const DESKTOP_PLACE_REPEAT_MS = 75;
+const MINING_TARGET_LOSS_GRACE_MS = 140;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
@@ -55,6 +59,7 @@ let desktopPlacingIntervalId = null;
 let lastPointerUnlockAtMs = 0;
 let miningTargetBlockKey = null;
 let miningStartedAtMs = 0;
+let miningTargetLastSeenAtMs = 0;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -159,6 +164,27 @@ function clearDesktopActionIntervals() {
 export function cancelMiningProgress() {
     miningTargetBlockKey = null;
     miningStartedAtMs = 0;
+    miningTargetLastSeenAtMs = 0;
+}
+
+function resolveBlockKeyFromIntersection(intersection) {
+    const directBlockKey = getIntersectedBlockKey(intersection);
+    if (directBlockKey) return directBlockKey;
+    if (!intersection?.point) return null;
+
+    placePos.copy(intersection.point);
+    if (intersection.face?.normal) {
+        placeNormal.copy(intersection.face.normal).transformDirection(intersection.object.matrixWorld);
+        placePos.addScaledVector(placeNormal, -INTERSECTION_SOLID_PULLBACK);
+    }
+
+    const coords = worldToAxial(placePos);
+    for (const deltaH of INTERSECTION_BLOCK_HEIGHT_SCAN) {
+        const candidateBlockKey = packBlockKey(coords.q, coords.r, coords.h + deltaH);
+        if (worldState.worldBlocks.has(candidateBlockKey)) return candidateBlockKey;
+    }
+
+    return null;
 }
 
 export function placeBlockFromCenter() {
@@ -176,24 +202,28 @@ export function placeBlockFromCenter() {
 
 export function mineBlockFromCenter() {
     triggerFirstPersonArmSwing();
+    const now = performance.now();
     const intersect = getCenterIntersection();
-    if (!intersect) {
+    if (!intersect && (!miningTargetBlockKey || (now - miningTargetLastSeenAtMs) > MINING_TARGET_LOSS_GRACE_MS)) {
         cancelMiningProgress();
         return false;
     }
-    const blockKey = getIntersectedBlockKey(intersect);
-    if (!blockKey) {
+    const blockKey = resolveBlockKeyFromIntersection(intersect);
+    if (!blockKey && (!miningTargetBlockKey || (now - miningTargetLastSeenAtMs) > MINING_TARGET_LOSS_GRACE_MS)) {
         cancelMiningProgress();
         return false;
     }
+    if (blockKey) miningTargetLastSeenAtMs = now;
+    const activeBlockKey = blockKey ?? miningTargetBlockKey;
 
-    if (miningTargetBlockKey !== blockKey) {
-        miningTargetBlockKey = blockKey;
-        miningStartedAtMs = performance.now();
+    if (miningTargetBlockKey !== activeBlockKey) {
+        miningTargetBlockKey = activeBlockKey;
+        miningStartedAtMs = now;
+        miningTargetLastSeenAtMs = now;
         return false;
     }
 
-    const blockMesh = worldState.worldBlocks.get(blockKey);
+    const blockMesh = worldState.worldBlocks.get(activeBlockKey);
     const typeIndex = blockMesh?.userData?.typeIndex;
     const miningDurationMs = getMiningDurationMsForType(typeIndex);
     if (!Number.isFinite(miningDurationMs)) {
@@ -201,10 +231,10 @@ export function mineBlockFromCenter() {
         return false;
     }
 
-    const elapsedMs = performance.now() - miningStartedAtMs;
+    const elapsedMs = now - miningStartedAtMs;
     if (elapsedMs < miningDurationMs) return false;
 
-    const didRemove = removeBlock(blockKey);
+    const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
     triggerCameraImpulse(0.16);

@@ -53,6 +53,7 @@ const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
 const COYOTE_WINDOW_SECONDS = 0.12;
 const JUMP_BUFFER_SECONDS = 0.12;
+const SWEEP_GROUND_EPSILON = 1.0e-4;
 const FALLBACK_GROUND_PROBE_OFFSETS_XZ = Object.freeze([
     Object.freeze([0, 0]),
     Object.freeze([HEX_RADIUS * 0.42, 0]),
@@ -136,6 +137,29 @@ function getGroundHit() {
     LOCAL_GROUND_INTERSECTIONS.length = 0;
     groundRaycaster.intersectObjects(localGroundCandidates, false, LOCAL_GROUND_INTERSECTIONS);
     return LOCAL_GROUND_INTERSECTIONS[0] ?? null;
+}
+
+function getSweptGroundSnapY(previousCameraY, nextCameraY) {
+    if (nextCameraY >= previousCameraY) return null;
+    const previousFeetY = previousCameraY - PLAYER_HEIGHT;
+    const nextFeetY = nextCameraY - PLAYER_HEIGHT;
+    let highestCrossedGroundY = Number.NEGATIVE_INFINITY;
+
+    for (const [offsetX, offsetZ] of FALLBACK_GROUND_PROBE_OFFSETS_XZ) {
+        collisionProbePoint.set(camera.position.x + offsetX, nextCameraY, camera.position.z + offsetZ);
+        const { q, r } = worldToAxial(collisionProbePoint);
+        const topSolidH = worldState.topSolidHeightByColumn.get(packColumnKey(q, r));
+        if (topSolidH === undefined) continue;
+        if (!isSolidBlockAt(q, r, topSolidH)) continue;
+
+        const groundY = topSolidH * HEX_HEIGHT;
+        const wasAboveGround = previousFeetY + SWEEP_GROUND_EPSILON >= groundY;
+        const movedIntoGround = nextFeetY <= groundY + SWEEP_GROUND_EPSILON;
+        if (!wasAboveGround || !movedIntoGround) continue;
+        if (groundY > highestCrossedGroundY) highestCrossedGroundY = groundY;
+    }
+
+    return Number.isFinite(highestCrossedGroundY) ? highestCrossedGroundY : null;
 }
 
 function resolveGroundCollision() {
@@ -273,12 +297,25 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.z = 0;
     }
 
-    const previousY = camera.position.y;
-    camera.position.y += inputState.velocity.y * frameScale;
-
     const verticalVelocityBeforeCollision = inputState.velocity.y;
+    const previousY = camera.position.y;
+    const nextY = previousY + (verticalVelocityBeforeCollision * frameScale);
+    let didSnapToSweptGround = false;
+    if (!isInLiquid && verticalVelocityBeforeCollision <= 0) {
+        const sweptGroundY = getSweptGroundSnapY(previousY, nextY);
+        if (sweptGroundY !== null) {
+            camera.position.y = sweptGroundY + PLAYER_HEIGHT;
+            inputState.velocity.y = 0;
+            inputState.canJump = true;
+            didSnapToSweptGround = true;
+        }
+    }
+    if (!didSnapToSweptGround) {
+        camera.position.y = nextY;
+    }
+
     const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;
-    const isSupportedByGround = shouldResolveGroundCollision ? resolveGroundCollision() : false;
+    const isSupportedByGround = didSnapToSweptGround || (shouldResolveGroundCollision ? resolveGroundCollision() : false);
     if (isSupportedByGround) {
         timeSinceGrounded = 0;
         if (!isInLiquid && hasBufferedJump) {
