@@ -10,7 +10,7 @@ const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const firstPersonArmOffset = new THREE.Vector3(0.43, -0.37, -0.48);
-const baseArmScale = 0.39;
+const baseArmScale = 0.45;
 
 const ARM_ANIMATION = {
     idlePitch: -0.38,
