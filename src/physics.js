@@ -50,6 +50,7 @@ const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
+let wasJumpPressed = false;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -144,13 +145,8 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const physicsStart = performance.now();
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
-    const jumpPressed = isKeyDown('Space');
-    if (jumpPressed && !wasJumpPressed) jumpBufferAge = 0;
-    wasJumpPressed = jumpPressed;
-    if (jumpBufferAge !== Infinity) jumpBufferAge += deltaTimeSeconds;
-    const hasBufferedJump = jumpBufferAge <= JUMP_BUFFER_SECONDS;
-    const wasGrounded = inputState.canJump && !isInLiquid;
-    if (!wasGrounded) timeSinceGrounded += deltaTimeSeconds;
+    const isJumpPressed = isKeyDown('Space');
+    const jumpPressedThisFrame = isJumpPressed && !wasJumpPressed;
 
     moveDir.set(0, 0, 0);
     if (isKeyDown('KeyW')) moveDir.z -= 1;
@@ -199,7 +195,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     }
 
     if (isInLiquid) {
-        if (isKeyDown('Space')) {
+        if (isJumpPressed) {
             inputState.velocity.y += SWIM_UP_FORCE * frameScale;
         }
         if (isKeyDown('ShiftLeft') || isKeyDown('ShiftRight')) {
@@ -208,7 +204,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (hasBufferedJump && (inputState.canJump || timeSinceGrounded <= COYOTE_TIME_SECONDS)) {
+    } else if (jumpPressedThisFrame && inputState.canJump) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
         jumpBufferAge = Infinity;
@@ -279,5 +275,6 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         timeSinceGrounded = 0;
         jumpBufferAge = Infinity;
     }
+    wasJumpPressed = isJumpPressed;
     profilerRecord('physics', performance.now() - physicsStart);
 }
