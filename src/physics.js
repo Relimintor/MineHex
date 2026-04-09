@@ -51,8 +51,11 @@ const SPRINT_ACCEL_MULTIPLIER = 1.16;
 const LANDING_IMPACT_THRESHOLD = -0.52;
 const MIN_DIRECTION_EVAL_SPEED = 0.012;
 const COYOTE_WINDOW_SECONDS = 0.12;
+const JUMP_BUFFER_SECONDS = 0.12;
 let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
+let hasBufferedJump = false;
+let jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
 
 function isSolidAtWorldPosition(x, y, z) {
     collisionProbePoint.set(x, y, z);
@@ -149,6 +152,16 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const isInLiquid = isCameraInLiquid();
     const isJumpPressed = isKeyDown('Space');
     const jumpPressedThisFrame = isJumpPressed && !wasJumpPressed;
+    if (jumpPressedThisFrame) {
+        hasBufferedJump = true;
+        jumpBufferElapsedSeconds = 0;
+    } else if (hasBufferedJump) {
+        jumpBufferElapsedSeconds += deltaTimeSeconds;
+        if (jumpBufferElapsedSeconds > JUMP_BUFFER_SECONDS) {
+            hasBufferedJump = false;
+            jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
+        }
+    }
 
     moveDir.set(0, 0, 0);
     if (isKeyDown('KeyW')) moveDir.z -= 1;
@@ -206,10 +219,12 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         inputState.velocity.y += SWIM_GRAVITY * frameScale;
         inputState.velocity.y *= 0.92;
         inputState.canJump = false;
-    } else if (jumpPressedThisFrame && (inputState.canJump || timeSinceGrounded <= COYOTE_WINDOW_SECONDS)) {
+    } else if (hasBufferedJump && (inputState.canJump || timeSinceGrounded <= COYOTE_WINDOW_SECONDS)) {
         inputState.velocity.y = JUMP_FORCE;
         inputState.canJump = false;
         timeSinceGrounded = Number.POSITIVE_INFINITY;
+        hasBufferedJump = false;
+        jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
         triggerCameraImpulse(0.1);
     } else {
         inputState.velocity.y += GRAVITY * frameScale;
