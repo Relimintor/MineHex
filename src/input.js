@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
-import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
+import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
@@ -18,7 +18,8 @@ const inventoryScreen = document.getElementById('inventory-screen');
 const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
-const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
+// Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
+const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
 // Keep mining/picking responsive while flicking the camera by rebuilding candidates each frame.
 const INTERACTION_CANDIDATE_CACHE_FRAMES = 0;
