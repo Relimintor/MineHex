@@ -251,7 +251,7 @@ export function mineBlockFromCenter() {
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
-    flushEditedDirtyChunks(2);
+    flushEditedDirtyChunks(Number.POSITIVE_INFINITY);
     triggerCameraImpulse(0.16);
     return true;
 }
