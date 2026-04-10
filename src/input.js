@@ -212,10 +212,20 @@ export function mineBlockFromCenter() {
         cancelMiningProgress();
         return false;
     }
-    const blockKey = resolveBlockKeyFromIntersection(intersect);
+    let blockKey = resolveBlockKeyFromIntersection(intersect);
     if (!blockKey && (!miningTargetBlockKey || (now - miningTargetLastSeenAtMs) > MINING_TARGET_LOSS_GRACE_MS)) {
         cancelMiningProgress();
         return false;
+    }
+    if (
+        blockKey
+        && miningTargetBlockKey
+        && blockKey !== miningTargetBlockKey
+        && (now - miningTargetLastSeenAtMs) <= MINING_TARGET_LOSS_GRACE_MS
+    ) {
+        // Prefer the existing target during brief intersection jitter so harder blocks
+        // (like stone) don't keep resetting progress between neighboring keys.
+        blockKey = miningTargetBlockKey;
     }
     if (blockKey) miningTargetLastSeenAtMs = now;
     const activeBlockKey = blockKey ?? miningTargetBlockKey;
