@@ -943,6 +943,11 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     }
 }
 
+export function flushEditedDirtyChunks(budget = 2) {
+    if (worldState.dirtyChunks.size === 0) return;
+    applyDirtyChunks(Math.max(1, budget));
+}
+
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
     if (!(biome === 'forest' || biome === 'snowy_forest')) return;
     if (groundHeight <= SEA_LEVEL) return;

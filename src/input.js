@@ -8,6 +8,7 @@ import { getMiningDurationMsForType } from './hardness.js';
 import { packBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
+import { flushEditedDirtyChunks } from './worldgen.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -240,6 +241,7 @@ export function mineBlockFromCenter() {
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
+    flushEditedDirtyChunks(2);
     triggerCameraImpulse(0.16);
     return true;
 }
