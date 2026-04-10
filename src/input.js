@@ -1,13 +1,14 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
-import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
+import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
 import { packBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
+import { flushEditedDirtyChunks } from './worldgen.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -18,16 +19,19 @@ const inventoryScreen = document.getElementById('inventory-screen');
 const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
-const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
+// Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
+const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
-const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
+// Keep mining/picking responsive while flicking the camera by rebuilding candidates each frame.
+const INTERACTION_CANDIDATE_CACHE_FRAMES = 0;
 const INTERACTION_RAY_NEAR = 0.05;
 const localInteractionIntersections = [];
 const INTERSECTION_BLOCK_HEIGHT_SCAN = Object.freeze([0, -1, 1, -2, 2]);
 const INTERSECTION_SOLID_PULLBACK = Math.max(0.04, HEX_HEIGHT * 0.16);
 const DESKTOP_MINE_REPEAT_MS = 75;
 const DESKTOP_PLACE_REPEAT_MS = 75;
-const MINING_TARGET_LOSS_GRACE_MS = 140;
+// Allow brief raycast misses on low FPS devices without resetting mining progress immediately.
+const MINING_TARGET_LOSS_GRACE_MS = 260;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
@@ -208,10 +212,20 @@ export function mineBlockFromCenter() {
         cancelMiningProgress();
         return false;
     }
-    const blockKey = resolveBlockKeyFromIntersection(intersect);
+    let blockKey = resolveBlockKeyFromIntersection(intersect);
     if (!blockKey && (!miningTargetBlockKey || (now - miningTargetLastSeenAtMs) > MINING_TARGET_LOSS_GRACE_MS)) {
         cancelMiningProgress();
         return false;
+    }
+    if (
+        blockKey
+        && miningTargetBlockKey
+        && blockKey !== miningTargetBlockKey
+        && (now - miningTargetLastSeenAtMs) <= MINING_TARGET_LOSS_GRACE_MS
+    ) {
+        // Prefer the existing target during brief intersection jitter so harder blocks
+        // (like stone) don't keep resetting progress between neighboring keys.
+        blockKey = miningTargetBlockKey;
     }
     if (blockKey) miningTargetLastSeenAtMs = now;
     const activeBlockKey = blockKey ?? miningTargetBlockKey;
@@ -237,6 +251,7 @@ export function mineBlockFromCenter() {
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
+    flushEditedDirtyChunks(2);
     triggerCameraImpulse(0.16);
     return true;
 }
