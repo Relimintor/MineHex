@@ -20,14 +20,16 @@ let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
 const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
-const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
+// Keep mining/picking responsive while flicking the camera by rebuilding candidates each frame.
+const INTERACTION_CANDIDATE_CACHE_FRAMES = 0;
 const INTERACTION_RAY_NEAR = 0.05;
 const localInteractionIntersections = [];
 const INTERSECTION_BLOCK_HEIGHT_SCAN = Object.freeze([0, -1, 1, -2, 2]);
 const INTERSECTION_SOLID_PULLBACK = Math.max(0.04, HEX_HEIGHT * 0.16);
 const DESKTOP_MINE_REPEAT_MS = 75;
 const DESKTOP_PLACE_REPEAT_MS = 75;
-const MINING_TARGET_LOSS_GRACE_MS = 140;
+// Allow brief raycast misses on low FPS devices without resetting mining progress immediately.
+const MINING_TARGET_LOSS_GRACE_MS = 260;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
