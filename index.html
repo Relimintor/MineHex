@@ -123,6 +123,11 @@
             <h2>Create World</h2>
             <label for="world-name">Choose world name</label>
             <input id="world-name" type="text" placeholder="My First World" maxlength="40" />
+            <label for="world-gamemode">Game mode</label>
+            <select id="world-gamemode">
+                <option value="creative">Creative</option>
+                <option value="survival">Survival</option>
+            </select>
             <div class="toolbar">
                 <button id="save-world" class="primary">Create</button>
                 <button id="cancel-create">Cancel</button>
@@ -156,6 +161,7 @@
         const worldList = document.getElementById("world-list");
         const loadList = document.getElementById("load-list");
         const worldNameInput = document.getElementById("world-name");
+        const worldGamemodeInput = document.getElementById("world-gamemode");
         const worldStatus = document.getElementById("world-status");
         const createStatus = document.getElementById("create-status");
         const loadStatus = document.getElementById("load-status");
@@ -186,15 +192,22 @@
             }));
         }
 
-        function createWorld(name) {
+        function normalizeGameMode(gameMode) {
+            return gameMode === "survival" ? "survival" : "creative";
+        }
+
+        function createWorld(name, gameMode) {
             return openWorldDb().then((db) => new Promise((resolve, reject) => {
                 const tx = db.transaction(WORLD_STORE, "readwrite");
                 const store = tx.objectStore(WORLD_STORE);
+                const safeGameMode = normalizeGameMode(gameMode);
                 const newWorld = {
                     name,
+                    gameMode: safeGameMode,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                     data: {
+                        gameMode: safeGameMode,
                         seed: Math.floor(Math.random() * 1000000000),
                         player: { x: 0, y: 0, z: 0 }
                     }
@@ -219,6 +232,7 @@
             const params = new URLSearchParams({
                 worldId: String(world.id),
                 worldName: world.name,
+                gameMode: normalizeGameMode(world.gameMode ?? world?.data?.gameMode),
                 mode
             });
             window.location.href = `index2.html?${params.toString()}`;
@@ -248,12 +262,13 @@
                 }
 
                 worlds.forEach((world) => {
-                    worldList.append(worldButton(world.name, () => {
-                        worldStatus.textContent = `Selected world: ${world.name}`;
+                    const gameMode = normalizeGameMode(world.gameMode ?? world?.data?.gameMode);
+                    worldList.append(worldButton(`${world.name} (${gameMode})`, () => {
+                        worldStatus.textContent = `Selected world: ${world.name} (${gameMode})`;
                     }));
 
-                    loadList.append(worldButton(world.name, () => {
-                        loadStatus.textContent = `Loading world: ${world.name}`;
+                    loadList.append(worldButton(`${world.name} (${gameMode})`, () => {
+                        loadStatus.textContent = `Loading world: ${world.name} (${gameMode})`;
                         startWorld(world, "load");
                     }));
                 });
@@ -283,6 +298,7 @@
         document.getElementById("open-create").addEventListener("click", () => {
             createStatus.textContent = "";
             worldNameInput.value = "";
+            worldGamemodeInput.value = "creative";
             showScreen("create");
             worldNameInput.focus();
         });
@@ -295,6 +311,7 @@
 
         document.getElementById("save-world").addEventListener("click", async () => {
             const name = worldNameInput.value.trim();
+            const gameMode = normalizeGameMode(worldGamemodeInput.value);
             if (!name) {
                 createStatus.textContent = "Please enter a world name.";
                 return;
@@ -302,8 +319,8 @@
 
             createStatus.textContent = "Creating world...";
             try {
-                const world = await createWorld(name);
-                createStatus.textContent = `Created world: ${world.name}`;
+                const world = await createWorld(name, gameMode);
+                createStatus.textContent = `Created world: ${world.name} (${gameMode})`;
                 await renderWorldLists();
                 startWorld(world, "create");
             } catch (error) {
