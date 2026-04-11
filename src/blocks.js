@@ -665,6 +665,7 @@ const chunkAabbHitPoint = new THREE.Vector3();
 
 function doesChunkBoundsIntersectRayRange(bounds, rayOrigin, rayDirection, rayNear, rayFar) {
     if (!bounds || !rayOrigin || !rayDirection) return true;
+    if (bounds.containsPoint(rayOrigin)) return true;
     chunkAabbTestRay.origin.copy(rayOrigin);
     chunkAabbTestRay.direction.copy(rayDirection);
     const hitPoint = chunkAabbTestRay.intersectBox(bounds, chunkAabbHitPoint);
