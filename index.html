@@ -13,12 +13,9 @@
             --muted: #9ca3af;
             --accent: #22c55e;
             --accent-2: #16a34a;
-            --danger: #ef4444;
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
             margin: 0;
@@ -40,26 +37,11 @@
             overflow: hidden;
         }
 
-        .screen {
-            display: none;
-            padding: 24px;
-            gap: 14px;
-        }
+        .screen { display: none; padding: 24px; gap: 14px; }
+        .screen.active { display: grid; }
+        h1, h2 { margin: 0 0 10px; }
 
-        .screen.active {
-            display: grid;
-        }
-
-        h1,
-        h2 {
-            margin: 0 0 10px;
-        }
-
-        .button-row,
-        .world-actions {
-            display: grid;
-            gap: 10px;
-        }
+        .button-row, .world-actions { display: grid; gap: 10px; }
 
         button {
             padding: 12px 14px;
@@ -70,10 +52,7 @@
             cursor: pointer;
             font-size: 16px;
         }
-
-        button:hover {
-            background: #374151;
-        }
+        button:hover { background: #374151; }
 
         button.primary {
             background: var(--accent);
@@ -93,14 +72,8 @@
             align-content: start;
         }
 
-        .world-list button {
-            text-align: left;
-        }
-
-        .world-list .empty {
-            color: var(--muted);
-            font-style: italic;
-        }
+        .world-list button { text-align: left; }
+        .world-list .empty { color: var(--muted); font-style: italic; }
 
         input[type="text"] {
             width: 100%;
@@ -112,21 +85,9 @@
             font-size: 16px;
         }
 
-        .hint {
-            color: var(--muted);
-            margin: 0;
-        }
-
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .status {
-            min-height: 20px;
-            color: #86efac;
-        }
+        .hint { color: var(--muted); margin: 0; }
+        .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+        .status { min-height: 20px; color: #86efac; }
     </style>
 </head>
 <body>
@@ -163,7 +124,7 @@
             <label for="world-name">Choose world name</label>
             <input id="world-name" type="text" placeholder="My First World" maxlength="40" />
             <div class="toolbar">
-                <button id="save-world" class="primary">Save World</button>
+                <button id="save-world" class="primary">Create</button>
                 <button id="cancel-create">Cancel</button>
             </div>
             <div id="create-status" class="status"></div>
@@ -181,7 +142,9 @@
     </main>
 
     <script>
-        const STORAGE_KEY = "minehex_worlds";
+        const DB_NAME = "minehex";
+        const DB_VERSION = 1;
+        const WORLD_STORE = "worlds";
 
         const screens = {
             main: document.getElementById("main-screen"),
@@ -197,13 +160,54 @@
         const createStatus = document.getElementById("create-status");
         const loadStatus = document.getElementById("load-status");
 
-        function readWorlds() {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
+        function openWorldDb() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains(WORLD_STORE)) {
+                        const worldStore = db.createObjectStore(WORLD_STORE, { keyPath: "id", autoIncrement: true });
+                        worldStore.createIndex("name", "name", { unique: true });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error("Could not open world database."));
+            });
         }
 
-        function writeWorlds(worlds) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(worlds));
+        function getAllWorlds() {
+            return openWorldDb().then((db) => new Promise((resolve, reject) => {
+                const tx = db.transaction(WORLD_STORE, "readonly");
+                const store = tx.objectStore(WORLD_STORE);
+                const request = store.getAll();
+                request.onsuccess = () => resolve((request.result || []).sort((a, b) => a.name.localeCompare(b.name)));
+                request.onerror = () => reject(request.error || new Error("Could not read worlds."));
+                tx.oncomplete = () => db.close();
+            }));
+        }
+
+        function createWorld(name) {
+            return openWorldDb().then((db) => new Promise((resolve, reject) => {
+                const tx = db.transaction(WORLD_STORE, "readwrite");
+                const store = tx.objectStore(WORLD_STORE);
+                const newWorld = {
+                    name,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    data: {
+                        seed: Math.floor(Math.random() * 1000000000),
+                        player: { x: 0, y: 0, z: 0 }
+                    }
+                };
+
+                const addRequest = store.add(newWorld);
+                addRequest.onsuccess = () => {
+                    const created = { ...newWorld, id: addRequest.result };
+                    resolve(created);
+                };
+                addRequest.onerror = () => reject(addRequest.error || new Error("Could not create world."));
+                tx.oncomplete = () => db.close();
+            }));
         }
 
         function showScreen(name) {
@@ -211,41 +215,57 @@
             screens[name].classList.add("active");
         }
 
+        function startWorld(world, mode) {
+            const params = new URLSearchParams({
+                worldId: String(world.id),
+                worldName: world.name,
+                mode
+            });
+            window.location.href = `index2.html?${params.toString()}`;
+        }
+
         function worldButton(name, onClick) {
             const btn = document.createElement("button");
             btn.textContent = name;
-            btn.addEventListener("click", () => onClick(name));
+            btn.addEventListener("click", onClick);
             return btn;
         }
 
-        function renderWorldLists() {
-            const worlds = readWorlds();
+        async function renderWorldLists() {
             worldList.innerHTML = "";
             loadList.innerHTML = "";
 
-            if (!worlds.length) {
-                const empty = document.createElement("div");
-                empty.className = "empty";
-                empty.textContent = "No worlds saved yet.";
-                worldList.append(empty.cloneNode(true));
-                loadList.append(empty);
-                return;
+            try {
+                const worlds = await getAllWorlds();
+
+                if (!worlds.length) {
+                    const empty = document.createElement("div");
+                    empty.className = "empty";
+                    empty.textContent = "No worlds saved yet.";
+                    worldList.append(empty.cloneNode(true));
+                    loadList.append(empty);
+                    return;
+                }
+
+                worlds.forEach((world) => {
+                    worldList.append(worldButton(world.name, () => {
+                        worldStatus.textContent = `Selected world: ${world.name}`;
+                    }));
+
+                    loadList.append(worldButton(world.name, () => {
+                        loadStatus.textContent = `Loading world: ${world.name}`;
+                        startWorld(world, "load");
+                    }));
+                });
+            } catch (error) {
+                worldStatus.textContent = error.message;
+                loadStatus.textContent = error.message;
             }
-
-            worlds.forEach((world) => {
-                worldList.append(worldButton(world.name, () => {
-                    worldStatus.textContent = `Selected world: ${world.name}`;
-                }));
-
-                loadList.append(worldButton(world.name, (name) => {
-                    loadStatus.textContent = `Loaded world: ${name}`;
-                }));
-            });
         }
 
-        document.getElementById("go-world").addEventListener("click", () => {
+        document.getElementById("go-world").addEventListener("click", async () => {
             showScreen("world");
-            renderWorldLists();
+            await renderWorldLists();
         });
 
         document.getElementById("go-options").addEventListener("click", () => {
@@ -267,40 +287,43 @@
             worldNameInput.focus();
         });
 
-        document.getElementById("open-load").addEventListener("click", () => {
+        document.getElementById("open-load").addEventListener("click", async () => {
             loadStatus.textContent = "";
             showScreen("load");
-            renderWorldLists();
+            await renderWorldLists();
         });
 
-        document.getElementById("save-world").addEventListener("click", () => {
+        document.getElementById("save-world").addEventListener("click", async () => {
             const name = worldNameInput.value.trim();
             if (!name) {
                 createStatus.textContent = "Please enter a world name.";
                 return;
             }
 
-            const worlds = readWorlds();
-            if (worlds.some((world) => world.name.toLowerCase() === name.toLowerCase())) {
-                createStatus.textContent = "A world with that name already exists.";
-                return;
+            createStatus.textContent = "Creating world...";
+            try {
+                const world = await createWorld(name);
+                createStatus.textContent = `Created world: ${world.name}`;
+                await renderWorldLists();
+                startWorld(world, "create");
+            } catch (error) {
+                if ((error && error.name) === "ConstraintError") {
+                    createStatus.textContent = "A world with that name already exists.";
+                    return;
+                }
+                createStatus.textContent = error.message || "Failed to create world.";
             }
-
-            worlds.push({ name, createdAt: new Date().toISOString() });
-            writeWorlds(worlds);
-            createStatus.textContent = `Saved world: ${name}`;
-            renderWorldLists();
         });
 
-        document.getElementById("cancel-create").addEventListener("click", () => {
+        document.getElementById("cancel-create").addEventListener("click", async () => {
             showScreen("world");
-            renderWorldLists();
+            await renderWorldLists();
         });
 
         document.getElementById("back-main").addEventListener("click", () => showScreen("main"));
-        document.getElementById("back-world-from-load").addEventListener("click", () => {
+        document.getElementById("back-world-from-load").addEventListener("click", async () => {
             showScreen("world");
-            renderWorldLists();
+            await renderWorldLists();
         });
 
         renderWorldLists();
