@@ -8,7 +8,7 @@ import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
 import { getBiomeAtWorldPosition, runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
+import { CHUNK_SIZE, ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, setWorldSeed, toggleProfilerEnabled, worldState } from './state.js';
