@@ -8,10 +8,11 @@ import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
 import { getBiomeAtWorldPosition, runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
-import { ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
+import { CHUNK_SIZE, ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
-import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, toggleProfilerEnabled, worldState } from './state.js';
+import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, setWorldSeed, toggleProfilerEnabled, worldState } from './state.js';
+import { normalizeBlockKey, packBlockKey, packChunkKey, unpackBlockKey } from './keys.js';
 import { updateCameraPerspective } from './playerView.js';
 import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
 import { createPostProcessor } from './postprocessing.js';
@@ -20,6 +21,149 @@ camera.position.set(0, 48, 0);
 
 const PERFORMANCE_PROFILE_KEY = 'minehexPerformanceProfile';
 const CONTROL_MODE_KEY = 'minehexControlMode';
+const WORLD_DB_NAME = 'minehex';
+const WORLD_DB_VERSION = 1;
+const WORLD_STORE = 'worlds';
+const WORLD_AUTOSAVE_INTERVAL_MS = 5000;
+const worldQuery = new URLSearchParams(window.location.search);
+const activeWorldId = Number(worldQuery.get('worldId'));
+let activeWorldRecord = null;
+let lastWorldAutosaveAt = 0;
+let worldSaveInFlight = false;
+
+function getChunkKeyFromAxial(q, r) {
+    const cq = Math.round(q / CHUNK_SIZE);
+    const cr = Math.round(r / CHUNK_SIZE);
+    return packChunkKey(cq, cr);
+}
+
+function openWorldDb() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(WORLD_DB_NAME, WORLD_DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(WORLD_STORE)) {
+                const store = db.createObjectStore(WORLD_STORE, { keyPath: 'id', autoIncrement: true });
+                store.createIndex('name', 'name', { unique: true });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Unable to open world database.'));
+    });
+}
+
+function getWorldById(worldId) {
+    if (!Number.isFinite(worldId) || worldId <= 0) return Promise.resolve(null);
+    return openWorldDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(WORLD_STORE, 'readonly');
+        const store = tx.objectStore(WORLD_STORE);
+        const request = store.get(worldId);
+        request.onsuccess = () => resolve(request.result ?? null);
+        request.onerror = () => reject(request.error || new Error('Unable to load world.'));
+        tx.oncomplete = () => db.close();
+    }));
+}
+
+function writeWorld(record) {
+    return openWorldDb().then((db) => new Promise((resolve, reject) => {
+        const tx = db.transaction(WORLD_STORE, 'readwrite');
+        const store = tx.objectStore(WORLD_STORE);
+        const request = store.put(record);
+        request.onsuccess = () => resolve(record);
+        request.onerror = () => reject(request.error || new Error('Unable to save world.'));
+        tx.oncomplete = () => db.close();
+    }));
+}
+
+function applyWorldRecord(record) {
+    const worldData = record?.data ?? {};
+    setWorldSeed(worldData.seed ?? record?.id ?? Date.now());
+
+    worldState.permanentBlocks.clear();
+    worldState.permanentBlocksByChunk.clear();
+    worldState.removedBlocks.clear();
+    worldState.removedBlocksByChunk.clear();
+
+    const permanentBlocks = Array.isArray(worldData.permanentBlocks) ? worldData.permanentBlocks : [];
+    for (const block of permanentBlocks) {
+        if (!block || !Number.isFinite(block.q) || !Number.isFinite(block.r) || !Number.isFinite(block.h) || !Number.isFinite(block.typeIndex)) continue;
+        const chunkKey = getChunkKeyFromAxial(block.q, block.r);
+        const blockKey = packBlockKey(block.q, block.r, block.h);
+        worldState.permanentBlocks.set(blockKey, {
+            q: block.q,
+            r: block.r,
+            h: block.h,
+            typeIndex: block.typeIndex
+        });
+        if (!worldState.permanentBlocksByChunk.has(chunkKey)) worldState.permanentBlocksByChunk.set(chunkKey, new Set());
+        worldState.permanentBlocksByChunk.get(chunkKey).add(blockKey);
+    }
+
+    const removedBlocks = Array.isArray(worldData.removedBlocks) ? worldData.removedBlocks : [];
+    for (const storedKey of removedBlocks) {
+        if (typeof storedKey !== 'string' || storedKey.length === 0) continue;
+        const blockKey = normalizeBlockKey(storedKey);
+        worldState.removedBlocks.add(blockKey);
+        const parsed = unpackBlockKey(blockKey);
+        const chunkKey = getChunkKeyFromAxial(parsed.q, parsed.r);
+        if (!worldState.removedBlocksByChunk.has(chunkKey)) worldState.removedBlocksByChunk.set(chunkKey, new Set());
+        worldState.removedBlocksByChunk.get(chunkKey).add(blockKey);
+    }
+
+    if (worldData.player && Number.isFinite(worldData.player.x) && Number.isFinite(worldData.player.y) && Number.isFinite(worldData.player.z)) {
+        camera.position.set(worldData.player.x, worldData.player.y, worldData.player.z);
+    }
+}
+
+function buildWorldDataSnapshot() {
+    const baseData = activeWorldRecord?.data ?? {};
+    return {
+        ...baseData,
+        seed: baseData.seed ?? activeWorldRecord?.id ?? Date.now(),
+        player: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        permanentBlocks: Array.from(worldState.permanentBlocks.values()).map((block) => ({
+            q: block.q,
+            r: block.r,
+            h: block.h,
+            typeIndex: block.typeIndex
+        })),
+        removedBlocks: Array.from(worldState.removedBlocks).map((key) => {
+            const coords = unpackBlockKey(key);
+            return `${coords.q},${coords.r},${coords.h}`;
+        })
+    };
+}
+
+async function persistActiveWorld({ force = false } = {}) {
+    if (!activeWorldRecord || !Number.isFinite(activeWorldRecord.id) || activeWorldRecord.id <= 0) return;
+    if (worldSaveInFlight && !force) return;
+    worldSaveInFlight = true;
+    try {
+        activeWorldRecord = {
+            ...activeWorldRecord,
+            updatedAt: new Date().toISOString(),
+            data: buildWorldDataSnapshot()
+        };
+        await writeWorld(activeWorldRecord);
+        lastWorldAutosaveAt = performance.now();
+    } finally {
+        worldSaveInFlight = false;
+    }
+}
+
+async function initializeWorldFromQuery() {
+    if (!Number.isFinite(activeWorldId) || activeWorldId <= 0) {
+        setWorldSeed('default');
+        return;
+    }
+    const world = await getWorldById(activeWorldId);
+    if (!world) {
+        setWorldSeed('default');
+        return;
+    }
+    activeWorldRecord = world;
+    applyWorldRecord(world);
+}
 
 function chooseControlMode() {
     const modeScreen = document.getElementById('mode-select');
@@ -321,13 +465,16 @@ function animate(now = performance.now()) {
     const overlayStart = performance.now();
     updateProfilerOverlay(now);
     profilerOverheadMs += performance.now() - overlayStart;
+    if (activeWorldRecord && (now - lastWorldAutosaveAt) >= WORLD_AUTOSAVE_INTERVAL_MS) {
+        persistActiveWorld();
+    }
     const profilerEndStart = performance.now();
     profilerEndFrame(performance.now(), profilerOverheadMs);
     profilerOverheadMs += performance.now() - profilerEndStart;
 }
 
 
-chooseControlMode().then((mode) => {
+initializeWorldFromQuery().then(() => chooseControlMode()).then((mode) => {
     currentControlMode = mode;
     if (mode === 'mobile') {
         registerMobileInputHandlers();
@@ -356,6 +503,10 @@ chooseControlMode().then((mode) => {
         syncPostFxPanel();
     }
     animate();
+});
+
+window.addEventListener('beforeunload', () => {
+    persistActiveWorld({ force: true });
 });
 
 window.addEventListener('keydown', (event) => {
