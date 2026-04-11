@@ -333,6 +333,10 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     }
     if (!didSnapToSweptGround) {
         camera.position.y = nextY;
+        if (inputState.velocity.y > 0 && collidesAtCameraPosition(camera.position.x, camera.position.y, camera.position.z)) {
+            camera.position.y = previousY;
+            inputState.velocity.y = 0;
+        }
     }
 
     const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;

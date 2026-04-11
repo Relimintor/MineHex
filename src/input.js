@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
-import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT } from './config.js';
+import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, PLAYER_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
@@ -48,6 +48,15 @@ const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-sandstone'
 ];
 const DRAG_DATA_MIME = 'text/minehex-slot';
+const PLAYER_PLACE_COLLISION_HEIGHT_OFFSETS = Object.freeze([0.1, PLAYER_HEIGHT * 0.5, PLAYER_HEIGHT * 0.68]);
+const PLAYER_PLACE_COLLISION_RING_RADIUS = HEX_RADIUS * 0.18;
+const PLAYER_PLACE_COLLISION_RING_OFFSETS_XZ = Object.freeze([
+    Object.freeze([0, 0]),
+    Object.freeze([PLAYER_PLACE_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([-PLAYER_PLACE_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([0, PLAYER_PLACE_COLLISION_RING_RADIUS]),
+    Object.freeze([0, -PLAYER_PLACE_COLLISION_RING_RADIUS])
+]);
 
 const inventoryItemsBySlotId = new Map();
 const bottomHotbarSlotEls = new Map();
@@ -195,6 +204,18 @@ function resolveBlockKeyFromIntersection(intersection) {
     return null;
 }
 
+function doesPlayerOverlapBlockCell(targetQ, targetR, targetH) {
+    for (const offsetY of PLAYER_PLACE_COLLISION_HEIGHT_OFFSETS) {
+        const sampleY = camera.position.y - offsetY;
+        for (const [offsetX, offsetZ] of PLAYER_PLACE_COLLISION_RING_OFFSETS_XZ) {
+            placePos.set(camera.position.x + offsetX, sampleY, camera.position.z + offsetZ);
+            const sample = worldToAxial(placePos);
+            if (sample.q === targetQ && sample.r === targetR && sample.h === targetH) return true;
+        }
+    }
+    return false;
+}
+
 export function placeBlockFromCenter() {
     cancelMiningProgress();
     if (!Number.isInteger(worldState.selectedBlockIndex) || worldState.selectedBlockIndex < 0) return false;
@@ -204,6 +225,7 @@ export function placeBlockFromCenter() {
     placeNormal.copy(intersect.face.normal).transformDirection(intersect.object.matrixWorld);
     placePos.copy(intersect.point).addScaledVector(placeNormal, HEX_HEIGHT * 0.6);
     const coords = worldToAxial(placePos);
+    if (doesPlayerOverlapBlockCell(coords.q, coords.r, coords.h)) return false;
     addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
     return true;
 }
