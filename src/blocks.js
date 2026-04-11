@@ -605,8 +605,8 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
     const normalizedKey = normalizeBlockKey(key);
     const mesh = worldState.worldBlocks.get(normalizedKey);
     if (!mesh) return false;
-    const simTypeIndex = getTypeIndexAtKey(normalizedKey);
-    const blockType = BLOCK_TYPES[simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex];
+    const resolvedTypeIndex = mesh.userData.typeIndex;
+    const blockType = BLOCK_TYPES[resolvedTypeIndex];
     if (blockType?.unbreakable && !force) return false;
 
     worldState.worldBlocks.delete(normalizedKey);
@@ -620,7 +620,7 @@ export function removeBlock(key, { preservePermanent = false, force = false, tra
 
     const columnKey = packColumnKey(mesh.userData.q, mesh.userData.r);
     const topBefore = worldState.topSolidHeightByColumn.get(columnKey) ?? mesh.userData.h;
-    updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, simTypeIndex >= 0 ? simTypeIndex : mesh.userData.typeIndex);
+    updateTopSolidHeightOnRemove(mesh.userData.q, mesh.userData.r, mesh.userData.h, resolvedTypeIndex);
     const topAfter = worldState.topSolidHeightByColumn.get(columnKey) ?? (mesh.userData.h - 1);
     setTopSolidDeltaAtKey(normalizedKey, topAfter - topBefore);
     removeChunkSimBlock(chunkKey, normalizedKey);
@@ -665,6 +665,7 @@ const chunkAabbHitPoint = new THREE.Vector3();
 
 function doesChunkBoundsIntersectRayRange(bounds, rayOrigin, rayDirection, rayNear, rayFar) {
     if (!bounds || !rayOrigin || !rayDirection) return true;
+    if (bounds.containsPoint(rayOrigin)) return true;
     chunkAabbTestRay.origin.copy(rayOrigin);
     chunkAabbTestRay.direction.copy(rayDirection);
     const hitPoint = chunkAabbTestRay.intersectBox(bounds, chunkAabbHitPoint);
