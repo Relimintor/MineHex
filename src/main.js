@@ -12,7 +12,7 @@ import { CHUNK_SIZE, ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FP
 import { enforceSpawnOnSolidBlock } from './rules.js';
 import { worldToAxial, worldToCube } from './coords.js';
 import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, setWorldSeed, toggleProfilerEnabled, worldState } from './state.js';
-import { packChunkKey, unpackBlockKey } from './keys.js';
+import { normalizeBlockKey, packBlockKey, packChunkKey, unpackBlockKey } from './keys.js';
 import { updateCameraPerspective } from './playerView.js';
 import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
 import { createPostProcessor } from './postprocessing.js';
@@ -88,7 +88,7 @@ function applyWorldRecord(record) {
     for (const block of permanentBlocks) {
         if (!block || !Number.isFinite(block.q) || !Number.isFinite(block.r) || !Number.isFinite(block.h) || !Number.isFinite(block.typeIndex)) continue;
         const chunkKey = getChunkKeyFromAxial(block.q, block.r);
-        const blockKey = `${block.q},${block.r},${block.h}`;
+        const blockKey = packBlockKey(block.q, block.r, block.h);
         worldState.permanentBlocks.set(blockKey, {
             q: block.q,
             r: block.r,
@@ -100,8 +100,9 @@ function applyWorldRecord(record) {
     }
 
     const removedBlocks = Array.isArray(worldData.removedBlocks) ? worldData.removedBlocks : [];
-    for (const blockKey of removedBlocks) {
-        if (typeof blockKey !== 'string' || blockKey.length === 0) continue;
+    for (const storedKey of removedBlocks) {
+        if (typeof storedKey !== 'string' || storedKey.length === 0) continue;
+        const blockKey = normalizeBlockKey(storedKey);
         worldState.removedBlocks.add(blockKey);
         const parsed = unpackBlockKey(blockKey);
         const chunkKey = getChunkKeyFromAxial(parsed.q, parsed.r);
@@ -126,7 +127,10 @@ function buildWorldDataSnapshot() {
             h: block.h,
             typeIndex: block.typeIndex
         })),
-        removedBlocks: Array.from(worldState.removedBlocks)
+        removedBlocks: Array.from(worldState.removedBlocks).map((key) => {
+            const coords = unpackBlockKey(key);
+            return `${coords.q},${coords.r},${coords.h}`;
+        })
     };
 }
 
