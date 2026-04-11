@@ -79,7 +79,6 @@ const FALLBACK_GROUND_PROBE_OFFSETS_XZ = Object.freeze([
     Object.freeze([HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36]),
     Object.freeze([-HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36])
 ]);
-let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
 let hasBufferedJump = false;
 let jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
@@ -217,8 +216,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
     const isJumpPressed = isKeyDown('Space');
-    const jumpPressedThisFrame = isJumpPressed && !wasJumpPressed;
-    if (jumpPressedThisFrame) {
+    if (isJumpPressed) {
         hasBufferedJump = true;
         jumpBufferElapsedSeconds = 0;
         jumpBufferAge = 0;
@@ -379,6 +377,5 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         timeSinceGrounded = 0;
         jumpBufferAge = Infinity;
     }
-    wasJumpPressed = isJumpPressed;
     profilerRecord('physics', performance.now() - physicsStart);
 }
