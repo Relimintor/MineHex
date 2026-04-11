@@ -46,6 +46,22 @@ const horizontalCurrentDir = new THREE.Vector2();
 const horizontalTargetDir = new THREE.Vector2();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
+// Keep leg sample above the ground block's rounded vertical cell to avoid self-blocking movement.
+const PLAYER_LEGS_OFFSET = PLAYER_HEIGHT * 0.68;
+const PLAYER_COLLISION_RADIUS = HEX_RADIUS * 0.2;
+const PLAYER_COLLISION_RING_RADIUS = PLAYER_COLLISION_RADIUS * 0.9;
+const PLAYER_COLLISION_HEIGHT_OFFSETS = Object.freeze([
+    PLAYER_HEAD_OFFSET,
+    PLAYER_TORSO_OFFSET,
+    PLAYER_LEGS_OFFSET
+]);
+const PLAYER_COLLISION_RING_OFFSETS_XZ = Object.freeze([
+    Object.freeze([0, 0]),
+    Object.freeze([PLAYER_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([-PLAYER_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([0, PLAYER_COLLISION_RING_RADIUS]),
+    Object.freeze([0, -PLAYER_COLLISION_RING_RADIUS])
+]);
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
 const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
@@ -77,8 +93,13 @@ function isSolidAtWorldPosition(x, y, z) {
 }
 
 function collidesAtCameraPosition(x, y, z) {
-    if (isSolidAtWorldPosition(x, y - PLAYER_HEAD_OFFSET, z)) return true;
-    return isSolidAtWorldPosition(x, y - PLAYER_TORSO_OFFSET, z);
+    for (const offsetY of PLAYER_COLLISION_HEIGHT_OFFSETS) {
+        const sampleY = y - offsetY;
+        for (const [offsetX, offsetZ] of PLAYER_COLLISION_RING_OFFSETS_XZ) {
+            if (isSolidAtWorldPosition(x + offsetX, sampleY, z + offsetZ)) return true;
+        }
+    }
+    return false;
 }
 
 function isChunkLoadedAtWorldPosition(x, y, z) {
