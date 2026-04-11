@@ -36,15 +36,15 @@ function clearRemovedBlockMark(q, r, h) {
 }
 
 const NEIGHBOR_OFFSETS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r]);
+const HORIZONTAL_FACE_DIRECTIONS = AXIAL_NEIGHBOR_OFFSETS.map(({ q, r }) => [q, r, 0]);
 const FACE_DIRECTIONS = [
-    [1, 0, 0],
-    [-1, 0, 0],
-    [0, 1, 0],
-    [0, -1, 0],
+    ...HORIZONTAL_FACE_DIRECTIONS,
     [0, 0, 1],
     [0, 0, -1]
 ];
-const TOP_FACE_MASK = 1 << 4;
+const TOP_FACE_INDEX = HORIZONTAL_FACE_DIRECTIONS.length;
+const BOTTOM_FACE_INDEX = TOP_FACE_INDEX + 1;
+const TOP_FACE_MASK = 1 << TOP_FACE_INDEX;
 
 
 function parseBlockKey(key) {
@@ -327,7 +327,16 @@ function updateVisibilityPairAtFace(q, r, h, faceIdx) {
     const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
     const neighborKey = packBlockKey(q + dq, r + dr, h + dh);
     const neighborTypeIndex = getTypeIndexAtKey(neighborKey);
-    const oppositeFaceIdx = faceIdx ^ 1;
+    let oppositeFaceIdx = -1;
+    if (faceIdx < HORIZONTAL_FACE_DIRECTIONS.length) {
+        oppositeFaceIdx = (faceIdx + (HORIZONTAL_FACE_DIRECTIONS.length / 2)) % HORIZONTAL_FACE_DIRECTIONS.length;
+    } else if (faceIdx === TOP_FACE_INDEX) {
+        oppositeFaceIdx = BOTTOM_FACE_INDEX;
+    } else if (faceIdx === BOTTOM_FACE_INDEX) {
+        oppositeFaceIdx = TOP_FACE_INDEX;
+    }
+
+    if (oppositeFaceIdx < 0) return;
 
     if (selfTypeIndex < 0) {
         if (neighborTypeIndex >= 0) updateFaceMaskBit(neighborKey, oppositeFaceIdx, true);
