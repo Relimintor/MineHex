@@ -26,19 +26,22 @@ const WORLD_DB_NAME = 'minehex';
 const WORLD_DB_VERSION = 1;
 const WORLD_STORE = 'worlds';
 const WORLD_AUTOSAVE_INTERVAL_MS = 5000;
-const METEOR_NIGHT_SPAWN_CHANCE = 1.0; // Testing: 100%
+const METEOR_SHOWER_SPAWN_INTERVAL_SECONDS = 0.85;
 const METEOR_GLTF_CHANCE = 1.0; // Testing: 100%
 const METEOR_PREWARM_HEX_RADIUS = 70;
 const METEOR_CRATER_RADIUS_HEX = 8;
+const METEOR_MAX_ACTIVE_COUNT = 14;
+const METEOR_TRAIL_MAX_POINTS = 20;
+const METEOR_RELIC_FLOAT_HEIGHT = 4;
 const worldQuery = new URLSearchParams(window.location.search);
 const activeWorldId = Number(worldQuery.get('worldId'));
 let activeWorldRecord = null;
 let lastWorldAutosaveAt = 0;
 let worldSaveInFlight = false;
 let meteorTemplate = null;
-let activeMeteor = null;
+const activeMeteors = [];
 let lastMeteorNightIndex = -1;
-const meteorMotionDirection = new THREE.Vector3(1.0, -0.35, 0.3).normalize();
+let meteorSpawnCooldownSeconds = 0;
 
 function isNightTime(timeSeconds) {
     const angle = ((timeSeconds / 480) * Math.PI * 2) + Math.PI * 0.5;
@@ -52,7 +55,7 @@ function getNightIndex(timeSeconds) {
 function createFallbackMeteorMesh() {
     const meteor = new THREE.Mesh(
         new THREE.IcosahedronGeometry(3.2, 1),
-        new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9, metalness: 0.05 })
+        new THREE.MeshStandardMaterial({ color: 0xdba74b, emissive: 0x8a5a00, emissiveIntensity: 1.25, roughness: 0.6, metalness: 0.2 })
     );
     meteor.castShadow = false;
     meteor.receiveShadow = false;
@@ -74,6 +77,14 @@ async function ensureMeteorTemplateLoaded() {
             if (child.isMesh) {
                 child.castShadow = false;
                 child.receiveShadow = false;
+                if (child.material?.isMeshStandardMaterial) {
+                    child.material = child.material.clone();
+                    child.material.color = new THREE.Color(0xe2b85f);
+                    child.material.emissive = new THREE.Color(0x9a6600);
+                    child.material.emissiveIntensity = 1.35;
+                    child.material.roughness = Math.min(0.72, child.material.roughness ?? 0.72);
+                    child.material.metalness = Math.max(0.18, child.material.metalness ?? 0.18);
+                }
             }
         });
     } catch {
@@ -87,27 +98,79 @@ function cloneMeteorMesh() {
     return meteorTemplate.clone(true);
 }
 
-function spawnMeteor(timeSeconds) {
-    if (activeMeteor) return;
-    if (!isNightTime(timeSeconds)) return;
-    if (Math.random() > METEOR_NIGHT_SPAWN_CHANCE) return;
+function createMeteorTrail(startPosition) {
+    const positions = new Float32Array(METEOR_TRAIL_MAX_POINTS * 3);
+    for (let i = 0; i < METEOR_TRAIL_MAX_POINTS; i++) {
+        const offset = i * 3;
+        positions[offset] = startPosition.x;
+        positions[offset + 1] = startPosition.y;
+        positions[offset + 2] = startPosition.z;
+    }
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const trailMaterial = new THREE.LineBasicMaterial({
+        color: 0xffd36b,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+    const trailLine = new THREE.Line(trailGeometry, trailMaterial);
+    trailLine.frustumCulled = false;
+    scene.add(trailLine);
+    return { trailLine, trailGeometry, positions };
+}
 
-    const playerAxial = worldToAxial(camera.position);
-    const spawnQ = playerAxial.q + 110;
-    const spawnR = playerAxial.r - 70;
-    const spawnH = 170;
-    const spawnWorld = axialToWorld(spawnQ, spawnR, spawnH);
+function updateMeteorTrail(meteor) {
+    const { positions, trailGeometry } = meteor;
+    for (let i = METEOR_TRAIL_MAX_POINTS - 1; i > 0; i--) {
+        const toOffset = i * 3;
+        const fromOffset = (i - 1) * 3;
+        positions[toOffset] = positions[fromOffset];
+        positions[toOffset + 1] = positions[fromOffset + 1];
+        positions[toOffset + 2] = positions[fromOffset + 2];
+    }
+    positions[0] = meteor.mesh.position.x;
+    positions[1] = meteor.mesh.position.y;
+    positions[2] = meteor.mesh.position.z;
+    trailGeometry.attributes.position.needsUpdate = true;
+}
+
+function disposeMeteorTrail(meteor) {
+    if (!meteor.trailLine) return;
+    scene.remove(meteor.trailLine);
+    meteor.trailGeometry?.dispose();
+    meteor.trailLine.material?.dispose();
+    meteor.trailLine = null;
+    meteor.trailGeometry = null;
+}
+
+function spawnMeteor() {
+    if (activeMeteors.length >= METEOR_MAX_ACTIVE_COUNT) return;
+    const spawnWorld = camera.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 340,
+        180 + Math.random() * 50,
+        (Math.random() - 0.5) * 340
+    ));
+    const targetWorld = camera.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 80,
+        14 + Math.random() * 10,
+        (Math.random() - 0.5) * 80
+    ));
+    const velocity = targetWorld.sub(spawnWorld).normalize().multiplyScalar(72 + Math.random() * 16);
     const meteorMesh = cloneMeteorMesh();
     meteorMesh.position.copy(spawnWorld);
-    meteorMesh.scale.setScalar(2.4);
+    meteorMesh.scale.setScalar(2.2 + Math.random() * 1.4);
     scene.add(meteorMesh);
+    const trail = createMeteorTrail(spawnWorld);
 
-    activeMeteor = {
+    activeMeteors.push({
         mesh: meteorMesh,
-        velocity: meteorMotionDirection.clone().multiplyScalar(56),
+        velocity,
+        ...trail,
         impactQ: null,
         impactR: null
-    };
+    });
 }
 
 function carveMeteorCrater(centerQ, centerR) {
@@ -134,29 +197,42 @@ function updateMeteor(deltaTimeSeconds, timeSeconds) {
     const nightIndex = getNightIndex(timeSeconds);
     if (isNightTime(timeSeconds) && nightIndex !== lastMeteorNightIndex) {
         lastMeteorNightIndex = nightIndex;
-        spawnMeteor(timeSeconds);
+        meteorSpawnCooldownSeconds = 0;
+    }
+    const nightTime = isNightTime(timeSeconds);
+    if (nightTime) {
+        meteorSpawnCooldownSeconds -= deltaTimeSeconds;
+        while (meteorSpawnCooldownSeconds <= 0) {
+            spawnMeteor();
+            meteorSpawnCooldownSeconds += METEOR_SHOWER_SPAWN_INTERVAL_SECONDS * (0.6 + Math.random() * 0.95);
+        }
+    } else {
+        meteorSpawnCooldownSeconds = 0;
     }
 
-    if (!activeMeteor) return;
-    const meteor = activeMeteor;
-    meteor.mesh.position.addScaledVector(meteor.velocity, deltaTimeSeconds);
-    meteor.mesh.rotation.x += deltaTimeSeconds * 2.2;
-    meteor.mesh.rotation.y += deltaTimeSeconds * 1.6;
+    for (let i = activeMeteors.length - 1; i >= 0; i--) {
+        const meteor = activeMeteors[i];
+        meteor.mesh.position.addScaledVector(meteor.velocity, deltaTimeSeconds);
+        meteor.mesh.rotation.x += deltaTimeSeconds * 2.2;
+        meteor.mesh.rotation.y += deltaTimeSeconds * 1.6;
+        updateMeteorTrail(meteor);
 
-    const meteorAxial = worldToAxial(meteor.mesh.position);
-    const playerAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
-    const meteorDistance = Math.max(Math.abs(meteorAxial.q - playerAxial.q), Math.abs(meteorAxial.r - playerAxial.r), Math.abs((-meteorAxial.q - meteorAxial.r) - (-playerAxial.q - playerAxial.r)));
-    if (meteorDistance <= METEOR_PREWARM_HEX_RADIUS) {
-        prewarmChunksAroundAxial(meteorAxial.q, meteorAxial.r, METEOR_PREWARM_HEX_RADIUS);
-    }
+        const meteorAxial = worldToAxial(meteor.mesh.position);
+        const playerAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+        const meteorDistance = Math.max(Math.abs(meteorAxial.q - playerAxial.q), Math.abs(meteorAxial.r - playerAxial.r), Math.abs((-meteorAxial.q - meteorAxial.r) - (-playerAxial.q - playerAxial.r)));
+        if (meteorDistance <= METEOR_PREWARM_HEX_RADIUS) {
+            prewarmChunksAroundAxial(meteorAxial.q, meteorAxial.r, METEOR_PREWARM_HEX_RADIUS);
+        }
 
-    const impactTopH = worldState.topSolidHeightByColumn.get(packColumnKey(meteorAxial.q, meteorAxial.r));
-    if (Number.isFinite(impactTopH) && meteorAxial.h <= impactTopH + 1) {
+        const impactTopH = worldState.topSolidHeightByColumn.get(packColumnKey(meteorAxial.q, meteorAxial.r));
+        if (!Number.isFinite(impactTopH) || meteorAxial.h > impactTopH + 1) continue;
         meteor.impactQ = meteorAxial.q;
         meteor.impactR = meteorAxial.r;
         carveMeteorCrater(meteor.impactQ, meteor.impactR);
-        meteor.mesh.position.copy(axialToWorld(meteor.impactQ, meteor.impactR, impactTopH + 1));
-        activeMeteor = null;
+        meteor.mesh.position.copy(axialToWorld(meteor.impactQ, meteor.impactR, impactTopH + METEOR_RELIC_FLOAT_HEIGHT));
+        meteor.velocity.set(0, 0, 0);
+        disposeMeteorTrail(meteor);
+        activeMeteors.splice(i, 1);
     }
 }
 
