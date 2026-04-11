@@ -46,8 +46,9 @@ const horizontalCurrentDir = new THREE.Vector2();
 const horizontalTargetDir = new THREE.Vector2();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
-const PLAYER_LEGS_OFFSET = PLAYER_HEIGHT * 0.88;
-const PLAYER_COLLISION_RADIUS = HEX_RADIUS * 0.28;
+// Keep leg sample above the ground block's rounded vertical cell to avoid self-blocking movement.
+const PLAYER_LEGS_OFFSET = PLAYER_HEIGHT * 0.68;
+const PLAYER_COLLISION_RADIUS = HEX_RADIUS * 0.2;
 const PLAYER_COLLISION_RING_RADIUS = PLAYER_COLLISION_RADIUS * 0.9;
 const PLAYER_COLLISION_HEIGHT_OFFSETS = Object.freeze([
     PLAYER_HEAD_OFFSET,
