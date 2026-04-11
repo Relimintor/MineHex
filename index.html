@@ -1,50 +1,332 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MineHex Menu</title>
     <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --panel-2: #1f2937;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #22c55e;
+            --accent-2: #16a34a;
+        }
+
+        * { box-sizing: border-box; }
+
         body {
             margin: 0;
-            padding: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 60%);
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .app {
+            width: min(720px, 100%);
+            background: rgba(17, 24, 39, 0.9);
+            border: 1px solid #374151;
+            border-radius: 14px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
             overflow: hidden;
         }
 
-        #intro-gif {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-            z-index: -1;
+        .screen { display: none; padding: 24px; gap: 14px; }
+        .screen.active { display: grid; }
+        h1, h2 { margin: 0 0 10px; }
+
+        .button-row, .world-actions { display: grid; gap: 10px; }
+
+        button {
+            padding: 12px 14px;
+            border: 1px solid #4b5563;
+            border-radius: 10px;
+            background: var(--panel-2);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover { background: #374151; }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent-2);
+            color: #052e16;
+            font-weight: bold;
         }
 
-        .content {
-            position: relative;
-            z-index: 1;
-            color: white;
-            font-size: 2rem;
-            text-align: center;
-            margin-top: 40vh;
+        .world-list {
+            background: var(--panel);
+            border: 1px solid #374151;
+            border-radius: 10px;
+            padding: 12px;
+            min-height: 180px;
+            display: grid;
+            gap: 8px;
+            align-content: start;
         }
+
+        .world-list button { text-align: left; }
+        .world-list .empty { color: var(--muted); font-style: italic; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #4b5563;
+            background: #0b1220;
+            color: var(--text);
+            font-size: 16px;
+        }
+
+        .hint { color: var(--muted); margin: 0; }
+        .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+        .status { min-height: 20px; color: #86efac; }
     </style>
 </head>
 <body>
+    <main class="app">
+        <section id="main-screen" class="screen active">
+            <h1>MineHex</h1>
+            <div class="button-row">
+                <button id="go-world" class="primary">World</button>
+                <button id="go-options">Options</button>
+                <button id="go-credits">Credits</button>
+                <button id="go-about">About</button>
+            </div>
+            <p class="hint">Only the World flow is functional right now.</p>
+        </section>
 
-    <img id="intro-gif" src="assets/intro/4a1d3b747e1aaaad55eb167b95b53de2_original.gif">
+        <section id="world-screen" class="screen">
+            <h2>World</h2>
+            <div class="world-actions">
+                <button id="open-create" class="primary">Create World</button>
+                <button id="open-load">Load World</button>
+            </div>
+
+            <h3>Worlds</h3>
+            <div id="world-list" class="world-list"></div>
+
+            <div class="toolbar">
+                <button id="back-main">Back</button>
+            </div>
+            <div id="world-status" class="status"></div>
+        </section>
+
+        <section id="create-screen" class="screen">
+            <h2>Create World</h2>
+            <label for="world-name">Choose world name</label>
+            <input id="world-name" type="text" placeholder="My First World" maxlength="40" />
+            <div class="toolbar">
+                <button id="save-world" class="primary">Create</button>
+                <button id="cancel-create">Cancel</button>
+            </div>
+            <div id="create-status" class="status"></div>
+        </section>
+
+        <section id="load-screen" class="screen">
+            <h2>Load World</h2>
+            <p class="hint">Select one of your saved worlds from the list below.</p>
+            <div id="load-list" class="world-list"></div>
+            <div class="toolbar">
+                <button id="back-world-from-load">Back</button>
+            </div>
+            <div id="load-status" class="status"></div>
+        </section>
+    </main>
 
     <script>
-        const gif = document.getElementById("intro-gif");
+        const DB_NAME = "minehex";
+        const DB_VERSION = 1;
+        const WORLD_STORE = "worlds";
 
-        gif.addEventListener("load", () => {
-            // Estimate GIF duration (in ms)
-            // If you know the exact duration, put it here
-            const duration = 15000; // 5 seconds example
+        const screens = {
+            main: document.getElementById("main-screen"),
+            world: document.getElementById("world-screen"),
+            create: document.getElementById("create-screen"),
+            load: document.getElementById("load-screen")
+        };
 
-            setTimeout(() => {
-                gif.style.display = "none"; // hide after it finishes
-            }, duration);
+        const worldList = document.getElementById("world-list");
+        const loadList = document.getElementById("load-list");
+        const worldNameInput = document.getElementById("world-name");
+        const worldStatus = document.getElementById("world-status");
+        const createStatus = document.getElementById("create-status");
+        const loadStatus = document.getElementById("load-status");
+
+        function openWorldDb() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains(WORLD_STORE)) {
+                        const worldStore = db.createObjectStore(WORLD_STORE, { keyPath: "id", autoIncrement: true });
+                        worldStore.createIndex("name", "name", { unique: true });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error("Could not open world database."));
+            });
+        }
+
+        function getAllWorlds() {
+            return openWorldDb().then((db) => new Promise((resolve, reject) => {
+                const tx = db.transaction(WORLD_STORE, "readonly");
+                const store = tx.objectStore(WORLD_STORE);
+                const request = store.getAll();
+                request.onsuccess = () => resolve((request.result || []).sort((a, b) => a.name.localeCompare(b.name)));
+                request.onerror = () => reject(request.error || new Error("Could not read worlds."));
+                tx.oncomplete = () => db.close();
+            }));
+        }
+
+        function createWorld(name) {
+            return openWorldDb().then((db) => new Promise((resolve, reject) => {
+                const tx = db.transaction(WORLD_STORE, "readwrite");
+                const store = tx.objectStore(WORLD_STORE);
+                const newWorld = {
+                    name,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    data: {
+                        seed: Math.floor(Math.random() * 1000000000),
+                        player: { x: 0, y: 0, z: 0 }
+                    }
+                };
+
+                const addRequest = store.add(newWorld);
+                addRequest.onsuccess = () => {
+                    const created = { ...newWorld, id: addRequest.result };
+                    resolve(created);
+                };
+                addRequest.onerror = () => reject(addRequest.error || new Error("Could not create world."));
+                tx.oncomplete = () => db.close();
+            }));
+        }
+
+        function showScreen(name) {
+            Object.values(screens).forEach((screen) => screen.classList.remove("active"));
+            screens[name].classList.add("active");
+        }
+
+        function startWorld(world, mode) {
+            const params = new URLSearchParams({
+                worldId: String(world.id),
+                worldName: world.name,
+                mode
+            });
+            window.location.href = `index2.html?${params.toString()}`;
+        }
+
+        function worldButton(name, onClick) {
+            const btn = document.createElement("button");
+            btn.textContent = name;
+            btn.addEventListener("click", onClick);
+            return btn;
+        }
+
+        async function renderWorldLists() {
+            worldList.innerHTML = "";
+            loadList.innerHTML = "";
+
+            try {
+                const worlds = await getAllWorlds();
+
+                if (!worlds.length) {
+                    const empty = document.createElement("div");
+                    empty.className = "empty";
+                    empty.textContent = "No worlds saved yet.";
+                    worldList.append(empty.cloneNode(true));
+                    loadList.append(empty);
+                    return;
+                }
+
+                worlds.forEach((world) => {
+                    worldList.append(worldButton(world.name, () => {
+                        worldStatus.textContent = `Selected world: ${world.name}`;
+                    }));
+
+                    loadList.append(worldButton(world.name, () => {
+                        loadStatus.textContent = `Loading world: ${world.name}`;
+                        startWorld(world, "load");
+                    }));
+                });
+            } catch (error) {
+                worldStatus.textContent = error.message;
+                loadStatus.textContent = error.message;
+            }
+        }
+
+        document.getElementById("go-world").addEventListener("click", async () => {
+            showScreen("world");
+            await renderWorldLists();
         });
-    </script>
 
+        document.getElementById("go-options").addEventListener("click", () => {
+            worldStatus.textContent = "Options screen will be added later.";
+        });
+
+        document.getElementById("go-credits").addEventListener("click", () => {
+            worldStatus.textContent = "Credits screen will be added later.";
+        });
+
+        document.getElementById("go-about").addEventListener("click", () => {
+            worldStatus.textContent = "About screen will be added later.";
+        });
+
+        document.getElementById("open-create").addEventListener("click", () => {
+            createStatus.textContent = "";
+            worldNameInput.value = "";
+            showScreen("create");
+            worldNameInput.focus();
+        });
+
+        document.getElementById("open-load").addEventListener("click", async () => {
+            loadStatus.textContent = "";
+            showScreen("load");
+            await renderWorldLists();
+        });
+
+        document.getElementById("save-world").addEventListener("click", async () => {
+            const name = worldNameInput.value.trim();
+            if (!name) {
+                createStatus.textContent = "Please enter a world name.";
+                return;
+            }
+
+            createStatus.textContent = "Creating world...";
+            try {
+                const world = await createWorld(name);
+                createStatus.textContent = `Created world: ${world.name}`;
+                await renderWorldLists();
+                startWorld(world, "create");
+            } catch (error) {
+                if ((error && error.name) === "ConstraintError") {
+                    createStatus.textContent = "A world with that name already exists.";
+                    return;
+                }
+                createStatus.textContent = error.message || "Failed to create world.";
+            }
+        });
+
+        document.getElementById("cancel-create").addEventListener("click", async () => {
+            showScreen("world");
+            await renderWorldLists();
+        });
+
+        document.getElementById("back-main").addEventListener("click", () => showScreen("main"));
+        document.getElementById("back-world-from-load").addEventListener("click", async () => {
+            showScreen("world");
+            await renderWorldLists();
+        });
+
+        renderWorldLists();
+    </script>
 </body>
 </html>
