@@ -35,6 +35,7 @@ const METEOR_TRAIL_MAX_POINTS = 20;
 const METEOR_RELIC_FLOAT_HEIGHT = 4;
 const worldQuery = new URLSearchParams(window.location.search);
 const activeWorldId = Number(worldQuery.get('worldId'));
+const requestedGameMode = worldQuery.get('gameMode');
 let activeWorldRecord = null;
 let lastWorldAutosaveAt = 0;
 let worldSaveInFlight = false;
@@ -42,6 +43,10 @@ let meteorTemplate = null;
 const activeMeteors = [];
 let lastMeteorNightIndex = -1;
 let meteorSpawnCooldownSeconds = 0;
+
+function normalizeGameMode(gameMode) {
+    return gameMode === 'survival' ? 'survival' : 'creative';
+}
 
 function isNightTime(timeSeconds) {
     const angle = ((timeSeconds / 480) * Math.PI * 2) + Math.PI * 0.5;
@@ -282,6 +287,7 @@ function writeWorld(record) {
 
 function applyWorldRecord(record) {
     const worldData = record?.data ?? {};
+    worldState.gameMode = normalizeGameMode(record?.gameMode ?? worldData?.gameMode ?? requestedGameMode);
     setWorldSeed(worldData.seed ?? record?.id ?? Date.now());
 
     worldState.permanentBlocks.clear();
@@ -322,8 +328,10 @@ function applyWorldRecord(record) {
 
 function buildWorldDataSnapshot() {
     const baseData = activeWorldRecord?.data ?? {};
+    const gameMode = normalizeGameMode(activeWorldRecord?.gameMode ?? baseData?.gameMode ?? worldState.gameMode);
     return {
         ...baseData,
+        gameMode,
         seed: baseData.seed ?? activeWorldRecord?.id ?? Date.now(),
         player: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
         permanentBlocks: Array.from(worldState.permanentBlocks.values()).map((block) => ({
@@ -346,6 +354,7 @@ async function persistActiveWorld({ force = false } = {}) {
     try {
         activeWorldRecord = {
             ...activeWorldRecord,
+            gameMode: normalizeGameMode(activeWorldRecord?.gameMode ?? worldState.gameMode),
             updatedAt: new Date().toISOString(),
             data: buildWorldDataSnapshot()
         };
@@ -358,11 +367,13 @@ async function persistActiveWorld({ force = false } = {}) {
 
 async function initializeWorldFromQuery() {
     if (!Number.isFinite(activeWorldId) || activeWorldId <= 0) {
+        worldState.gameMode = normalizeGameMode(requestedGameMode);
         setWorldSeed('default');
         return;
     }
     const world = await getWorldById(activeWorldId);
     if (!world) {
+        worldState.gameMode = normalizeGameMode(requestedGameMode);
         setWorldSeed('default');
         return;
     }

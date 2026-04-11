@@ -86,6 +86,10 @@ const DROPPED_ITEM_MAX_LIFETIME_SECONDS = 22;
 
 const droppedItemGeometry = new THREE.IcosahedronGeometry(Math.max(0.15, HEX_RADIUS * 0.28), 0);
 
+function isSurvivalMode() {
+    return worldState.gameMode === 'survival';
+}
+
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
     KeyA: 1,
@@ -292,7 +296,7 @@ export function mineBlockFromCenter() {
     cancelMiningProgress();
     if (!didRemove) return false;
     const { q, r, h } = unpackBlockKey(activeBlockKey);
-    if (dropTypeIndex >= 0) spawnDroppedMiningItem(q, r, h, dropTypeIndex);
+    if (isSurvivalMode() && dropTypeIndex >= 0) spawnDroppedMiningItem(q, r, h, dropTypeIndex);
     flushDirtyChunksAroundBlock(q, r);
     flushEditedDirtyChunks(Number.POSITIVE_INFINITY);
     triggerCameraImpulse(0.16);
@@ -341,6 +345,7 @@ function spawnDroppedMiningItem(q, r, h, typeIndex) {
 }
 
 export function tickDroppedMiningItems(deltaTimeSeconds) {
+    if (!isSurvivalMode()) return;
     if (droppedMiningItems.length === 0) return;
     const dt = Math.max(0, Math.min(0.05, deltaTimeSeconds));
     const cameraPos = camera.position;
