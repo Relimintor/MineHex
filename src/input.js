@@ -5,10 +5,10 @@ import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
-import { packBlockKey } from './keys.js';
+import { packBlockKey, unpackBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
-import { flushEditedDirtyChunks } from './worldgen.js';
+import { flushDirtyChunksAroundBlock, flushEditedDirtyChunks } from './worldgen.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -258,6 +258,8 @@ export function mineBlockFromCenter() {
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
+    const { q, r } = unpackBlockKey(activeBlockKey);
+    flushDirtyChunksAroundBlock(q, r);
     flushEditedDirtyChunks(Number.POSITIVE_INFINITY);
     triggerCameraImpulse(0.16);
     return true;

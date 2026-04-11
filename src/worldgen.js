@@ -948,6 +948,20 @@ export function flushEditedDirtyChunks(budget = 2) {
     applyDirtyChunks(Math.max(1, budget));
 }
 
+export function flushDirtyChunksAroundBlock(q, r) {
+    const centerCq = Math.round(q / CHUNK_SIZE);
+    const centerCr = Math.round(r / CHUNK_SIZE);
+    const chunkKeys = [packChunkKey(centerCq, centerCr)];
+    for (const [dq, dr] of CHUNK_NEIGHBOR_OFFSETS) {
+        chunkKeys.push(packChunkKey(centerCq + dq, centerCr + dr));
+    }
+
+    for (const chunkKey of chunkKeys) {
+        if (!worldState.dirtyChunks.has(chunkKey)) continue;
+        processDirtyChunk(chunkKey);
+    }
+}
+
 function maybeAddTree(chunkBlockKeys, q, r, groundHeight, biome) {
     if (!(biome === 'forest' || biome === 'snowy_forest')) return;
     if (groundHeight <= SEA_LEVEL) return;
