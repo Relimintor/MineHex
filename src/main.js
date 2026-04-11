@@ -7,15 +7,16 @@ import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { registerYoutubeInputHandlers } from './youtube.js';
 import { handlePhysics } from './physics.js';
-import { getBiomeAtWorldPosition, runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
+import { getBiomeAtWorldPosition, prewarmChunksAroundAxial, runChunkOcclusionCulling, tickChunkApplyBudget, tickChunkStreaming, tickChunkVisibility, updateChunkBudgetGovernor } from './worldgen.js';
 import { CHUNK_SIZE, ENABLE_OCCLUSION_CULLING, MAX_DEVICE_PIXEL_RATIO, TARGET_FPS, USE_ULTRA_LOW_PROFILE } from './config.js';
 import { enforceSpawnOnSolidBlock } from './rules.js';
-import { worldToAxial, worldToCube } from './coords.js';
+import { worldToAxial, worldToCube, axialToWorld } from './coords.js';
 import { getProfilerSnapshot, profilerBeginFrame, profilerEndFrame, profilerRecord, setWorldSeed, toggleProfilerEnabled, worldState } from './state.js';
-import { normalizeBlockKey, packBlockKey, packChunkKey, unpackBlockKey } from './keys.js';
+import { normalizeBlockKey, packBlockKey, packChunkKey, packColumnKey, unpackBlockKey } from './keys.js';
 import { updateCameraPerspective } from './playerView.js';
 import { initInventoryAvatarPreview, renderInventoryAvatarPreview } from './inventoryAvatar.js';
 import { createPostProcessor } from './postprocessing.js';
+import { removeBlock } from './blocks.js';
 
 camera.position.set(0, 48, 0);
 
@@ -25,11 +26,139 @@ const WORLD_DB_NAME = 'minehex';
 const WORLD_DB_VERSION = 1;
 const WORLD_STORE = 'worlds';
 const WORLD_AUTOSAVE_INTERVAL_MS = 5000;
+const METEOR_NIGHT_SPAWN_CHANCE = 1.0; // Testing: 100%
+const METEOR_GLTF_CHANCE = 1.0; // Testing: 100%
+const METEOR_PREWARM_HEX_RADIUS = 70;
+const METEOR_CRATER_RADIUS_HEX = 8;
 const worldQuery = new URLSearchParams(window.location.search);
 const activeWorldId = Number(worldQuery.get('worldId'));
 let activeWorldRecord = null;
 let lastWorldAutosaveAt = 0;
 let worldSaveInFlight = false;
+let meteorTemplate = null;
+let activeMeteor = null;
+let lastMeteorNightIndex = -1;
+const meteorMotionDirection = new THREE.Vector3(1.0, -0.35, 0.3).normalize();
+
+function isNightTime(timeSeconds) {
+    const angle = ((timeSeconds / 480) * Math.PI * 2) + Math.PI * 0.5;
+    return Math.sin(angle) < -0.06;
+}
+
+function getNightIndex(timeSeconds) {
+    return Math.floor((timeSeconds + 240) / 480);
+}
+
+function createFallbackMeteorMesh() {
+    const meteor = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(3.2, 1),
+        new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9, metalness: 0.05 })
+    );
+    meteor.castShadow = false;
+    meteor.receiveShadow = false;
+    return meteor;
+}
+
+async function ensureMeteorTemplateLoaded() {
+    if (meteorTemplate) return meteorTemplate;
+    if (Math.random() > METEOR_GLTF_CHANCE || !THREE.GLTFLoader) {
+        meteorTemplate = createFallbackMeteorMesh();
+        return meteorTemplate;
+    }
+    try {
+        const loader = new THREE.GLTFLoader();
+        const meteorUrl = new URL('../assets/meteor.glb', import.meta.url).href;
+        const gltf = await loader.loadAsync(meteorUrl);
+        meteorTemplate = gltf.scene || createFallbackMeteorMesh();
+        meteorTemplate.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = false;
+                child.receiveShadow = false;
+            }
+        });
+    } catch {
+        meteorTemplate = createFallbackMeteorMesh();
+    }
+    return meteorTemplate;
+}
+
+function cloneMeteorMesh() {
+    if (!meteorTemplate) return createFallbackMeteorMesh();
+    return meteorTemplate.clone(true);
+}
+
+function spawnMeteor(timeSeconds) {
+    if (activeMeteor) return;
+    if (!isNightTime(timeSeconds)) return;
+    if (Math.random() > METEOR_NIGHT_SPAWN_CHANCE) return;
+
+    const playerAxial = worldToAxial(camera.position);
+    const spawnQ = playerAxial.q + 110;
+    const spawnR = playerAxial.r - 70;
+    const spawnH = 170;
+    const spawnWorld = axialToWorld(spawnQ, spawnR, spawnH);
+    const meteorMesh = cloneMeteorMesh();
+    meteorMesh.position.copy(spawnWorld);
+    meteorMesh.scale.setScalar(2.4);
+    scene.add(meteorMesh);
+
+    activeMeteor = {
+        mesh: meteorMesh,
+        velocity: meteorMotionDirection.clone().multiplyScalar(56),
+        impactQ: null,
+        impactR: null
+    };
+}
+
+function carveMeteorCrater(centerQ, centerR) {
+    for (let dq = -METEOR_CRATER_RADIUS_HEX; dq <= METEOR_CRATER_RADIUS_HEX; dq++) {
+        for (let dr = -METEOR_CRATER_RADIUS_HEX; dr <= METEOR_CRATER_RADIUS_HEX; dr++) {
+            const ds = -dq - dr;
+            const dist = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
+            if (dist > METEOR_CRATER_RADIUS_HEX) continue;
+            const q = centerQ + dq;
+            const r = centerR + dr;
+            const columnKey = packColumnKey(q, r);
+            const topH = worldState.topSolidHeightByColumn.get(columnKey);
+            if (!Number.isFinite(topH)) continue;
+            const depth = Math.max(2, Math.floor((METEOR_CRATER_RADIUS_HEX - dist) * 1.6));
+            for (let h = topH; h >= topH - depth; h--) {
+                const blockKey = packBlockKey(q, r, h);
+                removeBlock(blockKey, { preservePermanent: false, force: true, trackDirty: true, trackRemoval: true });
+            }
+        }
+    }
+}
+
+function updateMeteor(deltaTimeSeconds, timeSeconds) {
+    const nightIndex = getNightIndex(timeSeconds);
+    if (isNightTime(timeSeconds) && nightIndex !== lastMeteorNightIndex) {
+        lastMeteorNightIndex = nightIndex;
+        spawnMeteor(timeSeconds);
+    }
+
+    if (!activeMeteor) return;
+    const meteor = activeMeteor;
+    meteor.mesh.position.addScaledVector(meteor.velocity, deltaTimeSeconds);
+    meteor.mesh.rotation.x += deltaTimeSeconds * 2.2;
+    meteor.mesh.rotation.y += deltaTimeSeconds * 1.6;
+
+    const meteorAxial = worldToAxial(meteor.mesh.position);
+    const playerAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
+    const meteorDistance = Math.max(Math.abs(meteorAxial.q - playerAxial.q), Math.abs(meteorAxial.r - playerAxial.r), Math.abs((-meteorAxial.q - meteorAxial.r) - (-playerAxial.q - playerAxial.r)));
+    if (meteorDistance <= METEOR_PREWARM_HEX_RADIUS) {
+        prewarmChunksAroundAxial(meteorAxial.q, meteorAxial.r, METEOR_PREWARM_HEX_RADIUS);
+    }
+
+    const impactTopH = worldState.topSolidHeightByColumn.get(packColumnKey(meteorAxial.q, meteorAxial.r));
+    if (Number.isFinite(impactTopH) && meteorAxial.h <= impactTopH + 1) {
+        meteor.impactQ = meteorAxial.q;
+        meteor.impactR = meteorAxial.r;
+        carveMeteorCrater(meteor.impactQ, meteor.impactR);
+        meteor.mesh.position.copy(axialToWorld(meteor.impactQ, meteor.impactR, impactTopH + 1));
+        activeMeteor = null;
+    }
+}
 
 function getChunkKeyFromAxial(q, r) {
     const cq = Math.round(q / CHUNK_SIZE);
@@ -442,6 +571,7 @@ function animate(now = performance.now()) {
     }
 
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
+    updateMeteor(deltaTimeSeconds, now * 0.001);
     if (postProcessor && (now - lastBiomeGradeUpdate) >= BIOME_GRADE_UPDATE_MS) {
         const sample = getBiomeAtWorldPosition(playerPosition.x, playerPosition.z);
         postProcessor.setBiomeGrade(resolveBiomeGradeName(sample.biome), resolveBiomeGradeWeight(sample));
@@ -504,6 +634,8 @@ initializeWorldFromQuery().then(() => chooseControlMode()).then((mode) => {
     }
     animate();
 });
+
+ensureMeteorTemplateLoaded();
 
 window.addEventListener('beforeunload', () => {
     persistActiveWorld({ force: true });
