@@ -46,6 +46,22 @@ const horizontalCurrentDir = new THREE.Vector2();
 const horizontalTargetDir = new THREE.Vector2();
 const PLAYER_HEAD_OFFSET = 0.1;
 const PLAYER_TORSO_OFFSET = PLAYER_HEIGHT * 0.5;
+// Keep leg sample above the ground block's rounded vertical cell to avoid self-blocking movement.
+const PLAYER_LEGS_OFFSET = PLAYER_HEIGHT * 0.68;
+const PLAYER_COLLISION_RADIUS = HEX_RADIUS * 0.2;
+const PLAYER_COLLISION_RING_RADIUS = PLAYER_COLLISION_RADIUS * 0.9;
+const PLAYER_COLLISION_HEIGHT_OFFSETS = Object.freeze([
+    PLAYER_HEAD_OFFSET,
+    PLAYER_TORSO_OFFSET,
+    PLAYER_LEGS_OFFSET
+]);
+const PLAYER_COLLISION_RING_OFFSETS_XZ = Object.freeze([
+    Object.freeze([0, 0]),
+    Object.freeze([PLAYER_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([-PLAYER_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([0, PLAYER_COLLISION_RING_RADIUS]),
+    Object.freeze([0, -PLAYER_COLLISION_RING_RADIUS])
+]);
 const MAX_FALLBACK_SNAP_UP = HEX_HEIGHT * 1.1;
 const SPRINT_MULTIPLIER = 1.42;
 const SPRINT_ACCEL_MULTIPLIER = 1.16;
@@ -63,7 +79,6 @@ const FALLBACK_GROUND_PROBE_OFFSETS_XZ = Object.freeze([
     Object.freeze([HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36]),
     Object.freeze([-HEX_RADIUS * 0.21, -HEX_RADIUS * 0.36])
 ]);
-let wasJumpPressed = false;
 let timeSinceGrounded = Number.POSITIVE_INFINITY;
 let hasBufferedJump = false;
 let jumpBufferElapsedSeconds = Number.POSITIVE_INFINITY;
@@ -77,8 +92,13 @@ function isSolidAtWorldPosition(x, y, z) {
 }
 
 function collidesAtCameraPosition(x, y, z) {
-    if (isSolidAtWorldPosition(x, y - PLAYER_HEAD_OFFSET, z)) return true;
-    return isSolidAtWorldPosition(x, y - PLAYER_TORSO_OFFSET, z);
+    for (const offsetY of PLAYER_COLLISION_HEIGHT_OFFSETS) {
+        const sampleY = y - offsetY;
+        for (const [offsetX, offsetZ] of PLAYER_COLLISION_RING_OFFSETS_XZ) {
+            if (isSolidAtWorldPosition(x + offsetX, sampleY, z + offsetZ)) return true;
+        }
+    }
+    return false;
 }
 
 function isChunkLoadedAtWorldPosition(x, y, z) {
@@ -196,8 +216,7 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     const frameScale = Math.min(3, Math.max(0, deltaTimeSeconds * 60));
     const isInLiquid = isCameraInLiquid();
     const isJumpPressed = isKeyDown('Space');
-    const jumpPressedThisFrame = isJumpPressed && !wasJumpPressed;
-    if (jumpPressedThisFrame) {
+    if (isJumpPressed) {
         hasBufferedJump = true;
         jumpBufferElapsedSeconds = 0;
         jumpBufferAge = 0;
@@ -312,6 +331,10 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
     }
     if (!didSnapToSweptGround) {
         camera.position.y = nextY;
+        if (inputState.velocity.y > 0 && collidesAtCameraPosition(camera.position.x, camera.position.y, camera.position.z)) {
+            camera.position.y = previousY;
+            inputState.velocity.y = 0;
+        }
     }
 
     const shouldResolveGroundCollision = isInLiquid || inputState.velocity.y <= 0;
@@ -354,6 +377,5 @@ export function handlePhysics(deltaTimeSeconds = 1 / 60) {
         timeSinceGrounded = 0;
         jumpBufferAge = Infinity;
     }
-    wasJumpPressed = isJumpPressed;
     profilerRecord('physics', performance.now() - physicsStart);
 }

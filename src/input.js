@@ -1,13 +1,14 @@
 const THREE = window.THREE;
 
 import { camera, renderer } from './scene.js';
-import { BLOCK_TYPES, HEX_HEIGHT } from './config.js';
+import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, PLAYER_HEIGHT } from './config.js';
 import { worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
-import { packBlockKey } from './keys.js';
+import { packBlockKey, unpackBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
+import { flushDirtyChunksAroundBlock, flushEditedDirtyChunks } from './worldgen.js';
 
 const raycaster = new THREE.Raycaster();
 const CENTER_SCREEN = new THREE.Vector2(0, 0);
@@ -18,16 +19,19 @@ const inventoryScreen = document.getElementById('inventory-screen');
 const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
 const localInteractionCandidates = [];
-const INTERACTION_RAYCAST_CHUNK_RADIUS = 1;
+// Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
+const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
 const INTERACTION_CANDIDATE_CACHE_KEY = 'interaction';
-const INTERACTION_CANDIDATE_CACHE_FRAMES = 6;
+// Keep mining/picking responsive while flicking the camera by rebuilding candidates each frame.
+const INTERACTION_CANDIDATE_CACHE_FRAMES = 0;
 const INTERACTION_RAY_NEAR = 0.05;
 const localInteractionIntersections = [];
 const INTERSECTION_BLOCK_HEIGHT_SCAN = Object.freeze([0, -1, 1, -2, 2]);
 const INTERSECTION_SOLID_PULLBACK = Math.max(0.04, HEX_HEIGHT * 0.16);
 const DESKTOP_MINE_REPEAT_MS = 75;
 const DESKTOP_PLACE_REPEAT_MS = 75;
-const MINING_TARGET_LOSS_GRACE_MS = 140;
+// Allow brief raycast misses on low FPS devices without resetting mining progress immediately.
+const MINING_TARGET_LOSS_GRACE_MS = 260;
 const TOTAL_HOTBAR_SLOTS = 9;
 const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-grass',
@@ -44,6 +48,15 @@ const BLOCK_PREVIEW_CLASS_BY_TYPE = [
     'block-preview-sandstone'
 ];
 const DRAG_DATA_MIME = 'text/minehex-slot';
+const PLAYER_PLACE_COLLISION_HEIGHT_OFFSETS = Object.freeze([0.1, PLAYER_HEIGHT * 0.5, PLAYER_HEIGHT * 0.68]);
+const PLAYER_PLACE_COLLISION_RING_RADIUS = HEX_RADIUS * 0.18;
+const PLAYER_PLACE_COLLISION_RING_OFFSETS_XZ = Object.freeze([
+    Object.freeze([0, 0]),
+    Object.freeze([PLAYER_PLACE_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([-PLAYER_PLACE_COLLISION_RING_RADIUS, 0]),
+    Object.freeze([0, PLAYER_PLACE_COLLISION_RING_RADIUS]),
+    Object.freeze([0, -PLAYER_PLACE_COLLISION_RING_RADIUS])
+]);
 
 const inventoryItemsBySlotId = new Map();
 const bottomHotbarSlotEls = new Map();
@@ -58,8 +71,10 @@ let desktopMiningIntervalId = null;
 let desktopPlacingIntervalId = null;
 let lastPointerUnlockAtMs = 0;
 let miningTargetBlockKey = null;
-let miningStartedAtMs = 0;
 let miningTargetLastSeenAtMs = 0;
+// Minecraft-style continuous damage accumulation while holding on the same target.
+let miningProgress01 = 0;
+let miningLastTickAtMs = 0;
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -163,13 +178,15 @@ function clearDesktopActionIntervals() {
 
 export function cancelMiningProgress() {
     miningTargetBlockKey = null;
-    miningStartedAtMs = 0;
     miningTargetLastSeenAtMs = 0;
+    miningProgress01 = 0;
+    miningLastTickAtMs = 0;
 }
 
 function resolveBlockKeyFromIntersection(intersection) {
     const directBlockKey = getIntersectedBlockKey(intersection);
-    if (directBlockKey) return directBlockKey;
+    // Ignore stale instanced-mesh keys that can linger briefly while chunk meshes rebuild.
+    if (directBlockKey && worldState.worldBlocks.has(directBlockKey)) return directBlockKey;
     if (!intersection?.point) return null;
 
     placePos.copy(intersection.point);
@@ -187,6 +204,18 @@ function resolveBlockKeyFromIntersection(intersection) {
     return null;
 }
 
+function doesPlayerOverlapBlockCell(targetQ, targetR, targetH) {
+    for (const offsetY of PLAYER_PLACE_COLLISION_HEIGHT_OFFSETS) {
+        const sampleY = camera.position.y - offsetY;
+        for (const [offsetX, offsetZ] of PLAYER_PLACE_COLLISION_RING_OFFSETS_XZ) {
+            placePos.set(camera.position.x + offsetX, sampleY, camera.position.z + offsetZ);
+            const sample = worldToAxial(placePos);
+            if (sample.q === targetQ && sample.r === targetR && sample.h === targetH) return true;
+        }
+    }
+    return false;
+}
+
 export function placeBlockFromCenter() {
     cancelMiningProgress();
     if (!Number.isInteger(worldState.selectedBlockIndex) || worldState.selectedBlockIndex < 0) return false;
@@ -196,6 +225,7 @@ export function placeBlockFromCenter() {
     placeNormal.copy(intersect.face.normal).transformDirection(intersect.object.matrixWorld);
     placePos.copy(intersect.point).addScaledVector(placeNormal, HEX_HEIGHT * 0.6);
     const coords = worldToAxial(placePos);
+    if (doesPlayerOverlapBlockCell(coords.q, coords.r, coords.h)) return false;
     addBlock(coords.q, coords.r, coords.h, worldState.selectedBlockIndex, true);
     return true;
 }
@@ -208,19 +238,29 @@ export function mineBlockFromCenter() {
         cancelMiningProgress();
         return false;
     }
-    const blockKey = resolveBlockKeyFromIntersection(intersect);
+    let blockKey = resolveBlockKeyFromIntersection(intersect);
     if (!blockKey && (!miningTargetBlockKey || (now - miningTargetLastSeenAtMs) > MINING_TARGET_LOSS_GRACE_MS)) {
         cancelMiningProgress();
         return false;
+    }
+    if (
+        blockKey
+        && miningTargetBlockKey
+        && blockKey !== miningTargetBlockKey
+        && (now - miningTargetLastSeenAtMs) <= MINING_TARGET_LOSS_GRACE_MS
+    ) {
+        // Prefer the existing target during brief intersection jitter so harder blocks
+        // (like stone) don't keep resetting progress between neighboring keys.
+        blockKey = miningTargetBlockKey;
     }
     if (blockKey) miningTargetLastSeenAtMs = now;
     const activeBlockKey = blockKey ?? miningTargetBlockKey;
 
     if (miningTargetBlockKey !== activeBlockKey) {
         miningTargetBlockKey = activeBlockKey;
-        miningStartedAtMs = now;
         miningTargetLastSeenAtMs = now;
-        return false;
+        miningProgress01 = 0;
+        miningLastTickAtMs = now;
     }
 
     const blockMesh = worldState.worldBlocks.get(activeBlockKey);
@@ -231,12 +271,18 @@ export function mineBlockFromCenter() {
         return false;
     }
 
-    const elapsedMs = now - miningStartedAtMs;
-    if (elapsedMs < miningDurationMs) return false;
+    const deltaMs = Math.max(0, Math.min(200, now - (miningLastTickAtMs || now)));
+    miningLastTickAtMs = now;
+    const safeDurationMs = Math.max(1, miningDurationMs);
+    miningProgress01 += deltaMs / safeDurationMs;
+    if (miningProgress01 < 1) return false;
 
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
+    const { q, r } = unpackBlockKey(activeBlockKey);
+    flushDirtyChunksAroundBlock(q, r);
+    flushEditedDirtyChunks(Number.POSITIVE_INFINITY);
     triggerCameraImpulse(0.16);
     return true;
 }

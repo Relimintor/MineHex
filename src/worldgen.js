@@ -862,6 +862,12 @@ function classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR) {
     return (closeToCamera || frustumVisible || highDetailLod) ? 'hot' : 'cold';
 }
 
+function hasPendingBlockEdit(chunkKey) {
+    const dirtyOps = worldState.dirtyChunkOps.get(chunkKey);
+    if (!dirtyOps) return false;
+    return dirtyOps.addedHeights.size > 0 || dirtyOps.removedHeights.size > 0;
+}
+
 function processDirtyChunk(chunkKey) {
     if (!worldState.loadedChunks.has(chunkKey)) {
         worldState.chunkBlocks.delete(chunkKey);
@@ -901,15 +907,29 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     const coldQueue = [];
 
     for (const chunkKey of worldState.dirtyChunks) {
+        const { cq, cr } = getChunkCoordsFromKey(chunkKey);
+        const distance = axialChunkDistance(cq, cr, cameraChunkQ, cameraChunkR);
+        const queueItem = {
+            chunkKey,
+            hasEdit: hasPendingBlockEdit(chunkKey),
+            distance
+        };
         const priority = classifyDirtyChunkPriority(chunkKey, cameraChunkQ, cameraChunkR);
-        if (priority === 'hot') hotQueue.push(chunkKey);
-        else coldQueue.push(chunkKey);
+        if (priority === 'hot') hotQueue.push(queueItem);
+        else coldQueue.push(queueItem);
     }
+
+    const sortByUrgency = (a, b) => {
+        if (a.hasEdit !== b.hasEdit) return a.hasEdit ? -1 : 1;
+        return a.distance - b.distance;
+    };
+    hotQueue.sort(sortByUrgency);
+    coldQueue.sort(sortByUrgency);
 
     const processQueue = (queue, remainingBudget) => {
         let consumed = 0;
         while (consumed < remainingBudget && queue.length > 0) {
-            const chunkKey = queue.shift();
+            const { chunkKey } = queue.shift();
             if (!worldState.dirtyChunks.has(chunkKey)) continue;
             if (processDirtyChunk(chunkKey)) consumed++;
         }
@@ -920,6 +940,25 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
     const remainingBudget = Math.max(0, budget - hotProcessed);
     if (remainingBudget > 0) {
         processQueue(coldQueue, remainingBudget);
+    }
+}
+
+export function flushEditedDirtyChunks(budget = 2) {
+    if (worldState.dirtyChunks.size === 0) return;
+    applyDirtyChunks(Math.max(1, budget));
+}
+
+export function flushDirtyChunksAroundBlock(q, r) {
+    const centerCq = Math.round(q / CHUNK_SIZE);
+    const centerCr = Math.round(r / CHUNK_SIZE);
+    const chunkKeys = [packChunkKey(centerCq, centerCr)];
+    for (const [dq, dr] of CHUNK_NEIGHBOR_OFFSETS) {
+        chunkKeys.push(packChunkKey(centerCq + dq, centerCr + dr));
+    }
+
+    for (const chunkKey of chunkKeys) {
+        if (!worldState.dirtyChunks.has(chunkKey)) continue;
+        processDirtyChunk(chunkKey);
     }
 }
 
