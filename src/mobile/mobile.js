@@ -3,6 +3,8 @@ import { applyLookDelta, cancelMiningProgress, initInventoryUi, mineBlockFromCen
 import { toggleCameraPerspective } from '../playerView.js';
 
 const MINE_REPEAT_MS = 90;
+const MOBILE_MINE_HOLD_DELAY_MS = 170;
+const LOOK_DRAG_CANCEL_MINE_PX = 12;
 const LOOK_SENSITIVITY = 0.003;
 const JOYSTICK_DEADZONE = 0.14;
 const JOYSTICK_MAX_RADIUS = 48;
@@ -55,8 +57,14 @@ export function registerMobileInputHandlers() {
     let movementTouchId = null;
     let lookTouchId = null;
     let mineInterval = null;
+    let mineHoldTimeout = null;
+    let isLookTouchDragging = false;
 
     function clearMiningTimers() {
+        if (mineHoldTimeout) {
+            clearTimeout(mineHoldTimeout);
+            mineHoldTimeout = null;
+        }
         if (mineInterval) {
             clearInterval(mineInterval);
             mineInterval = null;
@@ -99,8 +107,12 @@ export function registerMobileInputHandlers() {
 
     function startMiningHold() {
         clearMiningTimers();
-        mineBlockFromCenter();
-        mineInterval = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
+        mineHoldTimeout = window.setTimeout(() => {
+            mineHoldTimeout = null;
+            if (lookTouchId === null || isLookTouchDragging) return;
+            mineBlockFromCenter();
+            mineInterval = window.setInterval(() => mineBlockFromCenter(), MINE_REPEAT_MS);
+        }, MOBILE_MINE_HOLD_DELAY_MS);
     }
 
     function handleCanvasTap() {
@@ -160,6 +172,7 @@ export function registerMobileInputHandlers() {
 
             if (lookTouchId === null) {
                 lookTouchId = touch.identifier;
+                isLookTouchDragging = false;
                 startMiningHold();
             }
         }
@@ -179,6 +192,14 @@ export function registerMobileInputHandlers() {
             }
 
             if (touch.identifier === lookTouchId) {
+                const start = touchStartPositions.get(touch.identifier);
+                if (start) {
+                    const moved = Math.hypot(touch.clientX - start.x, touch.clientY - start.y);
+                    if (moved >= LOOK_DRAG_CANCEL_MINE_PX) {
+                        isLookTouchDragging = true;
+                        clearMiningTimers();
+                    }
+                }
                 updateLookTouch(touch.identifier, touch.clientX, touch.clientY);
             }
         }
@@ -204,6 +225,7 @@ export function registerMobileInputHandlers() {
 
                 if (moved < 10) handleCanvasTap();
                 clearMiningTimers();
+                isLookTouchDragging = false;
             }
 
             if (jumpButton.contains(touch.target)) {
