@@ -1471,3 +1471,18 @@ export function updateChunks() {
     tickChunkApplyBudget();
     tickChunkVisibility();
 }
+
+export function prewarmChunksAroundAxial(centerQ, centerR, hexRadius = 70) {
+    if (!Number.isFinite(centerQ) || !Number.isFinite(centerR)) return;
+    const radiusInChunks = Math.max(1, Math.ceil(Math.max(1, hexRadius) / Math.max(1, CHUNK_SIZE)));
+    const centerChunkQ = Math.round(centerQ / CHUNK_SIZE);
+    const centerChunkR = Math.round(centerR / CHUNK_SIZE);
+
+    for (let dq = -radiusInChunks; dq <= radiusInChunks; dq++) {
+        for (let dr = -radiusInChunks; dr <= radiusInChunks; dr++) {
+            const ds = -dq - dr;
+            if (Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds)) > radiusInChunks) continue;
+            enqueueChunkGeneration(centerChunkQ + dq, centerChunkR + dr);
+        }
+    }
+}

@@ -45,6 +45,13 @@ export const worldState = {
     profiler: createProfilerStore()
 };
 
+export function setWorldSeed(seed) {
+    const fallbackSeed = Date.now().toString();
+    const normalizedSeed = (seed ?? fallbackSeed).toString();
+    worldState.simplex = new window.SimplexNoise(normalizedSeed);
+    return normalizedSeed;
+}
+
 function ensureMetricBuffer(metricName) {
     if (!metricName) return null;
     if (worldState.profiler.samples.has(metricName)) return worldState.profiler.samples.get(metricName);
