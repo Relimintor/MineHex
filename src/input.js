@@ -173,7 +173,8 @@ export function cancelMiningProgress() {
 
 function resolveBlockKeyFromIntersection(intersection) {
     const directBlockKey = getIntersectedBlockKey(intersection);
-    if (directBlockKey) return directBlockKey;
+    // Ignore stale instanced-mesh keys that can linger briefly while chunk meshes rebuild.
+    if (directBlockKey && worldState.worldBlocks.has(directBlockKey)) return directBlockKey;
     if (!intersection?.point) return null;
 
     placePos.copy(intersection.point);
