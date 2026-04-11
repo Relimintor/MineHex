@@ -3,11 +3,17 @@ const THREE = window.THREE;
 import { PLAYER_HEIGHT } from './config.js';
 import { camera, scene } from './scene.js';
 import { inputState } from './state.js';
+import { worldToAxial } from './coords.js';
+import { collectChunkRaycastCandidates } from './blocks.js';
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
+const desiredCameraPosition = new THREE.Vector3();
+const cameraCollisionDirection = new THREE.Vector3();
+const cameraCollisionRay = new THREE.Raycaster();
+const cameraCollisionCandidates = [];
 const cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const firstPersonArmOffset = new THREE.Vector3(0.43, -0.37, -0.48);
 const baseArmScale = 0.45;
@@ -43,7 +49,9 @@ const CAMERA_MOTION = {
     thirdIdlePitch: 0.028,
     thirdIdleRoll: 0.015,
     thirdIdleFrequency: 0.22,
-    shakeDecay: 2.3
+    shakeDecay: 2.3,
+    cameraCollisionPadding: 0.25,
+    cameraCollisionMinDistance: 0.85
 };
 
 let firstPersonArmRoot = null;
@@ -322,7 +330,39 @@ export function updateCameraPerspective(playerPosition, pitch, yaw) {
     cameraEuler.set((pitch * 0.75) + idlePitch + shakePitch, yaw + idleYaw + shakeYaw, idleRoll);
     cameraOffset.applyEuler(cameraEuler);
 
-    camera.position.copy(cameraTarget).add(cameraOffset);
+    desiredCameraPosition.copy(cameraTarget).add(cameraOffset);
+    cameraCollisionDirection.copy(desiredCameraPosition).sub(cameraTarget);
+    const desiredDistance = cameraCollisionDirection.length();
+    if (desiredDistance > 0.0001) {
+        cameraCollisionDirection.multiplyScalar(1 / desiredDistance);
+        const cameraAxial = worldToAxial(cameraTarget);
+        collectChunkRaycastCandidates(cameraAxial.q, cameraAxial.r, 2, cameraCollisionCandidates, {
+            collidableOnly: true,
+            cacheKey: 'player_camera_collision',
+            reuseFrames: 0,
+            rayOrigin: cameraTarget,
+            rayDirection: cameraCollisionDirection,
+            rayNear: 0,
+            rayFar: desiredDistance
+        });
+        cameraCollisionRay.set(cameraTarget, cameraCollisionDirection);
+        cameraCollisionRay.near = 0.05;
+        cameraCollisionRay.far = desiredDistance;
+        const cameraHits = cameraCollisionRay.intersectObjects(cameraCollisionCandidates, false);
+        if (cameraHits.length > 0) {
+            const closestHit = cameraHits[0];
+            const safeDistance = THREE.MathUtils.clamp(
+                closestHit.distance - CAMERA_MOTION.cameraCollisionPadding,
+                CAMERA_MOTION.cameraCollisionMinDistance,
+                desiredDistance
+            );
+            camera.position.copy(cameraTarget).addScaledVector(cameraCollisionDirection, safeDistance);
+        } else {
+            camera.position.copy(desiredCameraPosition);
+        }
+    } else {
+        camera.position.copy(desiredCameraPosition);
+    }
     camera.lookAt(cameraTarget);
     targetFov = 70 + (cameraShake * 1.5);
     camera.fov += (targetFov - camera.fov) * (1 - Math.pow(1 - CAMERA_MOTION.fovSmoothing, dt * 60));
