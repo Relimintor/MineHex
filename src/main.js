@@ -2,7 +2,7 @@ const THREE = window.THREE;
 
 import { camera, renderer, scene, skyController } from './scene.js';
 import { inputState } from './state.js';
-import { registerDesktopInputHandlers } from './input.js';
+import { registerDesktopInputHandlers, tickDroppedMiningItems } from './input.js';
 import { registerMobileInputHandlers } from './mobile/mobile.js';
 import { registerCeleronInputHandlers } from './celeron/celeronInput.js';
 import { registerYoutubeInputHandlers } from './youtube.js';
@@ -647,6 +647,7 @@ function animate(now = performance.now()) {
     }
 
     updateCameraPerspective(playerPosition, inputState.pitch, inputState.yaw);
+    tickDroppedMiningItems(deltaTimeSeconds);
     updateMeteor(deltaTimeSeconds, now * 0.001);
     if (postProcessor && (now - lastBiomeGradeUpdate) >= BIOME_GRADE_UPDATE_MS) {
         const sample = getBiomeAtWorldPosition(playerPosition.x, playerPosition.z);
