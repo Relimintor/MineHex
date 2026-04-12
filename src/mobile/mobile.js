@@ -5,7 +5,7 @@ import { toggleCameraPerspective } from '../playerView.js';
 const MINE_REPEAT_MS = 90;
 const MOBILE_MINE_HOLD_DELAY_MS = 170;
 const LOOK_DRAG_CANCEL_MINE_PX = 12;
-const LOOK_SENSITIVITY = 0.003;
+const LOOK_SENSITIVITY_SCALE = 1.5;
 const JOYSTICK_DEADZONE = 0.14;
 const JOYSTICK_MAX_RADIUS = 48;
 
@@ -51,6 +51,7 @@ export function registerMobileInputHandlers() {
     const { joystick, joystickBase, joystickCenter, jumpButton, inventoryButton, cameraButton } = createMobileControls();
     const inventoryScreen = document.getElementById('inventory-screen');
     const inventoryPanel = document.querySelector('.inventory-screen-panel');
+    const settingsModal = document.getElementById('inventory-settings-modal');
     const activeTouches = new Map();
     const touchStartPositions = new Map();
 
@@ -101,7 +102,7 @@ export function registerMobileInputHandlers() {
         const previous = activeTouches.get(touchId);
         if (!previous) return;
 
-        applyLookDelta(x - previous.x, y - previous.y, LOOK_SENSITIVITY);
+        applyLookDelta(x - previous.x, y - previous.y, LOOK_SENSITIVITY_SCALE);
         activeTouches.set(touchId, { x, y });
     }
 
@@ -120,6 +121,13 @@ export function registerMobileInputHandlers() {
     }
 
     function handleTouchStart(event) {
+        const isInventoryOpen = inventoryScreen?.classList.contains('visible');
+        const touchTarget = event.target;
+        const touchedInventoryUi = isInventoryOpen
+            && ((inventoryPanel && inventoryPanel.contains(touchTarget))
+                || (settingsModal && settingsModal.contains(touchTarget)));
+        if (touchedInventoryUi) return;
+
         event.preventDefault();
         for (const touch of event.changedTouches) {
             const target = touch.target;
@@ -127,7 +135,6 @@ export function registerMobileInputHandlers() {
             activeTouches.set(touch.identifier, touchPoint);
             touchStartPositions.set(touch.identifier, touchPoint);
 
-            const isInventoryOpen = inventoryScreen?.classList.contains('visible');
             const tappedOutsideInventory = isInventoryOpen
                 && inventoryPanel
                 && !inventoryPanel.contains(target)
@@ -179,6 +186,13 @@ export function registerMobileInputHandlers() {
     }
 
     function handleTouchMove(event) {
+        const isInventoryOpen = inventoryScreen?.classList.contains('visible');
+        const touchTarget = event.target;
+        const touchedInventoryUi = isInventoryOpen
+            && ((inventoryPanel && inventoryPanel.contains(touchTarget))
+                || (settingsModal && settingsModal.contains(touchTarget)));
+        if (touchedInventoryUi) return;
+
         event.preventDefault();
         for (const touch of event.changedTouches) {
             if (touch.identifier === movementTouchId) {
@@ -206,6 +220,13 @@ export function registerMobileInputHandlers() {
     }
 
     function handleTouchEnd(event) {
+        const isInventoryOpen = inventoryScreen?.classList.contains('visible');
+        const touchTarget = event.target;
+        const touchedInventoryUi = isInventoryOpen
+            && ((inventoryPanel && inventoryPanel.contains(touchTarget))
+                || (settingsModal && settingsModal.contains(touchTarget)));
+        if (touchedInventoryUi) return;
+
         event.preventDefault();
         for (const touch of event.changedTouches) {
             const wasLookTouch = touch.identifier === lookTouchId;

@@ -12,7 +12,7 @@ import {
 import { inputState } from '../state.js';
 import { toggleCameraPerspective } from '../playerView.js';
 
-const LOOK_SENSITIVITY = 0.0018;
+const LOOK_SENSITIVITY_SCALE = 0.9;
 const INTERACTION_COOLDOWN_MS = 90;
 const MINE_REPEAT_MS = 75;
 const PLACE_REPEAT_MS = 75;
@@ -33,7 +33,7 @@ function flushQueuedLookDelta() {
     }
 
     if (pendingLookX === 0 && pendingLookY === 0) return;
-    applyLookDelta(pendingLookX, pendingLookY, LOOK_SENSITIVITY);
+    applyLookDelta(pendingLookX, pendingLookY, LOOK_SENSITIVITY_SCALE);
     pendingLookX = 0;
     pendingLookY = 0;
 }

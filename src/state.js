@@ -142,6 +142,7 @@ export const inputState = {
     isLocked: false,
     pitch: 0,
     yaw: 0,
+    lookSensitivity: 0.002,
     canJump: false,
     isSprinting: false,
     velocity: new THREE.Vector3()
