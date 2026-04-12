@@ -59,11 +59,16 @@
             </div>
 
             <div class="inventory-grid-box">
-                <div class="inventory-top-box" aria-label="Top inventory slots">
-                    <div class="inventory-square-slot" data-top-slot="1"></div>
-                    <div class="inventory-square-slot" data-top-slot="2"></div>
-                    <div class="inventory-square-slot" data-top-slot="3"></div>
-                    <div class="inventory-square-slot" data-top-slot="4"></div>
+                <div class="inventory-crafting-row">
+                    <div class="inventory-top-box" aria-label="Top inventory slots">
+                        <div class="inventory-square-slot" data-top-slot="1"></div>
+                        <div class="inventory-square-slot" data-top-slot="2"></div>
+                        <div class="inventory-square-slot" data-top-slot="3"></div>
+                        <div class="inventory-square-slot" data-top-slot="4"></div>
+                    </div>
+                    <button id="inventory-skin-btn" type="button" aria-haspopup="dialog" aria-controls="inventory-skin-modal">
+                        <img src="assets/skin/skin.png" alt="Open skin modifier">
+                    </button>
                 </div>
 
                 <div class="inventory-honeycomb" aria-label="Inventory honeycomb with 25 extra hex slots (34 total including hotbar)">
@@ -120,6 +125,45 @@
                 <input id="look-sensitivity-slider" type="range" min="0.0005" max="0.007" step="0.0001" value="0.002">
                 <div id="look-sensitivity-value" class="inventory-settings-value">0.0020</div>
                 <button id="inventory-settings-close-btn" type="button">Close</button>
+            </div>
+        </div>
+        <div id="inventory-skin-modal" class="inventory-skin-modal" role="dialog" aria-modal="true" aria-label="Skin modifier" aria-hidden="true">
+            <div class="inventory-skin-content">
+                <div class="inventory-skin-middle-thing" aria-label="Skin center bars">
+                    <div class="inventory-skin-middle-bar">
+                        <button id="inventory-skin-template-default-btn" type="button" class="inventory-skin-template-btn" title="Reset to default skin">
+                            <img src="assets/skin/head/front_head.png" alt="Default cube template">
+                        </button>
+                    </div>
+                    <div class="inventory-skin-middle-bar"></div>
+                    <div class="inventory-skin-middle-bar"></div>
+                </div>
+                <div class="inventory-skin-left-bar" aria-label="Skin tools bar">
+                    <button type="button" class="inventory-skin-nav-item active">Templates</button>
+                    <button type="button" class="inventory-skin-nav-item">Bases</button>
+                    <button type="button" class="inventory-skin-nav-item">Headwears</button>
+                    <button type="button" class="inventory-skin-nav-item">Hairs</button>
+                    <button type="button" class="inventory-skin-nav-item">Eyes</button>
+                    <button type="button" class="inventory-skin-nav-item">Mouths</button>
+                    <button type="button" class="inventory-skin-nav-item">Tops</button>
+                    <button type="button" class="inventory-skin-nav-item">Bottoms</button>
+                    <button type="button" class="inventory-skin-nav-item">Footwears</button>
+                    <button id="inventory-skin-editor-btn" type="button" class="inventory-skin-nav-item inventory-skin-editor-nav">Skin Editor</button>
+                </div>
+                <button id="inventory-skin-close-btn" type="button">Close</button>
+                <div id="inventory-skin-editor-screen" class="inventory-skin-editor-screen" aria-hidden="true">
+                    <div class="inventory-skin-editor-panel">
+                        <h3>Skin Editor</h3>
+                        <div class="inventory-skin-editor-toolbar">
+                            <button id="inventory-skin-size-64-btn" type="button" class="inventory-skin-size-btn active">64×64</button>
+                            <button id="inventory-skin-size-128-btn" type="button" class="inventory-skin-size-btn">128×128</button>
+                            <input id="inventory-skin-color-input" type="color" value="#ff0000" aria-label="Brush color">
+                        </div>
+                        <canvas id="inventory-skin-editor-canvas" width="64" height="64" aria-label="Skin editor canvas"></canvas>
+                        <img id="inventory-skin-editor-preview" src="assets/skin/skin.png" alt="Current edited skin preview">
+                        <button id="inventory-skin-editor-close-btn" type="button">Back</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
