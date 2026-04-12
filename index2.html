@@ -56,11 +56,16 @@
             </div>
 
             <div class="inventory-grid-box">
-                <div class="inventory-top-box" aria-label="Top inventory slots">
-                    <div class="inventory-square-slot" data-top-slot="1"></div>
-                    <div class="inventory-square-slot" data-top-slot="2"></div>
-                    <div class="inventory-square-slot" data-top-slot="3"></div>
-                    <div class="inventory-square-slot" data-top-slot="4"></div>
+                <div class="inventory-top-controls">
+                    <div class="inventory-top-box" aria-label="Top inventory slots">
+                        <div class="inventory-square-slot" data-top-slot="1"></div>
+                        <div class="inventory-square-slot" data-top-slot="2"></div>
+                        <div class="inventory-square-slot" data-top-slot="3"></div>
+                        <div class="inventory-square-slot" data-top-slot="4"></div>
+                    </div>
+                    <button id="inventory-skin-button" class="inventory-skin-button" type="button" aria-label="Open skin customization">
+                        <img src="assets/skin/skin.png" alt="Skin customization">
+                    </button>
                 </div>
 
                 <div class="inventory-honeycomb" aria-label="Inventory honeycomb with 25 extra hex slots (34 total including hotbar)">
@@ -108,6 +113,15 @@
                     <div class="inventory-hex-slot is-hotbar" data-slot="7"><div class="block-preview block-preview-oak-leaves"></div></div>
                     <div class="inventory-hex-slot is-hotbar" data-slot="8"><div class="block-preview block-preview-snow"></div></div>
                 </div>
+            </div>
+        </div>
+
+        <div id="skin-customization-screen" class="skin-customization-screen" aria-hidden="true">
+            <div class="skin-customization-panel" role="dialog" aria-label="Skin customization">
+                <h2>Skin Customization</h2>
+                <img class="skin-customization-preview" src="assets/skin/skin.png" alt="Current player skin">
+                <p>Skin editing options will be added here later.</p>
+                <button id="skin-screen-close" type="button">Back to Inventory</button>
             </div>
         </div>
     </div>
