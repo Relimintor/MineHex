@@ -27,12 +27,15 @@ const WORLD_DB_VERSION = 1;
 const WORLD_STORE = 'worlds';
 const WORLD_AUTOSAVE_INTERVAL_MS = 5000;
 const METEOR_SHOWER_SPAWN_INTERVAL_SECONDS = 0.85;
-const METEOR_GLTF_CHANCE = 1.0; // Testing: 100%
+const METEOR_GIANT_3D_SPAWN_CHANCE = 0.01;
 const METEOR_PREWARM_HEX_RADIUS = 70;
 const METEOR_CRATER_RADIUS_HEX = 8;
 const METEOR_MAX_ACTIVE_COUNT = 14;
 const METEOR_TRAIL_MAX_POINTS = 20;
 const METEOR_RELIC_FLOAT_HEIGHT = 4;
+const METEOR_SKY_ALTITUDE_MIN = 190;
+const METEOR_SKY_ALTITUDE_MAX = 250;
+const METEOR_SKY_MAX_LIFETIME_SECONDS = 6.5;
 const worldQuery = new URLSearchParams(window.location.search);
 const activeWorldId = Number(worldQuery.get('worldId'));
 const requestedGameMode = worldQuery.get('gameMode');
@@ -69,10 +72,7 @@ function createFallbackMeteorMesh() {
 
 async function ensureMeteorTemplateLoaded() {
     if (meteorTemplate) return meteorTemplate;
-    if (Math.random() > METEOR_GLTF_CHANCE || !THREE.GLTFLoader) {
-        meteorTemplate = createFallbackMeteorMesh();
-        return meteorTemplate;
-    }
+    if (!THREE.GLTFLoader) return null;
     try {
         const loader = new THREE.GLTFLoader();
         const meteorUrl = new URL('../assets/meteor.glb', import.meta.url).href;
@@ -93,14 +93,16 @@ async function ensureMeteorTemplateLoaded() {
             }
         });
     } catch {
-        meteorTemplate = createFallbackMeteorMesh();
+        meteorTemplate = null;
     }
     return meteorTemplate;
 }
 
 function cloneMeteorMesh() {
-    if (!meteorTemplate) return createFallbackMeteorMesh();
-    return meteorTemplate.clone(true);
+    if (meteorTemplate) {
+        return meteorTemplate.clone(true);
+    }
+    return createFallbackMeteorMesh();
 }
 
 function createMeteorTrail(startPosition) {
@@ -152,26 +154,51 @@ function disposeMeteorTrail(meteor) {
 
 function spawnMeteor() {
     if (activeMeteors.length >= METEOR_MAX_ACTIVE_COUNT) return;
-    const spawnWorld = camera.position.clone().add(new THREE.Vector3(
-        (Math.random() - 0.5) * 340,
-        180 + Math.random() * 50,
-        (Math.random() - 0.5) * 340
-    ));
-    const targetWorld = camera.position.clone().add(new THREE.Vector3(
-        (Math.random() - 0.5) * 80,
-        14 + Math.random() * 10,
-        (Math.random() - 0.5) * 80
-    ));
-    const velocity = targetWorld.sub(spawnWorld).normalize().multiplyScalar(72 + Math.random() * 16);
-    const meteorMesh = cloneMeteorMesh();
+    const spawnGiant3DMeteor = Math.random() < METEOR_GIANT_3D_SPAWN_CHANCE;
+    let meteorMesh;
+    let spawnWorld;
+    let velocity;
+    let canImpact = false;
+
+    if (spawnGiant3DMeteor && meteorTemplate) {
+        canImpact = true;
+        spawnWorld = camera.position.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 340,
+            180 + Math.random() * 50,
+            (Math.random() - 0.5) * 340
+        ));
+        const targetWorld = camera.position.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 80,
+            14 + Math.random() * 10,
+            (Math.random() - 0.5) * 80
+        ));
+        velocity = targetWorld.sub(spawnWorld).normalize().multiplyScalar(72 + Math.random() * 16);
+        meteorMesh = cloneMeteorMesh();
+        meteorMesh.scale.setScalar(2.2 + Math.random() * 1.4);
+        scene.add(meteorMesh);
+    } else {
+        const travelDirection = new THREE.Vector3(
+            Math.random() - 0.5,
+            (Math.random() - 0.5) * 0.05,
+            Math.random() - 0.5
+        ).normalize();
+        const sideOffset = new THREE.Vector3(-travelDirection.z, 0, travelDirection.x).multiplyScalar((Math.random() - 0.5) * 190);
+        spawnWorld = camera.position.clone()
+            .addScaledVector(travelDirection, -240 - Math.random() * 110)
+            .add(sideOffset);
+        spawnWorld.y = METEOR_SKY_ALTITUDE_MIN + Math.random() * (METEOR_SKY_ALTITUDE_MAX - METEOR_SKY_ALTITUDE_MIN);
+        velocity = travelDirection.multiplyScalar(95 + Math.random() * 28);
+        meteorMesh = new THREE.Object3D();
+    }
+
     meteorMesh.position.copy(spawnWorld);
-    meteorMesh.scale.setScalar(2.2 + Math.random() * 1.4);
-    scene.add(meteorMesh);
     const trail = createMeteorTrail(spawnWorld);
 
     activeMeteors.push({
         mesh: meteorMesh,
         velocity,
+        canImpact,
+        ageSeconds: 0,
         ...trail,
         impactQ: null,
         impactR: null
@@ -217,10 +244,19 @@ function updateMeteor(deltaTimeSeconds, timeSeconds) {
 
     for (let i = activeMeteors.length - 1; i >= 0; i--) {
         const meteor = activeMeteors[i];
+        meteor.ageSeconds += deltaTimeSeconds;
         meteor.mesh.position.addScaledVector(meteor.velocity, deltaTimeSeconds);
         meteor.mesh.rotation.x += deltaTimeSeconds * 2.2;
         meteor.mesh.rotation.y += deltaTimeSeconds * 1.6;
         updateMeteorTrail(meteor);
+
+        if (!meteor.canImpact) {
+            if (meteor.ageSeconds >= METEOR_SKY_MAX_LIFETIME_SECONDS) {
+                disposeMeteorTrail(meteor);
+                activeMeteors.splice(i, 1);
+            }
+            continue;
+        }
 
         const meteorAxial = worldToAxial(meteor.mesh.position);
         const playerAxial = worldState.frameCameraAxial ?? worldToAxial(camera.position);
