@@ -287,7 +287,7 @@ function writeWorld(record) {
 
 function applyWorldRecord(record) {
     const worldData = record?.data ?? {};
-    worldState.gameMode = normalizeGameMode(record?.gameMode ?? worldData?.gameMode ?? requestedGameMode);
+    worldState.gameMode = normalizeGameMode(requestedGameMode ?? record?.gameMode ?? worldData?.gameMode);
     setWorldSeed(worldData.seed ?? record?.id ?? Date.now());
 
     worldState.permanentBlocks.clear();
