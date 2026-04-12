@@ -268,6 +268,7 @@ canvas { display: block; }
 }
 
 .inventory-square-slot {
+    position: relative;
     width: 52px;
     height: 52px;
     border-radius: 6px;
@@ -305,6 +306,7 @@ canvas { display: block; }
 }
 
 .inventory-hex-slot {
+    position: relative;
     width: 64px;
     height: 72px;
     background: rgba(255, 255, 255, 0.16);
@@ -326,8 +328,8 @@ canvas { display: block; }
 }
 
 .inventory-hex-slot .block-preview {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
 }
 
 #inventory {
@@ -373,8 +375,8 @@ canvas { display: block; }
 }
 
 .block-preview {
-    width: 25px;
-    height: 25px;
+    width: 27px;
+    height: 27px;
     clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
     box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
 }
@@ -390,12 +392,18 @@ canvas { display: block; }
 .block-preview-snow { background: #f5f8ff; }
 
 .slot-label {
+    display: none;
+}
+
+.inventory-stack-count {
     position: absolute;
-    bottom: 2px;
-    color: white;
-    font-size: 10px;
-    font-weight: bold;
-    text-shadow: 1px 1px 2px black;
+    right: 15px;
+    bottom: 14px;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 900;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+    pointer-events: none;
 }
 
 #held-item-name {
