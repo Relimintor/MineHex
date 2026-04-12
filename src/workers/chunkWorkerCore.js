@@ -23,16 +23,6 @@ function hash2D(x, y, seed = 0) {
     return v - Math.floor(v);
 }
 
-function hashSeedString(seedInput) {
-    const source = (seedInput ?? 'default').toString();
-    let hash = 2166136261 >>> 0;
-    for (let index = 0; index < source.length; index++) {
-        hash ^= source.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
-}
-
 function smoothstep(t) {
     return t * t * (3 - (2 * t));
 }
@@ -53,10 +43,10 @@ function valueNoise2D(x, y, seed = 0) {
     return ((nx0 + ((nx1 - nx0) * ty)) * 2) - 1;
 }
 
-function getHeight(q, r, worldSeedNumber) {
-    const continent = CONTINENT_AMPLITUDE * valueNoise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY, worldSeedNumber + 101) - CONTINENT_OFFSET;
-    const terrain = (TERRAIN_MID_AMPLITUDE * valueNoise2D(q * TERRAIN_MID_FREQUENCY, r * TERRAIN_MID_FREQUENCY, worldSeedNumber + 202))
-        + (TERRAIN_DETAIL_AMPLITUDE * valueNoise2D(q * TERRAIN_DETAIL_FREQUENCY, r * TERRAIN_DETAIL_FREQUENCY, worldSeedNumber + 303));
+function getHeight(q, r) {
+    const continent = CONTINENT_AMPLITUDE * valueNoise2D(q * CONTINENT_FREQUENCY, r * CONTINENT_FREQUENCY, 1) - CONTINENT_OFFSET;
+    const terrain = (TERRAIN_MID_AMPLITUDE * valueNoise2D(q * TERRAIN_MID_FREQUENCY, r * TERRAIN_MID_FREQUENCY, 2))
+        + (TERRAIN_DETAIL_AMPLITUDE * valueNoise2D(q * TERRAIN_DETAIL_FREQUENCY, r * TERRAIN_DETAIL_FREQUENCY, 3));
     return continent + terrain;
 }
 
@@ -64,10 +54,10 @@ function getSmoothedHeight(rawHeight) {
     return Math.round(Math.max(-40, Math.min(80, rawHeight)));
 }
 
-function getClimate(q, r, worldSeedNumber) {
+function getClimate(q, r) {
     return {
-        temp: valueNoise2D(q * TEMPERATURE_FREQUENCY, r * TEMPERATURE_FREQUENCY, worldSeedNumber + 404),
-        moist: valueNoise2D((q * MOISTURE_FREQUENCY) + MOISTURE_OFFSET, (r * MOISTURE_FREQUENCY) + MOISTURE_OFFSET, worldSeedNumber + 505)
+        temp: valueNoise2D(q * TEMPERATURE_FREQUENCY, r * TEMPERATURE_FREQUENCY, 4),
+        moist: valueNoise2D((q * MOISTURE_FREQUENCY) + MOISTURE_OFFSET, (r * MOISTURE_FREQUENCY) + MOISTURE_OFFSET, 5)
     };
 }
 
@@ -79,10 +69,9 @@ function getBiome(climate, height, seaLevel) {
     return 'plains';
 }
 
-function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel, worldSeed }) {
+function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel }) {
     const centerQ = cq * chunkSize;
     const centerR = cr * chunkSize;
-    const worldSeedNumber = hashSeedString(worldSeed);
     const columns = [];
 
     for (let q = -chunkSize; q <= chunkSize; q++) {
@@ -90,8 +79,8 @@ function buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel, worldSe
             // Match main-thread chunk footprint to avoid seam holes between chunks.
             const absQ = centerQ + q;
             const absR = centerR + r;
-            const climate = getClimate(absQ, absR, worldSeedNumber);
-            const height = getSmoothedHeight(getHeight(absQ, absR, worldSeedNumber));
+            const climate = getClimate(absQ, absR);
+            const height = getSmoothedHeight(getHeight(absQ, absR));
             const biome = getBiome(climate, height, seaLevel);
             const isSnowBiome = biome === 'snowy_plains' || biome === 'snowy_forest';
             const topBlockType = biome === 'beach'
@@ -155,8 +144,8 @@ function packChunkColumns(columns) {
 export function registerChunkGenerationWorker(workerScope) {
     workerScope.addEventListener('message', (event) => {
         if (event.data?.type !== 'generate') return;
-        const { cq, cr, chunkSize, nethrockLevel, seaLevel, worldSeed } = event.data;
-        const columns = buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel, worldSeed });
+        const { cq, cr, chunkSize, nethrockLevel, seaLevel } = event.data;
+        const columns = buildChunkColumns({ cq, cr, chunkSize, nethrockLevel, seaLevel });
         const packed = packChunkColumns(columns);
         workerScope.postMessage({
             chunkKey: `${cq},${cr}`,

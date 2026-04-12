@@ -1352,8 +1352,7 @@ function flushChunkGenerationBudget() {
                 cr: nextChunk.cr,
                 chunkSize: CHUNK_SIZE,
                 nethrockLevel: NETHROCK_LEVEL_HEX,
-                seaLevel: SEA_LEVEL,
-                worldSeed: worldState.worldSeed
+                seaLevel: SEA_LEVEL
             });
             budget--;
             continue;
