@@ -170,6 +170,7 @@ canvas { display: block; }
 }
 
 .inventory-screen-panel {
+    position: relative;
     width: min(96vw, 1080px);
     min-height: min(76vh, 520px);
     display: flex;
@@ -177,6 +178,58 @@ canvas { display: block; }
     justify-content: center;
     gap: 14px;
     transform: translateY(24px);
+}
+
+#inventory-settings-btn {
+    position: absolute;
+    top: -42px;
+    right: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 9px;
+    background: rgba(34, 34, 34, 0.84);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+#inventory-settings-btn:hover {
+    background: rgba(52, 52, 52, 0.9);
+}
+
+.inventory-settings-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 950;
+}
+
+.inventory-settings-modal.visible {
+    display: flex;
+}
+
+.inventory-settings-content {
+    width: min(90vw, 360px);
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(42, 42, 42, 0.95);
+    color: #fff;
+    display: grid;
+    gap: 10px;
+}
+
+.inventory-settings-content h3 {
+    margin: 0;
+}
+
+.inventory-settings-value {
+    font-weight: 700;
+    letter-spacing: 0.03em;
 }
 
 .inventory-avatar-box,

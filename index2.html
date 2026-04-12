@@ -43,6 +43,9 @@
 
     <div id="inventory-screen" aria-hidden="true">
         <div class="inventory-screen-panel" role="dialog" aria-label="Inventory screen">
+            <button id="inventory-settings-btn" type="button" aria-haspopup="dialog" aria-controls="inventory-settings-modal">
+                ⚙ Settings
+            </button>
             <div class="inventory-avatar-box">
                 <div class="inventory-avatar-gear inventory-avatar-gear-top" aria-hidden="true"></div>
                 <div class="inventory-avatar-gear inventory-avatar-gear-left-top" aria-hidden="true"></div>
@@ -108,6 +111,15 @@
                     <div class="inventory-hex-slot is-hotbar" data-slot="7"><div class="block-preview block-preview-oak-leaves"></div></div>
                     <div class="inventory-hex-slot is-hotbar" data-slot="8"><div class="block-preview block-preview-snow"></div></div>
                 </div>
+            </div>
+        </div>
+        <div id="inventory-settings-modal" class="inventory-settings-modal" role="dialog" aria-modal="true" aria-label="Look sensitivity settings" aria-hidden="true">
+            <div class="inventory-settings-content">
+                <h3>Sensitivity</h3>
+                <label for="look-sensitivity-slider">Look sensitivity</label>
+                <input id="look-sensitivity-slider" type="range" min="0.0005" max="0.007" step="0.0001" value="0.002">
+                <div id="look-sensitivity-value" class="inventory-settings-value">0.0020</div>
+                <button id="inventory-settings-close-btn" type="button">Close</button>
             </div>
         </div>
     </div>

@@ -16,8 +16,14 @@ const placeNormal = new THREE.Vector3();
 const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
 const inventoryScreen = document.getElementById('inventory-screen');
+const inventorySettingsButton = document.getElementById('inventory-settings-btn');
+const inventorySettingsModal = document.getElementById('inventory-settings-modal');
+const inventorySettingsCloseButton = document.getElementById('inventory-settings-close-btn');
+const sensitivitySlider = document.getElementById('look-sensitivity-slider');
+const sensitivityValueEl = document.getElementById('look-sensitivity-value');
 const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
+let isInventorySettingsOpen = false;
 const localInteractionCandidates = [];
 // Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
 const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
@@ -84,6 +90,10 @@ const DROPPED_ITEM_DRAG = 0.88;
 const DROPPED_ITEM_PICKUP_RADIUS = 1.35;
 const DROPPED_ITEM_PICKUP_MAGNET_RADIUS = 3.8;
 const DROPPED_ITEM_MAX_LIFETIME_SECONDS = 22;
+const LOOK_SENSITIVITY_STORAGE_KEY = 'minehex.lookSensitivity';
+const DEFAULT_LOOK_SENSITIVITY = 0.002;
+const MIN_LOOK_SENSITIVITY = 0.0005;
+const MAX_LOOK_SENSITIVITY = 0.007;
 
 const droppedItemGeometry = new THREE.IcosahedronGeometry(Math.max(0.15, HEX_RADIUS * 0.28), 0);
 
@@ -152,6 +162,7 @@ export function toggleInventoryScreen() {
     isInventoryScreenOpen = !isInventoryScreenOpen;
     inventoryScreen.classList.toggle('visible', isInventoryScreenOpen);
     inventoryScreen.setAttribute('aria-hidden', isInventoryScreenOpen ? 'false' : 'true');
+    if (!isInventoryScreenOpen) setInventorySettingsOpen(false);
 
     if (isInventoryScreenOpen) {
         inputState.keys.fill(0);
@@ -402,9 +413,51 @@ function disposeDroppedMiningItem(index) {
     item.mesh.material?.dispose?.();
 }
 
-export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
-    inputState.yaw -= deltaX * sensitivity;
-    inputState.pitch -= deltaY * sensitivity;
+function clampLookSensitivity(value) {
+    if (!Number.isFinite(value)) return DEFAULT_LOOK_SENSITIVITY;
+    return Math.min(MAX_LOOK_SENSITIVITY, Math.max(MIN_LOOK_SENSITIVITY, value));
+}
+
+function getLookSensitivity() {
+    return clampLookSensitivity(inputState.lookSensitivity ?? DEFAULT_LOOK_SENSITIVITY);
+}
+
+function setLookSensitivity(nextSensitivity) {
+    const clamped = clampLookSensitivity(nextSensitivity);
+    inputState.lookSensitivity = clamped;
+    if (sensitivitySlider) sensitivitySlider.value = clamped.toFixed(4);
+    if (sensitivityValueEl) sensitivityValueEl.textContent = clamped.toFixed(4);
+    try {
+        localStorage.setItem(LOOK_SENSITIVITY_STORAGE_KEY, String(clamped));
+    } catch {
+        // Ignore localStorage failures (private browsing, blocked storage).
+    }
+}
+
+function initializeLookSensitivity() {
+    let savedSensitivity = DEFAULT_LOOK_SENSITIVITY;
+    try {
+        const rawValue = localStorage.getItem(LOOK_SENSITIVITY_STORAGE_KEY);
+        const parsedValue = Number.parseFloat(rawValue ?? '');
+        if (Number.isFinite(parsedValue)) savedSensitivity = parsedValue;
+    } catch {
+        // Ignore localStorage failures and keep the default sensitivity.
+    }
+    setLookSensitivity(savedSensitivity);
+}
+
+function setInventorySettingsOpen(shouldOpen) {
+    isInventorySettingsOpen = !!shouldOpen;
+    if (!inventorySettingsModal) return;
+    inventorySettingsModal.classList.toggle('visible', isInventorySettingsOpen);
+    inventorySettingsModal.setAttribute('aria-hidden', isInventorySettingsOpen ? 'false' : 'true');
+}
+
+export function applyLookDelta(deltaX, deltaY, sensitivityScale = 1) {
+    const lookSensitivity = getLookSensitivity() * (Number.isFinite(sensitivityScale) ? sensitivityScale : 1);
+    if (!Number.isFinite(lookSensitivity) || lookSensitivity <= 0) return;
+    inputState.yaw -= deltaX * lookSensitivity;
+    inputState.pitch -= deltaY * lookSensitivity;
     inputState.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, inputState.pitch));
 }
 
@@ -419,6 +472,11 @@ export function registerDesktopInputHandlers() {
     });
 
     document.addEventListener('keydown', (event) => {
+        if (event.code === 'Escape' && isInventorySettingsOpen) {
+            setInventorySettingsOpen(false);
+            event.preventDefault();
+            return;
+        }
         if ((event.code === 'KeyI' || event.code === 'KeyY') && !event.repeat) {
             toggleInventoryScreen();
             event.preventDefault();
@@ -500,9 +558,39 @@ export function registerDesktopInputHandlers() {
 
 export function initInventoryUi() {
     if (inventoryUiInitialized) return;
+    initializeLookSensitivity();
     initializeInventorySlots();
+    initializeInventorySettingsUi();
     inventoryUiInitialized = true;
     renderInventorySlots();
+}
+
+function initializeInventorySettingsUi() {
+    if (inventorySettingsButton) {
+        inventorySettingsButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isInventoryScreenOpen) return;
+            setInventorySettingsOpen(true);
+        });
+    }
+
+    if (inventorySettingsCloseButton) {
+        inventorySettingsCloseButton.addEventListener('click', () => setInventorySettingsOpen(false));
+    }
+
+    if (inventorySettingsModal) {
+        inventorySettingsModal.addEventListener('click', (event) => {
+            if (event.target === inventorySettingsModal) setInventorySettingsOpen(false);
+        });
+    }
+
+    if (sensitivitySlider) {
+        sensitivitySlider.addEventListener('input', () => {
+            const next = Number.parseFloat(sensitivitySlider.value);
+            setLookSensitivity(next);
+        });
+    }
 }
 
 function initializeInventorySlots() {
