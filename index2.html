@@ -129,14 +129,27 @@
         </div>
         <div id="inventory-skin-modal" class="inventory-skin-modal" role="dialog" aria-modal="true" aria-label="Skin modifier" aria-hidden="true">
             <div class="inventory-skin-content">
-                <div class="inventory-skin-left-bar" aria-label="Skin tools bar"></div>
+                <div class="inventory-skin-left-bar" aria-label="Skin tools bar">
+                    <button type="button" class="inventory-skin-nav-item active">Templates</button>
+                    <button type="button" class="inventory-skin-nav-item">Bases</button>
+                    <button type="button" class="inventory-skin-nav-item">Headwears</button>
+                    <button type="button" class="inventory-skin-nav-item">Hairs</button>
+                    <button type="button" class="inventory-skin-nav-item">Eyes</button>
+                    <button type="button" class="inventory-skin-nav-item">Mouths</button>
+                    <button type="button" class="inventory-skin-nav-item">Tops</button>
+                    <button type="button" class="inventory-skin-nav-item">Bottoms</button>
+                    <button type="button" class="inventory-skin-nav-item">Footwears</button>
+                </div>
                 <div class="inventory-skin-middle-thing" aria-label="Skin center bars">
                     <div class="inventory-skin-middle-bar"></div>
                     <div class="inventory-skin-middle-bar"></div>
                     <div class="inventory-skin-middle-bar"></div>
                 </div>
-                <div class="inventory-skin-preview" aria-label="Current skin preview">
-                    <img src="assets/skin/skin.png" alt="Current skin">
+                <div class="inventory-skin-preview-pane" aria-label="Current skin preview">
+                    <div class="inventory-skin-preview-title">Current Skin</div>
+                    <div class="inventory-skin-preview">
+                        <img src="assets/skin/skin.png" alt="Current skin">
+                    </div>
                 </div>
                 <button id="inventory-skin-close-btn" type="button">Close</button>
             </div>
