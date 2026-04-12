@@ -17,11 +17,7 @@ const placePos = new THREE.Vector3();
 export const INTERACTION_RANGE = 8;
 const inventoryScreen = document.getElementById('inventory-screen');
 const heldItemNameEl = document.getElementById('held-item-name');
-const inventorySkinButtonEl = document.getElementById('inventory-skin-button');
-const skinCustomizationScreenEl = document.getElementById('skin-customization-screen');
-const skinScreenCloseButtonEl = document.getElementById('skin-screen-close');
 let isInventoryScreenOpen = false;
-let inventorySkinUiBound = false;
 const localInteractionCandidates = [];
 // Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
 const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
@@ -156,7 +152,6 @@ export function toggleInventoryScreen() {
     isInventoryScreenOpen = !isInventoryScreenOpen;
     inventoryScreen.classList.toggle('visible', isInventoryScreenOpen);
     inventoryScreen.setAttribute('aria-hidden', isInventoryScreenOpen ? 'false' : 'true');
-    if (!isInventoryScreenOpen) setSkinCustomizationScreenOpen(false);
 
     if (isInventoryScreenOpen) {
         inputState.keys.fill(0);
@@ -164,12 +159,6 @@ export function toggleInventoryScreen() {
             document.exitPointerLock();
         }
     }
-}
-
-function setSkinCustomizationScreenOpen(isOpen) {
-    if (!skinCustomizationScreenEl) return;
-    skinCustomizationScreenEl.classList.toggle('visible', isOpen);
-    skinCustomizationScreenEl.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
 }
 
 function getCenterIntersection() {
@@ -512,7 +501,6 @@ export function registerDesktopInputHandlers() {
 export function initInventoryUi() {
     if (inventoryUiInitialized) return;
     initializeInventorySlots();
-    bindSkinCustomizationUi();
     inventoryUiInitialized = true;
     renderInventorySlots();
 }
@@ -556,26 +544,6 @@ function initializeInventorySlots() {
     });
 
     populateInitialInventoryByGameMode();
-}
-
-function bindSkinCustomizationUi() {
-    if (inventorySkinUiBound) return;
-    inventorySkinUiBound = true;
-
-    inventorySkinButtonEl?.addEventListener('click', () => {
-        if (!isInventoryScreenOpen) return;
-        setSkinCustomizationScreenOpen(true);
-    });
-
-    skinScreenCloseButtonEl?.addEventListener('click', () => {
-        setSkinCustomizationScreenOpen(false);
-    });
-
-    skinCustomizationScreenEl?.addEventListener('click', (event) => {
-        if (event.target === skinCustomizationScreenEl) {
-            setSkinCustomizationScreenOpen(false);
-        }
-    });
 }
 
 function populateInitialInventoryByGameMode() {
