@@ -490,6 +490,24 @@ canvas { display: block; }
     border-radius: 10px;
     background: rgba(65, 65, 65, 0.72);
     border: 1px solid rgba(255, 255, 255, 0.28);
+    padding: 8px;
+}
+
+.inventory-skin-template-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(45, 45, 45, 0.8);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.inventory-skin-template-btn img {
+    width: 56px;
+    height: 56px;
+    image-rendering: pixelated;
 }
 
 #inventory-skin-close-btn {
@@ -529,6 +547,54 @@ canvas { display: block; }
     gap: 10px;
     color: #fff;
     text-align: center;
+}
+
+.inventory-skin-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.inventory-skin-size-btn {
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(70, 70, 70, 0.92);
+    color: #fff;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+.inventory-skin-size-btn.active {
+    background: rgba(58, 126, 67, 0.9);
+}
+
+#inventory-skin-color-input {
+    width: 36px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    padding: 0;
+}
+
+#inventory-skin-editor-canvas {
+    width: 256px;
+    height: 256px;
+    margin: 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: #111;
+    image-rendering: pixelated;
+    cursor: crosshair;
+}
+
+#inventory-skin-editor-preview {
+    width: 82px;
+    height: 82px;
+    margin: 0 auto;
+    object-fit: contain;
+    image-rendering: pixelated;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(26, 26, 26, 0.9);
 }
 
 #inventory-skin-editor-close-btn {

@@ -130,7 +130,11 @@
         <div id="inventory-skin-modal" class="inventory-skin-modal" role="dialog" aria-modal="true" aria-label="Skin modifier" aria-hidden="true">
             <div class="inventory-skin-content">
                 <div class="inventory-skin-middle-thing" aria-label="Skin center bars">
-                    <div class="inventory-skin-middle-bar"></div>
+                    <div class="inventory-skin-middle-bar">
+                        <button id="inventory-skin-template-default-btn" type="button" class="inventory-skin-template-btn" title="Reset to default skin">
+                            <img src="assets/skin/head/front_head.png" alt="Default cube template">
+                        </button>
+                    </div>
                     <div class="inventory-skin-middle-bar"></div>
                     <div class="inventory-skin-middle-bar"></div>
                 </div>
@@ -150,7 +154,13 @@
                 <div id="inventory-skin-editor-screen" class="inventory-skin-editor-screen" aria-hidden="true">
                     <div class="inventory-skin-editor-panel">
                         <h3>Skin Editor</h3>
-                        <p>Editor screen placeholder.</p>
+                        <div class="inventory-skin-editor-toolbar">
+                            <button id="inventory-skin-size-64-btn" type="button" class="inventory-skin-size-btn active">64×64</button>
+                            <button id="inventory-skin-size-128-btn" type="button" class="inventory-skin-size-btn">128×128</button>
+                            <input id="inventory-skin-color-input" type="color" value="#ff0000" aria-label="Brush color">
+                        </div>
+                        <canvas id="inventory-skin-editor-canvas" width="64" height="64" aria-label="Skin editor canvas"></canvas>
+                        <img id="inventory-skin-editor-preview" src="assets/skin/skin.png" alt="Current edited skin preview">
                         <button id="inventory-skin-editor-close-btn" type="button">Back</button>
                     </div>
                 </div>

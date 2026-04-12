@@ -25,6 +25,12 @@ const inventorySkinCloseButton = document.getElementById('inventory-skin-close-b
 const inventorySkinEditorButton = document.getElementById('inventory-skin-editor-btn');
 const inventorySkinEditorScreen = document.getElementById('inventory-skin-editor-screen');
 const inventorySkinEditorCloseButton = document.getElementById('inventory-skin-editor-close-btn');
+const inventorySkinTemplateDefaultButton = document.getElementById('inventory-skin-template-default-btn');
+const inventorySkinEditorCanvas = document.getElementById('inventory-skin-editor-canvas');
+const inventorySkinEditorPreview = document.getElementById('inventory-skin-editor-preview');
+const inventorySkinSize64Button = document.getElementById('inventory-skin-size-64-btn');
+const inventorySkinSize128Button = document.getElementById('inventory-skin-size-128-btn');
+const inventorySkinColorInput = document.getElementById('inventory-skin-color-input');
 const sensitivitySlider = document.getElementById('look-sensitivity-slider');
 const sensitivityValueEl = document.getElementById('look-sensitivity-value');
 const heldItemNameEl = document.getElementById('held-item-name');
@@ -32,6 +38,10 @@ let isInventoryScreenOpen = false;
 let isInventorySettingsOpen = false;
 let isInventorySkinOpen = false;
 let isInventorySkinEditorOpen = false;
+let skinEditorInitialized = false;
+let skinEditorResolution = 64;
+let skinEditorIsDrawing = false;
+const DEFAULT_SKIN_TEXTURE_PATH = 'assets/skin/skin.png';
 const localInteractionCandidates = [];
 // Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
 const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
@@ -477,6 +487,80 @@ function setInventorySkinEditorOpen(shouldOpen) {
     inventorySkinEditorScreen.setAttribute('aria-hidden', isInventorySkinEditorOpen ? 'false' : 'true');
 }
 
+function updateSkinEditorPreviewFromCanvas() {
+    if (!inventorySkinEditorCanvas) return;
+    const dataUrl = inventorySkinEditorCanvas.toDataURL('image/png');
+    if (inventorySkinEditorPreview) inventorySkinEditorPreview.src = dataUrl;
+    const skinButtonIcon = inventorySkinButton?.querySelector('img');
+    if (skinButtonIcon) skinButtonIcon.src = dataUrl;
+}
+
+function drawDefaultSkinTexture() {
+    if (!inventorySkinEditorCanvas) return;
+    const ctx = inventorySkinEditorCanvas.getContext('2d');
+    if (!ctx) return;
+    const defaultImg = new Image();
+    defaultImg.onload = () => {
+        ctx.clearRect(0, 0, inventorySkinEditorCanvas.width, inventorySkinEditorCanvas.height);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(defaultImg, 0, 0, inventorySkinEditorCanvas.width, inventorySkinEditorCanvas.height);
+        updateSkinEditorPreviewFromCanvas();
+    };
+    defaultImg.src = DEFAULT_SKIN_TEXTURE_PATH;
+}
+
+function setSkinEditorResolution(nextResolution) {
+    if (!inventorySkinEditorCanvas) return;
+    const safeResolution = nextResolution === 128 ? 128 : 64;
+    skinEditorResolution = safeResolution;
+    inventorySkinEditorCanvas.width = safeResolution;
+    inventorySkinEditorCanvas.height = safeResolution;
+    if (inventorySkinSize64Button) inventorySkinSize64Button.classList.toggle('active', safeResolution === 64);
+    if (inventorySkinSize128Button) inventorySkinSize128Button.classList.toggle('active', safeResolution === 128);
+    drawDefaultSkinTexture();
+}
+
+function drawSkinEditorAtPointer(event) {
+    if (!inventorySkinEditorCanvas || !inventorySkinColorInput) return;
+    const ctx = inventorySkinEditorCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    const rect = inventorySkinEditorCanvas.getBoundingClientRect();
+    const x = Math.floor(((event.clientX - rect.left) / rect.width) * skinEditorResolution);
+    const y = Math.floor(((event.clientY - rect.top) / rect.height) * skinEditorResolution);
+    if (x < 0 || y < 0 || x >= skinEditorResolution || y >= skinEditorResolution) return;
+    ctx.fillStyle = inventorySkinColorInput.value || '#ff0000';
+    ctx.fillRect(x, y, 1, 1);
+    updateSkinEditorPreviewFromCanvas();
+}
+
+function initializeSkinEditorCanvas() {
+    if (skinEditorInitialized) return;
+    skinEditorInitialized = true;
+    if (!inventorySkinEditorCanvas) return;
+
+    inventorySkinEditorCanvas.addEventListener('pointerdown', (event) => {
+        skinEditorIsDrawing = true;
+        drawSkinEditorAtPointer(event);
+    });
+    inventorySkinEditorCanvas.addEventListener('pointermove', (event) => {
+        if (!skinEditorIsDrawing) return;
+        drawSkinEditorAtPointer(event);
+    });
+    window.addEventListener('pointerup', () => {
+        skinEditorIsDrawing = false;
+    });
+
+    if (inventorySkinSize64Button) inventorySkinSize64Button.addEventListener('click', () => setSkinEditorResolution(64));
+    if (inventorySkinSize128Button) inventorySkinSize128Button.addEventListener('click', () => setSkinEditorResolution(128));
+    if (inventorySkinTemplateDefaultButton) {
+        inventorySkinTemplateDefaultButton.addEventListener('click', () => {
+            drawDefaultSkinTexture();
+        });
+    }
+
+    setSkinEditorResolution(64);
+}
+
 export function applyLookDelta(deltaX, deltaY, sensitivityScale = 1) {
     const lookSensitivity = getLookSensitivity() * (Number.isFinite(sensitivityScale) ? sensitivityScale : 1);
     if (!Number.isFinite(lookSensitivity) || lookSensitivity <= 0) return;
@@ -600,6 +684,7 @@ export function initInventoryUi() {
 }
 
 function initializeInventorySettingsUi() {
+    initializeSkinEditorCanvas();
     if (inventorySettingsButton) {
         inventorySettingsButton.addEventListener('click', (event) => {
             event.preventDefault();
