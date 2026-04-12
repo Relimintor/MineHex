@@ -1,5 +1,5 @@
-import { PLAYER_HEIGHT, BLOCK_TYPES } from './config.js';
-import { axialToWorld, worldToAxial } from './coords.js';
+import { BLOCK_TYPES } from './config.js';
+import { AXIAL_NEIGHBOR_OFFSETS, axialToWorld, worldToAxial } from './coords.js';
 import { packColumnKey } from './keys.js';
 import { camera } from './scene.js';
 import { worldState } from './state.js';
@@ -10,6 +10,7 @@ const SEARCH_HEIGHT_TOP = 80;
 const SEARCH_HEIGHT_BOTTOM = -80;
 const SPAWN_HEIGHT_MIN = 14;
 const SPAWN_HEIGHT_MAX = 26;
+const SPAWN_CAMERA_CLEARANCE_HEX = 2;
 const SOLID_TYPE_LOOKUP = BLOCK_TYPES.map((blockType) => !blockType?.isLiquid);
 const WATER_TYPE_INDEX = BLOCK_TYPES.findIndex((blockType) => blockType?.name?.toLowerCase() === 'water');
 const SPAWN_OBSTRUCTION_TYPE_INDICES = new Set(
@@ -85,6 +86,21 @@ function isSpawnObstructionBlockAt(q, r, h) {
     return SPAWN_OBSTRUCTION_TYPE_INDICES.has(block.userData.typeIndex);
 }
 
+function hasNearbyLiquidAtOrAboveGround(q, r, groundH) {
+    const liquidScanOffsets = [
+        { q: 0, r: 0 },
+        ...AXIAL_NEIGHBOR_OFFSETS
+    ];
+    for (const offset of liquidScanOffsets) {
+        const sampleQ = q + offset.q;
+        const sampleR = r + offset.r;
+        for (let sampleH = groundH - 1; sampleH <= groundH + SPAWN_CAMERA_CLEARANCE_HEX; sampleH++) {
+            if (isLiquidBlockAt(sampleQ, sampleR, sampleH)) return true;
+        }
+    }
+    return false;
+}
+
 export function isCameraInLiquid() {
     const { q, r, h } = worldState.frameCameraAxial ?? worldToAxial(camera.position);
     return isLiquidBlockAt(q, r, h) || isLiquidBlockAt(q, r, h - 1);
@@ -101,6 +117,7 @@ function findSpawnHeight(q, r) {
         if (isSpawnObstructionBlockAt(q, r, h + 1)) continue;
         if (isLiquidBlockAt(q, r, h + 1)) continue;
         if (isLiquidBlockAt(q, r, h + 2)) continue;
+        if (hasNearbyLiquidAtOrAboveGround(q, r, h)) continue;
         return h;
     }
     return null;
@@ -116,8 +133,8 @@ export function enforceSpawnOnSolidBlock(originQ = 0, originR = 0) {
                 const spawnHeight = findSpawnHeight(q, r);
                 if (spawnHeight === null) continue;
 
-                const spawnPoint = axialToWorld(q, r, spawnHeight);
-                camera.position.set(spawnPoint.x, spawnPoint.y + PLAYER_HEIGHT, spawnPoint.z);
+                const spawnPoint = axialToWorld(q, r, spawnHeight + SPAWN_CAMERA_CLEARANCE_HEX);
+                camera.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
                 return true;
             }
         }
