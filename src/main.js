@@ -27,7 +27,7 @@ const WORLD_DB_VERSION = 1;
 const WORLD_STORE = 'worlds';
 const WORLD_AUTOSAVE_INTERVAL_MS = 5000;
 const METEOR_SHOWER_SPAWN_INTERVAL_SECONDS = 0.85;
-const METEOR_GLTF_CHANCE = 1.0; // Testing: 100%
+const METEOR_GIANT_3D_SPAWN_CHANCE = 0.01;
 const METEOR_PREWARM_HEX_RADIUS = 70;
 const METEOR_CRATER_RADIUS_HEX = 8;
 const METEOR_MAX_ACTIVE_COUNT = 14;
@@ -69,10 +69,7 @@ function createFallbackMeteorMesh() {
 
 async function ensureMeteorTemplateLoaded() {
     if (meteorTemplate) return meteorTemplate;
-    if (Math.random() > METEOR_GLTF_CHANCE || !THREE.GLTFLoader) {
-        meteorTemplate = createFallbackMeteorMesh();
-        return meteorTemplate;
-    }
+    if (!THREE.GLTFLoader) return null;
     try {
         const loader = new THREE.GLTFLoader();
         const meteorUrl = new URL('../assets/meteor.glb', import.meta.url).href;
@@ -93,14 +90,17 @@ async function ensureMeteorTemplateLoaded() {
             }
         });
     } catch {
-        meteorTemplate = createFallbackMeteorMesh();
+        meteorTemplate = null;
     }
     return meteorTemplate;
 }
 
 function cloneMeteorMesh() {
-    if (!meteorTemplate) return createFallbackMeteorMesh();
-    return meteorTemplate.clone(true);
+    const spawnGiant3DMeteor = Math.random() < METEOR_GIANT_3D_SPAWN_CHANCE;
+    if (spawnGiant3DMeteor && meteorTemplate) {
+        return meteorTemplate.clone(true);
+    }
+    return createFallbackMeteorMesh();
 }
 
 function createMeteorTrail(startPosition) {
