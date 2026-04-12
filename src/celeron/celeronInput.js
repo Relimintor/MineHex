@@ -2,6 +2,7 @@ import { renderer } from '../scene.js';
 import {
     applyLookDelta,
     cancelMiningProgress,
+    initInventoryUi,
     mineBlockFromCenter,
     placeBlockFromCenter,
     setKeyState,
@@ -53,6 +54,8 @@ function canInteractNow() {
 }
 
 export function registerCeleronInputHandlers() {
+    initInventoryUi();
+
     document.querySelectorAll('.slot').forEach((slot) => {
         slot.addEventListener('click', () => {
             const index = Number(slot.dataset.index);
