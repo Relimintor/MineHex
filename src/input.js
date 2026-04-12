@@ -536,6 +536,26 @@ function initializeInventorySlots() {
         inventoryItemsBySlotId.set(slotId, null);
         registerInventorySlotDnD(slot, slotId);
     });
+
+    populateInitialInventoryByGameMode();
+}
+
+function populateInitialInventoryByGameMode() {
+    for (const slotId of inventoryItemsBySlotId.keys()) {
+        inventoryItemsBySlotId.set(slotId, null);
+    }
+
+    if (!isSurvivalMode()) {
+        let nextTypeIndex = 0;
+        for (const slotId of inventoryItemsBySlotId.keys()) {
+            if (nextTypeIndex >= BLOCK_TYPES.length) break;
+            inventoryItemsBySlotId.set(slotId, nextTypeIndex);
+            nextTypeIndex += 1;
+        }
+        return;
+    }
+
+    worldState.selectedBlockIndex = -1;
 }
 
 function registerInventorySlotDnD(slotEl, slotId) {
