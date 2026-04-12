@@ -22,12 +22,16 @@ const inventorySettingsCloseButton = document.getElementById('inventory-settings
 const inventorySkinButton = document.getElementById('inventory-skin-btn');
 const inventorySkinModal = document.getElementById('inventory-skin-modal');
 const inventorySkinCloseButton = document.getElementById('inventory-skin-close-btn');
+const inventorySkinEditorButton = document.getElementById('inventory-skin-editor-btn');
+const inventorySkinEditorScreen = document.getElementById('inventory-skin-editor-screen');
+const inventorySkinEditorCloseButton = document.getElementById('inventory-skin-editor-close-btn');
 const sensitivitySlider = document.getElementById('look-sensitivity-slider');
 const sensitivityValueEl = document.getElementById('look-sensitivity-value');
 const heldItemNameEl = document.getElementById('held-item-name');
 let isInventoryScreenOpen = false;
 let isInventorySettingsOpen = false;
 let isInventorySkinOpen = false;
+let isInventorySkinEditorOpen = false;
 const localInteractionCandidates = [];
 // Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
 const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
@@ -463,6 +467,14 @@ function setInventorySkinOpen(shouldOpen) {
     if (!inventorySkinModal) return;
     inventorySkinModal.classList.toggle('visible', isInventorySkinOpen);
     inventorySkinModal.setAttribute('aria-hidden', isInventorySkinOpen ? 'false' : 'true');
+    if (!isInventorySkinOpen) setInventorySkinEditorOpen(false);
+}
+
+function setInventorySkinEditorOpen(shouldOpen) {
+    isInventorySkinEditorOpen = !!shouldOpen;
+    if (!inventorySkinEditorScreen) return;
+    inventorySkinEditorScreen.classList.toggle('visible', isInventorySkinEditorOpen);
+    inventorySkinEditorScreen.setAttribute('aria-hidden', isInventorySkinEditorOpen ? 'false' : 'true');
 }
 
 export function applyLookDelta(deltaX, deltaY, sensitivityScale = 1) {
@@ -484,6 +496,11 @@ export function registerDesktopInputHandlers() {
     });
 
     document.addEventListener('keydown', (event) => {
+        if (event.code === 'Escape' && isInventorySkinEditorOpen) {
+            setInventorySkinEditorOpen(false);
+            event.preventDefault();
+            return;
+        }
         if (event.code === 'Escape' && isInventorySkinOpen) {
             setInventorySkinOpen(false);
             event.preventDefault();
@@ -619,6 +636,19 @@ function initializeInventorySettingsUi() {
         inventorySkinModal.addEventListener('click', (event) => {
             if (event.target === inventorySkinModal) setInventorySkinOpen(false);
         });
+    }
+
+    if (inventorySkinEditorButton) {
+        inventorySkinEditorButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isInventorySkinOpen) return;
+            setInventorySkinEditorOpen(true);
+        });
+    }
+
+    if (inventorySkinEditorCloseButton) {
+        inventorySkinEditorCloseButton.addEventListener('click', () => setInventorySkinEditorOpen(false));
     }
 
     if (sensitivitySlider) {

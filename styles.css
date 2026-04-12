@@ -450,7 +450,7 @@ canvas { display: block; }
     background: rgba(47, 47, 47, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.24);
     display: grid;
-    grid-template-rows: repeat(9, 1fr);
+    grid-template-rows: repeat(10, 1fr);
     overflow: hidden;
 }
 
@@ -471,6 +471,10 @@ canvas { display: block; }
 .inventory-skin-nav-item.active {
     background: linear-gradient(180deg, rgba(58, 126, 67, 0.9), rgba(36, 90, 44, 0.95));
     color: #fff;
+}
+
+.inventory-skin-editor-nav {
+    background: linear-gradient(180deg, rgba(78, 104, 148, 0.88), rgba(48, 71, 111, 0.92));
 }
 
 .inventory-skin-middle-thing {
@@ -497,6 +501,43 @@ canvas { display: block; }
     background: rgba(65, 65, 65, 0.9);
     color: #fff;
     padding: 8px 14px;
+    cursor: pointer;
+}
+
+.inventory-skin-editor-screen {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(16, 16, 16, 0.78);
+    border-radius: 14px;
+}
+
+.inventory-skin-editor-screen.visible {
+    display: flex;
+}
+
+.inventory-skin-editor-panel {
+    width: min(80%, 440px);
+    min-height: 220px;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(53, 53, 53, 0.98);
+    display: grid;
+    gap: 10px;
+    color: #fff;
+    text-align: center;
+}
+
+#inventory-skin-editor-close-btn {
+    justify-self: center;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(72, 72, 72, 0.92);
+    color: #fff;
+    padding: 7px 16px;
     cursor: pointer;
 }
 
