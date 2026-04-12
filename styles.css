@@ -328,8 +328,8 @@ canvas { display: block; }
 }
 
 .inventory-hex-slot .block-preview {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
 }
 
 #inventory {
@@ -375,8 +375,8 @@ canvas { display: block; }
 }
 
 .block-preview {
-    width: 25px;
-    height: 25px;
+    width: 27px;
+    height: 27px;
     clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%);
     box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
 }
@@ -398,7 +398,7 @@ canvas { display: block; }
 .inventory-stack-count {
     position: absolute;
     right: 15px;
-    bottom: 18px;
+    bottom: 14px;
     color: #fff;
     font-size: 20px;
     font-weight: 900;
