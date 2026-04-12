@@ -436,11 +436,11 @@ canvas { display: block; }
     border: 1px solid rgba(255, 255, 255, 0.24);
     background: rgba(56, 56, 56, 0.97);
     display: grid;
-    grid-template-columns: 290px 1fr;
-    gap: 20px;
+    grid-template-columns: 1fr 290px;
+    gap: 12px;
     align-items: stretch;
     position: relative;
-    margin-right: 8px;
+    margin-right: 4px;
 }
 
 .inventory-skin-left-bar {
