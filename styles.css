@@ -320,6 +320,34 @@ canvas { display: block; }
     align-self: center;
 }
 
+.inventory-crafting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+#inventory-skin-btn {
+    width: 68px;
+    height: 68px;
+    border-radius: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.36);
+    background: rgba(48, 48, 48, 0.82);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+#inventory-skin-btn:hover {
+    background: rgba(72, 72, 72, 0.88);
+}
+
+#inventory-skin-btn img {
+    width: 46px;
+    height: 46px;
+    image-rendering: pixelated;
+}
+
 .inventory-square-slot {
     position: relative;
     width: 52px;
@@ -383,6 +411,87 @@ canvas { display: block; }
 .inventory-hex-slot .block-preview {
     width: 24px;
     height: 24px;
+}
+
+.inventory-skin-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.62);
+    z-index: 950;
+}
+
+.inventory-skin-modal.visible {
+    display: flex;
+}
+
+.inventory-skin-content {
+    width: min(92vw, 560px);
+    min-height: min(70vh, 420px);
+    padding: 18px 18px 62px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(42, 42, 42, 0.96);
+    display: grid;
+    grid-template-columns: 80px 1fr 180px;
+    gap: 16px;
+    align-items: center;
+    position: relative;
+}
+
+.inventory-skin-left-bar {
+    width: 44px;
+    height: 260px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(188, 188, 188, 0.3), rgba(120, 120, 120, 0.45));
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    justify-self: center;
+}
+
+.inventory-skin-middle-thing {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+}
+
+.inventory-skin-middle-bar {
+    height: 220px;
+    border-radius: 10px;
+    background: rgba(130, 130, 130, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.inventory-skin-preview {
+    width: 160px;
+    height: 300px;
+    justify-self: center;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: rgba(70, 70, 70, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.inventory-skin-preview img {
+    width: 130px;
+    height: 260px;
+    object-fit: contain;
+    image-rendering: pixelated;
+}
+
+#inventory-skin-close-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    background: rgba(65, 65, 65, 0.9);
+    color: #fff;
+    padding: 8px 14px;
+    cursor: pointer;
 }
 
 #inventory {
