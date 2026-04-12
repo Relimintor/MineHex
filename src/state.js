@@ -21,6 +21,7 @@ function createProfilerStore(windowSize = DEFAULT_PROFILER_WINDOW) {
 export const worldState = {
     selectedBlockIndex: 0,
     gameMode: 'creative',
+    worldSeed: 'default',
     worldBlocks: new Map(),
     worldBlockList: [],
     collidableBlockList: [],
@@ -49,6 +50,7 @@ export const worldState = {
 export function setWorldSeed(seed) {
     const fallbackSeed = Date.now().toString();
     const normalizedSeed = (seed ?? fallbackSeed).toString();
+    worldState.worldSeed = normalizedSeed;
     worldState.simplex = new window.SimplexNoise(normalizedSeed);
     return normalizedSeed;
 }
