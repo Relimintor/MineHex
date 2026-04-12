@@ -20,6 +20,7 @@ function createProfilerStore(windowSize = DEFAULT_PROFILER_WINDOW) {
 
 export const worldState = {
     selectedBlockIndex: 0,
+    gameMode: 'creative',
     worldBlocks: new Map(),
     worldBlockList: [],
     collidableBlockList: [],
