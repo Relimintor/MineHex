@@ -1,8 +1,8 @@
 const THREE = window.THREE;
 
-import { camera, renderer } from './scene.js';
+import { camera, renderer, scene } from './scene.js';
 import { BLOCK_TYPES, CHUNK_SIZE, HEX_HEIGHT, HEX_RADIUS, PLAYER_HEIGHT } from './config.js';
-import { worldToAxial } from './coords.js';
+import { axialToWorld, worldToAxial } from './coords.js';
 import { addBlock, collectChunkRaycastCandidates, getIntersectedBlockKey, removeBlock } from './blocks.js';
 import { getMiningDurationMsForType } from './hardness.js';
 import { packBlockKey, unpackBlockKey } from './keys.js';
@@ -75,6 +75,20 @@ let miningTargetLastSeenAtMs = 0;
 // Minecraft-style continuous damage accumulation while holding on the same target.
 let miningProgress01 = 0;
 let miningLastTickAtMs = 0;
+const droppedMiningItems = [];
+const droppedMiningItemPull = new THREE.Vector3();
+const DROPPED_ITEM_GRAVITY = 28;
+const DROPPED_ITEM_BOUNCE_DAMPING = 0.35;
+const DROPPED_ITEM_DRAG = 0.88;
+const DROPPED_ITEM_PICKUP_RADIUS = 1.35;
+const DROPPED_ITEM_PICKUP_MAGNET_RADIUS = 3.8;
+const DROPPED_ITEM_MAX_LIFETIME_SECONDS = 22;
+
+const droppedItemGeometry = new THREE.IcosahedronGeometry(Math.max(0.15, HEX_RADIUS * 0.28), 0);
+
+function isSurvivalMode() {
+    return worldState.gameMode === 'survival';
+}
 
 const KEY_CODE_TO_INDEX = {
     KeyW: 0,
@@ -277,14 +291,109 @@ export function mineBlockFromCenter() {
     miningProgress01 += deltaMs / safeDurationMs;
     if (miningProgress01 < 1) return false;
 
+    const dropTypeIndex = Number.isInteger(typeIndex) ? typeIndex : -1;
     const didRemove = removeBlock(activeBlockKey);
     cancelMiningProgress();
     if (!didRemove) return false;
-    const { q, r } = unpackBlockKey(activeBlockKey);
+    const { q, r, h } = unpackBlockKey(activeBlockKey);
+    if (isSurvivalMode() && dropTypeIndex >= 0) spawnDroppedMiningItem(q, r, h, dropTypeIndex);
     flushDirtyChunksAroundBlock(q, r);
     flushEditedDirtyChunks(Number.POSITIVE_INFINITY);
     triggerCameraImpulse(0.16);
     return true;
+}
+
+function addMinedBlockToInventory(typeIndex) {
+    if (!Number.isInteger(typeIndex) || typeIndex < 0 || typeIndex >= BLOCK_TYPES.length) return false;
+    for (const item of inventoryItemsBySlotId.values()) {
+        if (item === typeIndex) return true;
+    }
+
+    const targetSlotId = [...inventoryItemsBySlotId.keys()].find((slotId) => !Number.isInteger(inventoryItemsBySlotId.get(slotId)));
+    if (!targetSlotId) return false;
+    inventoryItemsBySlotId.set(targetSlotId, typeIndex);
+    renderInventorySlots();
+    return true;
+}
+
+function spawnDroppedMiningItem(q, r, h, typeIndex) {
+    const blockType = BLOCK_TYPES[typeIndex];
+    const material = new THREE.MeshStandardMaterial({
+        color: blockType?.color ?? 0xffffff,
+        roughness: 0.5,
+        metalness: 0.1
+    });
+    const mesh = new THREE.Mesh(droppedItemGeometry, material);
+    const worldPos = axialToWorld(q, r, h);
+    mesh.position.copy(worldPos);
+    mesh.position.y += HEX_HEIGHT * 0.42;
+    mesh.scale.setScalar(1);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    scene.add(mesh);
+
+    droppedMiningItems.push({
+        typeIndex,
+        mesh,
+        velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 2.2,
+            2.4 + Math.random() * 1.7,
+            (Math.random() - 0.5) * 2.2
+        ),
+        ageSeconds: 0
+    });
+}
+
+export function tickDroppedMiningItems(deltaTimeSeconds) {
+    if (!isSurvivalMode()) return;
+    if (droppedMiningItems.length === 0) return;
+    const dt = Math.max(0, Math.min(0.05, deltaTimeSeconds));
+    const cameraPos = camera.position;
+
+    for (let i = droppedMiningItems.length - 1; i >= 0; i--) {
+        const item = droppedMiningItems[i];
+        item.ageSeconds += dt;
+        if (item.ageSeconds >= DROPPED_ITEM_MAX_LIFETIME_SECONDS) {
+            disposeDroppedMiningItem(i);
+            continue;
+        }
+
+        const mesh = item.mesh;
+        droppedMiningItemPull.copy(cameraPos).sub(mesh.position);
+        const distance = droppedMiningItemPull.length();
+        if (distance <= DROPPED_ITEM_PICKUP_MAGNET_RADIUS && distance > 0.001) {
+            droppedMiningItemPull.multiplyScalar(1 / distance);
+            item.velocity.addScaledVector(droppedMiningItemPull, dt * 16);
+        }
+
+        item.velocity.y -= DROPPED_ITEM_GRAVITY * dt;
+        item.velocity.multiplyScalar(Math.pow(DROPPED_ITEM_DRAG, dt * 60));
+        mesh.position.addScaledVector(item.velocity, dt);
+        mesh.rotation.y += dt * 2.8;
+        mesh.rotation.x += dt * 1.5;
+
+        const axial = worldToAxial(mesh.position);
+        const cellFloorY = axialToWorld(axial.q, axial.r, axial.h).y + (HEX_HEIGHT * 0.18);
+        if (mesh.position.y < cellFloorY) {
+            mesh.position.y = cellFloorY;
+            if (item.velocity.y < 0) item.velocity.y *= -DROPPED_ITEM_BOUNCE_DAMPING;
+        }
+
+        if (distance <= DROPPED_ITEM_PICKUP_RADIUS) {
+            const didCollect = addMinedBlockToInventory(item.typeIndex);
+            if (didCollect) {
+                showHeldItemName(item.typeIndex);
+                disposeDroppedMiningItem(i);
+            }
+        }
+    }
+}
+
+function disposeDroppedMiningItem(index) {
+    const [item] = droppedMiningItems.splice(index, 1);
+    if (!item) return;
+    item.mesh.parent?.remove(item.mesh);
+    item.mesh.material?.dispose?.();
 }
 
 export function applyLookDelta(deltaX, deltaY, sensitivity = 0.002) {
@@ -427,6 +536,26 @@ function initializeInventorySlots() {
         inventoryItemsBySlotId.set(slotId, null);
         registerInventorySlotDnD(slot, slotId);
     });
+
+    populateInitialInventoryByGameMode();
+}
+
+function populateInitialInventoryByGameMode() {
+    for (const slotId of inventoryItemsBySlotId.keys()) {
+        inventoryItemsBySlotId.set(slotId, null);
+    }
+
+    if (!isSurvivalMode()) {
+        let nextTypeIndex = 0;
+        for (const slotId of inventoryItemsBySlotId.keys()) {
+            if (nextTypeIndex >= BLOCK_TYPES.length) break;
+            inventoryItemsBySlotId.set(slotId, nextTypeIndex);
+            nextTypeIndex += 1;
+        }
+        return;
+    }
+
+    worldState.selectedBlockIndex = -1;
 }
 
 function registerInventorySlotDnD(slotEl, slotId) {
