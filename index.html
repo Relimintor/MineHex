@@ -84,6 +84,45 @@
             color: var(--text);
             font-size: 16px;
         }
+        select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #4b5563;
+            background: #0b1220;
+            color: var(--text);
+            font-size: 16px;
+        }
+
+        .credits-layout {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: start;
+        }
+
+        .credits-scroll {
+            max-height: 280px;
+            overflow-y: auto;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #374151;
+            background: var(--panel);
+            display: grid;
+            gap: 10px;
+        }
+
+        .credits-title {
+            color: #86efac;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .credits-side {
+            display: grid;
+            gap: 10px;
+        }
 
         .hint { color: var(--muted); margin: 0; }
         .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -123,6 +162,13 @@
             <h2>Create World</h2>
             <label for="world-name">Choose world name</label>
             <input id="world-name" type="text" placeholder="My First World" maxlength="40" />
+            <label for="world-seed">Seed (optional)</label>
+            <input id="world-seed" type="text" placeholder="Leave empty for random" maxlength="64" />
+            <label for="world-gamemode">Game mode</label>
+            <select id="world-gamemode">
+                <option value="creative">Creative</option>
+                <option value="survival">Survival</option>
+            </select>
             <div class="toolbar">
                 <button id="save-world" class="primary">Create</button>
                 <button id="cancel-create">Cancel</button>
@@ -139,6 +185,38 @@
             </div>
             <div id="load-status" class="status"></div>
         </section>
+
+        <section id="credits-screen" class="screen">
+            <h2>Credits</h2>
+            <div class="credits-layout">
+                <div class="credits-scroll">
+                    <div>
+                        <div class="credits-title">Developers</div>
+                        <div>Raptor4</div>
+                    </div>
+                    <div>
+                        <div class="credits-title">Artists</div>
+                        <div>chica</div>
+                        <div>Jolethen</div>
+                    </div>
+                    <div>
+                        <div class="credits-title">Xtra Assets</div>
+                        <div>Arfon</div>
+                    </div>
+                    <div>
+                        <div class="credits-title">Music</div>
+                        <div>Folanta</div>
+                        <div>Jemko</div>
+                    </div>
+                </div>
+                <div class="credits-side">
+                    <button id="open-github">GitHub</button>
+                </div>
+            </div>
+            <div class="toolbar">
+                <button id="back-main-from-credits">Back</button>
+            </div>
+        </section>
     </main>
 
     <script>
@@ -150,12 +228,15 @@
             main: document.getElementById("main-screen"),
             world: document.getElementById("world-screen"),
             create: document.getElementById("create-screen"),
-            load: document.getElementById("load-screen")
+            load: document.getElementById("load-screen"),
+            credits: document.getElementById("credits-screen")
         };
 
         const worldList = document.getElementById("world-list");
         const loadList = document.getElementById("load-list");
         const worldNameInput = document.getElementById("world-name");
+        const worldSeedInput = document.getElementById("world-seed");
+        const worldGamemodeInput = document.getElementById("world-gamemode");
         const worldStatus = document.getElementById("world-status");
         const createStatus = document.getElementById("create-status");
         const loadStatus = document.getElementById("load-status");
@@ -186,16 +267,30 @@
             }));
         }
 
-        function createWorld(name) {
+        function normalizeGameMode(gameMode) {
+            return gameMode === "survival" ? "survival" : "creative";
+        }
+
+        function resolveWorldSeed(seedInput) {
+            const normalized = (seedInput ?? "").trim();
+            if (normalized.length > 0) return normalized;
+            return String(Math.floor(Math.random() * 1000000000));
+        }
+
+        function createWorld(name, gameMode, seedInput) {
             return openWorldDb().then((db) => new Promise((resolve, reject) => {
                 const tx = db.transaction(WORLD_STORE, "readwrite");
                 const store = tx.objectStore(WORLD_STORE);
+                const safeGameMode = normalizeGameMode(gameMode);
+                const worldSeed = resolveWorldSeed(seedInput);
                 const newWorld = {
                     name,
+                    gameMode: safeGameMode,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                     data: {
-                        seed: Math.floor(Math.random() * 1000000000),
+                        gameMode: safeGameMode,
+                        seed: worldSeed,
                         player: { x: 0, y: 0, z: 0 }
                     }
                 };
@@ -219,6 +314,7 @@
             const params = new URLSearchParams({
                 worldId: String(world.id),
                 worldName: world.name,
+                gameMode: normalizeGameMode(world.gameMode ?? world?.data?.gameMode),
                 mode
             });
             window.location.href = `index2.html?${params.toString()}`;
@@ -248,12 +344,13 @@
                 }
 
                 worlds.forEach((world) => {
-                    worldList.append(worldButton(world.name, () => {
-                        worldStatus.textContent = `Selected world: ${world.name}`;
+                    const gameMode = normalizeGameMode(world.gameMode ?? world?.data?.gameMode);
+                    worldList.append(worldButton(`${world.name} (${gameMode})`, () => {
+                        worldStatus.textContent = `Selected world: ${world.name} (${gameMode})`;
                     }));
 
-                    loadList.append(worldButton(world.name, () => {
-                        loadStatus.textContent = `Loading world: ${world.name}`;
+                    loadList.append(worldButton(`${world.name} (${gameMode})`, () => {
+                        loadStatus.textContent = `Loading world: ${world.name} (${gameMode})`;
                         startWorld(world, "load");
                     }));
                 });
@@ -273,7 +370,7 @@
         });
 
         document.getElementById("go-credits").addEventListener("click", () => {
-            worldStatus.textContent = "Credits screen will be added later.";
+            showScreen("credits");
         });
 
         document.getElementById("go-about").addEventListener("click", () => {
@@ -283,6 +380,8 @@
         document.getElementById("open-create").addEventListener("click", () => {
             createStatus.textContent = "";
             worldNameInput.value = "";
+            worldSeedInput.value = "";
+            worldGamemodeInput.value = "creative";
             showScreen("create");
             worldNameInput.focus();
         });
@@ -295,6 +394,8 @@
 
         document.getElementById("save-world").addEventListener("click", async () => {
             const name = worldNameInput.value.trim();
+            const gameMode = normalizeGameMode(worldGamemodeInput.value);
+            const seedInput = worldSeedInput.value;
             if (!name) {
                 createStatus.textContent = "Please enter a world name.";
                 return;
@@ -302,8 +403,8 @@
 
             createStatus.textContent = "Creating world...";
             try {
-                const world = await createWorld(name);
-                createStatus.textContent = `Created world: ${world.name}`;
+                const world = await createWorld(name, gameMode, seedInput);
+                createStatus.textContent = `Created world: ${world.name} (${gameMode})`;
                 await renderWorldLists();
                 startWorld(world, "create");
             } catch (error) {
@@ -321,6 +422,10 @@
         });
 
         document.getElementById("back-main").addEventListener("click", () => showScreen("main"));
+        document.getElementById("back-main-from-credits").addEventListener("click", () => showScreen("main"));
+        document.getElementById("open-github").addEventListener("click", () => {
+            window.open("https://github.com/relimintor", "_blank", "noopener,noreferrer");
+        });
         document.getElementById("back-world-from-load").addEventListener("click", async () => {
             showScreen("world");
             await renderWorldLists();
