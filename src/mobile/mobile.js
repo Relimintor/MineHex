@@ -5,7 +5,7 @@ import { toggleCameraPerspective } from '../playerView.js';
 const MINE_REPEAT_MS = 90;
 const MOBILE_MINE_HOLD_DELAY_MS = 170;
 const LOOK_DRAG_CANCEL_MINE_PX = 12;
-const LOOK_SENSITIVITY = 0.003;
+const LOOK_SENSITIVITY_SCALE = 1.5;
 const JOYSTICK_DEADZONE = 0.14;
 const JOYSTICK_MAX_RADIUS = 48;
 
@@ -101,7 +101,7 @@ export function registerMobileInputHandlers() {
         const previous = activeTouches.get(touchId);
         if (!previous) return;
 
-        applyLookDelta(x - previous.x, y - previous.y, LOOK_SENSITIVITY);
+        applyLookDelta(x - previous.x, y - previous.y, LOOK_SENSITIVITY_SCALE);
         activeTouches.set(touchId, { x, y });
     }
 
