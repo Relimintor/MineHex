@@ -8,7 +8,6 @@ import { getMiningDurationMsForType } from './hardness.js';
 import { packBlockKey, unpackBlockKey } from './keys.js';
 import { inputState, worldState } from './state.js';
 import { toggleCameraPerspective, triggerCameraImpulse, triggerFirstPersonArmSwing } from './playerView.js';
-import { setSkinTextureFromCanvas } from './skinTexture.js';
 import { flushDirtyChunksAroundBlock, flushEditedDirtyChunks } from './worldgen.js';
 
 const raycaster = new THREE.Raycaster();
@@ -43,8 +42,6 @@ let skinEditorInitialized = false;
 let skinEditorResolution = 64;
 let skinEditorIsDrawing = false;
 const DEFAULT_SKIN_TEXTURE_PATH = 'assets/skin/skin.png';
-const SKIN_EDITOR_GRID_COLOR = 'rgba(255, 255, 255, 0.24)';
-const skinEditorTextureCanvas = document.createElement('canvas');
 const localInteractionCandidates = [];
 // Ensure the candidate chunk radius fully covers the interaction ray distance across all chunk-size profiles.
 const INTERACTION_RAYCAST_CHUNK_RADIUS = Math.max(1, Math.ceil(INTERACTION_RANGE / Math.max(1, CHUNK_SIZE)) + 1);
@@ -490,45 +487,23 @@ function setInventorySkinEditorOpen(shouldOpen) {
     inventorySkinEditorScreen.setAttribute('aria-hidden', isInventorySkinEditorOpen ? 'false' : 'true');
 }
 
-function renderSkinEditorCanvas() {
-    if (!inventorySkinEditorCanvas) return;
-    const ctx = inventorySkinEditorCanvas.getContext('2d');
-    const sourceCtx = skinEditorTextureCanvas.getContext('2d');
-    if (!ctx || !sourceCtx) return;
-
-    ctx.clearRect(0, 0, skinEditorResolution, skinEditorResolution);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(skinEditorTextureCanvas, 0, 0, skinEditorResolution, skinEditorResolution);
-
-    ctx.strokeStyle = SKIN_EDITOR_GRID_COLOR;
-    ctx.lineWidth = 0.04;
-    ctx.beginPath();
-    for (let i = 1; i < skinEditorResolution; i += 1) {
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, skinEditorResolution);
-        ctx.moveTo(0, i);
-        ctx.lineTo(skinEditorResolution, i);
-    }
-    ctx.stroke();
-}
-
 function updateSkinEditorPreviewFromCanvas() {
-    const dataUrl = skinEditorTextureCanvas.toDataURL('image/png');
+    if (!inventorySkinEditorCanvas) return;
+    const dataUrl = inventorySkinEditorCanvas.toDataURL('image/png');
     if (inventorySkinEditorPreview) inventorySkinEditorPreview.src = dataUrl;
     const skinButtonIcon = inventorySkinButton?.querySelector('img');
     if (skinButtonIcon) skinButtonIcon.src = dataUrl;
-    setSkinTextureFromCanvas(skinEditorTextureCanvas);
-    renderSkinEditorCanvas();
 }
 
 function drawDefaultSkinTexture() {
-    const ctx = skinEditorTextureCanvas.getContext('2d');
+    if (!inventorySkinEditorCanvas) return;
+    const ctx = inventorySkinEditorCanvas.getContext('2d');
     if (!ctx) return;
     const defaultImg = new Image();
     defaultImg.onload = () => {
-        ctx.clearRect(0, 0, skinEditorTextureCanvas.width, skinEditorTextureCanvas.height);
+        ctx.clearRect(0, 0, inventorySkinEditorCanvas.width, inventorySkinEditorCanvas.height);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(defaultImg, 0, 0, skinEditorTextureCanvas.width, skinEditorTextureCanvas.height);
+        ctx.drawImage(defaultImg, 0, 0, inventorySkinEditorCanvas.width, inventorySkinEditorCanvas.height);
         updateSkinEditorPreviewFromCanvas();
     };
     defaultImg.src = DEFAULT_SKIN_TEXTURE_PATH;
@@ -537,35 +512,17 @@ function drawDefaultSkinTexture() {
 function setSkinEditorResolution(nextResolution) {
     if (!inventorySkinEditorCanvas) return;
     const safeResolution = nextResolution === 128 ? 128 : 64;
-    const previousTextureCanvas = document.createElement('canvas');
-    previousTextureCanvas.width = skinEditorTextureCanvas.width || safeResolution;
-    previousTextureCanvas.height = skinEditorTextureCanvas.height || safeResolution;
-    const previousCtx = previousTextureCanvas.getContext('2d');
-    if (previousCtx) {
-        previousCtx.imageSmoothingEnabled = false;
-        previousCtx.drawImage(skinEditorTextureCanvas, 0, 0);
-    }
-
     skinEditorResolution = safeResolution;
     inventorySkinEditorCanvas.width = safeResolution;
     inventorySkinEditorCanvas.height = safeResolution;
-    skinEditorTextureCanvas.width = safeResolution;
-    skinEditorTextureCanvas.height = safeResolution;
-
-    const textureCtx = skinEditorTextureCanvas.getContext('2d');
-    if (textureCtx && previousCtx) {
-        textureCtx.imageSmoothingEnabled = false;
-        textureCtx.drawImage(previousTextureCanvas, 0, 0, safeResolution, safeResolution);
-    }
-
     if (inventorySkinSize64Button) inventorySkinSize64Button.classList.toggle('active', safeResolution === 64);
     if (inventorySkinSize128Button) inventorySkinSize128Button.classList.toggle('active', safeResolution === 128);
-    updateSkinEditorPreviewFromCanvas();
+    drawDefaultSkinTexture();
 }
 
 function drawSkinEditorAtPointer(event) {
     if (!inventorySkinEditorCanvas || !inventorySkinColorInput) return;
-    const ctx = skinEditorTextureCanvas.getContext('2d', { willReadFrequently: true });
+    const ctx = inventorySkinEditorCanvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     const rect = inventorySkinEditorCanvas.getBoundingClientRect();
     const x = Math.floor(((event.clientX - rect.left) / rect.width) * skinEditorResolution);
@@ -580,8 +537,6 @@ function initializeSkinEditorCanvas() {
     if (skinEditorInitialized) return;
     skinEditorInitialized = true;
     if (!inventorySkinEditorCanvas) return;
-    skinEditorTextureCanvas.width = skinEditorResolution;
-    skinEditorTextureCanvas.height = skinEditorResolution;
 
     inventorySkinEditorCanvas.addEventListener('pointerdown', (event) => {
         skinEditorIsDrawing = true;
@@ -604,7 +559,6 @@ function initializeSkinEditorCanvas() {
     }
 
     setSkinEditorResolution(64);
-    drawDefaultSkinTexture();
 }
 
 export function applyLookDelta(deltaX, deltaY, sensitivityScale = 1) {
