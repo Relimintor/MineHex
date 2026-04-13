@@ -5,9 +5,9 @@ import { camera, scene } from './scene.js';
 import { inputState } from './state.js';
 import { worldToAxial } from './coords.js';
 import { collectChunkRaycastCandidates } from './blocks.js';
-import { applyBoxFaceUvMap, getSkinUvLayout } from './skinUv.js';
-import { subscribeToSkinTexture } from './skinTexture.js';
 
+const textureLoader = new THREE.TextureLoader();
+const textureCache = new Map();
 const cameraTarget = new THREE.Vector3();
 const cameraOffset = new THREE.Vector3();
 const desiredCameraPosition = new THREE.Vector3();
@@ -78,34 +78,75 @@ const avatarRoot = new THREE.Group();
 avatarRoot.visible = false;
 scene.add(avatarRoot);
 
-let activeSkinTexture = null;
-const avatarSkinMaterials = [];
-
-function createSkinMaterial() {
-    const material = new THREE.MeshLambertMaterial({ map: activeSkinTexture });
-    avatarSkinMaterials.push(material);
-    return material;
+function loadHeadTexture(path) {
+    if (textureCache.has(path)) return textureCache.get(path);
+    const texture = textureLoader.load(path);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    textureCache.set(path, texture);
+    return texture;
 }
 
-function applySkinTextureToAvatar(texture) {
-    activeSkinTexture = texture;
-    const textureSize = activeSkinTexture?.image?.width || 64;
-    avatarRoot.traverse((child) => {
-        if (!child.isMesh || !child.geometry || !child.userData?.skinPart) return;
-        applyBoxFaceUvMap(child.geometry, getSkinUvLayout(textureSize)[child.userData.skinPart], textureSize);
-    });
-    for (const material of avatarSkinMaterials) {
-        material.map = texture;
-        material.needsUpdate = true;
-    }
+function createHeadMaterials() {
+    const top = loadHeadTexture('assets/skin/head/top_head.png');
+    const front = loadHeadTexture('assets/skin/head/front_head.png');
+    const right = loadHeadTexture('assets/skin/head/side_right_head.png');
+    const left = loadHeadTexture('assets/skin/head/side_left_head.png');
+
+    return [
+        new THREE.MeshLambertMaterial({ map: right }),
+        new THREE.MeshLambertMaterial({ map: left }),
+        new THREE.MeshLambertMaterial({ map: top }),
+        new THREE.MeshLambertMaterial({ map: top }),
+        new THREE.MeshLambertMaterial({ map: top }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
 }
 
-function createMappedBoxGeometry(width, height, depth, partName, textureSize) {
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const layout = getSkinUvLayout(textureSize);
-    applyBoxFaceUvMap(geometry, layout[partName], textureSize);
-    return geometry;
+function createArmMaterials() {
+    const front = loadHeadTexture('assets/skin/arm/right_arm_front.png');
+    const topShoulder = loadHeadTexture('assets/skin/arm/right_top_shoulder.png');
+    const hand = loadHeadTexture('assets/skin/arm/hand.png');
+
+    return [
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: topShoulder }),
+        new THREE.MeshLambertMaterial({ map: hand }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
 }
+
+function createLegMaterials() {
+    const front = loadHeadTexture('assets/skin/leg/right_leg_front.png');
+    const feet = loadHeadTexture('assets/skin/leg/feet.png');
+
+    return [
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: feet }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
+}
+
+function createChestMaterials() {
+    const front = loadHeadTexture('assets/skin/body/chest_front.png');
+    const side = loadHeadTexture('assets/skin/body/chest_right_side.png');
+    const back = loadHeadTexture('assets/skin/body/chest_back.png');
+    return [
+        new THREE.MeshLambertMaterial({ map: side }),
+        new THREE.MeshLambertMaterial({ map: side }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: front }),
+        new THREE.MeshLambertMaterial({ map: back }),
+        new THREE.MeshLambertMaterial({ map: front })
+    ];
+}
+
 
 function createFirstPersonArm() {
     if (!THREE.GLTFLoader) return;
@@ -146,48 +187,40 @@ function createAvatarMesh() {
     const limbWidth = 4 * unit;
     const limbDepth = 4 * unit;
 
-    const textureSize = activeSkinTexture?.image?.width || 64;
+    const armMaterials = createArmMaterials();
+    const legMaterials = createLegMaterials();
 
-    const torso = new THREE.Mesh(createMappedBoxGeometry(torsoWidth, torsoHeight, torsoDepth, 'body', textureSize), createSkinMaterial());
-    torso.userData.skinPart = 'body';
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoWidth, torsoHeight, torsoDepth), createChestMaterials());
     torso.position.y = legHeight + (torsoHeight * 0.5);
     avatarRoot.add(torso);
 
     const armOffset = (torsoWidth * 0.5) + (limbWidth * 0.5);
     const armY = legHeight + (torsoHeight * 0.5);
-    const leftArm = new THREE.Mesh(createMappedBoxGeometry(limbWidth, torsoHeight, limbDepth, 'arm', textureSize), createSkinMaterial());
-    leftArm.userData.skinPart = 'arm';
+    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), armMaterials);
     leftArm.position.set(-armOffset, armY, 0);
     avatarRoot.add(leftArm);
 
-    const rightArm = new THREE.Mesh(createMappedBoxGeometry(limbWidth, torsoHeight, limbDepth, 'arm', textureSize), createSkinMaterial());
-    rightArm.userData.skinPart = 'arm';
+    const rightArm = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, torsoHeight, limbDepth), armMaterials);
     rightArm.position.set(armOffset, armY, 0);
     avatarRoot.add(rightArm);
 
     const legOffset = limbWidth * 0.5;
     const legY = legHeight * 0.5;
-    const leftLeg = new THREE.Mesh(createMappedBoxGeometry(limbWidth, legHeight, limbDepth, 'leg', textureSize), createSkinMaterial());
-    leftLeg.userData.skinPart = 'leg';
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), legMaterials);
     leftLeg.position.set(-legOffset, legY, 0);
     avatarRoot.add(leftLeg);
 
-    const rightLeg = new THREE.Mesh(createMappedBoxGeometry(limbWidth, legHeight, limbDepth, 'leg', textureSize), createSkinMaterial());
-    rightLeg.userData.skinPart = 'leg';
+    const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(limbWidth, legHeight, limbDepth), legMaterials);
     rightLeg.position.set(legOffset, legY, 0);
     avatarRoot.add(rightLeg);
 
-    const head = new THREE.Mesh(createMappedBoxGeometry(headSize, headSize, headSize, 'head', textureSize), createSkinMaterial());
-    head.userData.skinPart = 'head';
+    const head = new THREE.Mesh(new THREE.BoxGeometry(headSize, headSize, headSize), createHeadMaterials());
     head.position.y = legHeight + torsoHeight + (headSize * 0.5);
     avatarRoot.add(head);
 }
 
 createAvatarMesh();
 createFirstPersonArm();
-subscribeToSkinTexture((texture) => {
-    applySkinTextureToAvatar(texture);
-});
 
 export function toggleCameraPerspective() {
     if (currentPerspective === CAMERA_PERSPECTIVES.FIRST_PERSON) {
