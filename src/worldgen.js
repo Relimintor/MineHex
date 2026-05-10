@@ -48,6 +48,8 @@ const CHUNK_AABB_MARGIN = 0.08;
 const occlusionProxyMaterial = createOcclusionProxyMaterial();
 
 const OCCLUSION_QUERY_TARGET = 'ANY_SAMPLES_PASSED_CONSERVATIVE';
+const MAX_OCCLUSION_QUERIES_PER_PASS = 24;
+const MIN_OCCLUSION_QUERY_DISTANCE_SQ = 48 * 48;
 
 const frustumViewProjection = new THREE.Matrix4();
 const frustumPlanes = Array.from({ length: 6 }, () => ({ nx: 0, ny: 0, nz: 0, d: 0 }));
@@ -667,23 +669,13 @@ export function runChunkOcclusionCulling() {
         if (!passHierarchicalZOcclusion(chunkMeta)) {
             chunkMeta.occlusionVisible = false;
             updateChunkMeshVisibility(chunkKey);
-            continue;
         }
-
-        syncOcclusionProxyTransform(chunkKey);
-        const proxy = chunkMeta.occlusionProxy;
-        if (!proxy || chunkMeta.occlusionQuery) continue;
-
-        chunkMeta.occlusionQuery = reusableOcclusionQueries.pop() ?? gl.createQuery();
-        if (!chunkMeta.occlusionQuery) continue;
-
-        proxy.userData.activeQuery = chunkMeta.occlusionQuery;
-        proxy.userData.queryTarget = queryTarget;
-        proxy.visible = true;
-        occlusionProxiesToTest.push(proxy);
     }
     profilerRecord('occlusion_results', performance.now() - resultStart);
 
+    // Only the setup phase issues fresh queries. Reissuing while processing
+    // results can leave proxy meshes visible across passes and causes uneven
+    // query bursts on some GPUs.
     occlusionProxiesToTest.length = 0;
     const setupStart = performance.now();
     for (const chunkKey of worldState.loadedChunks) {
@@ -698,6 +690,15 @@ export function runChunkOcclusionCulling() {
             continue;
         }
 
+        chunkMeta.bounds.getCenter(tmpBoundsCenter);
+        if (tmpBoundsCenter.distanceToSquared(camera.position) < MIN_OCCLUSION_QUERY_DISTANCE_SQ) {
+            if (!chunkMeta.occlusionVisible) {
+                chunkMeta.occlusionVisible = true;
+                updateChunkMeshVisibility(chunkKey);
+            }
+            continue;
+        }
+
         if (!passHierarchicalZOcclusion(chunkMeta)) {
             if (chunkMeta.occlusionVisible) {
                 chunkMeta.occlusionVisible = false;
@@ -705,6 +706,10 @@ export function runChunkOcclusionCulling() {
             }
             continue;
         }
+
+        // Cap GPU queries per pass so occlusion does not create regular spikes
+        // when many chunks enter the frustum at once.
+        if (occlusionProxiesToTest.length >= MAX_OCCLUSION_QUERIES_PER_PASS) continue;
 
         syncOcclusionProxyTransform(chunkKey);
         const proxy = chunkMeta.occlusionProxy;
