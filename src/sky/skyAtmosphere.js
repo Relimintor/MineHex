@@ -13,11 +13,11 @@ const WASM_BUNDLE_CANDIDATES = [
 ];
 
 const SKY_VERTEX_SHADER = /* glsl */`
-varying vec3 vWorldDir;
+varying vec3 vWorldPos;
 
 void main() {
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    vWorldDir = normalize(worldPos.xyz - cameraPosition);
+    vWorldPos = worldPos.xyz;
     gl_Position = projectionMatrix * viewMatrix * worldPos;
 }
 `;
@@ -25,7 +25,7 @@ void main() {
 const SKY_FRAGMENT_SHADER = /* glsl */`
 precision mediump float;
 
-varying vec3 vWorldDir;
+varying vec3 vWorldPos;
 
 uniform float uTime;
 uniform vec3 uSunDir;
@@ -57,12 +57,13 @@ float value_noise(vec2 p) {
 }
 
 float cloud_map(vec2 uv) {
-    float n0 = value_noise(uv * 1.9);
-    float n1 = value_noise(uv * 3.8 + vec2(11.3, 7.7));
-    float n2 = value_noise(uv * 7.6 + vec2(23.1, 5.2));
-    float detail = value_noise(uv * 14.0 + vec2(5.3, 19.1));
-    float combined = (n0 * 0.52) + (n1 * 0.28) + (n2 * 0.14) + (detail * 0.06);
-    return smoothstep(0.54, 0.69, combined);
+    // Keep the cloud layer low frequency so the sky stays smooth on the
+    // relatively coarse sky dome and avoids large faceted patches.
+    float n0 = value_noise(uv * 0.85);
+    float n1 = value_noise(uv * 1.7 + vec2(11.3, 7.7));
+    float n2 = value_noise(uv * 3.4 + vec2(23.1, 5.2));
+    float combined = (n0 * 0.58) + (n1 * 0.30) + (n2 * 0.12);
+    return smoothstep(0.50, 0.74, combined);
 }
 
 vec2 star_uv(vec3 dir) {
@@ -175,10 +176,10 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
     float night = smoothstep(0.1, 0.9, nightFactor);
     float starVal = stars(dir, night);
 
-    vec2 cloudUV = (dir.xz / max(0.18, dir.y + 0.45)) * 1.1 + vec2(time * 0.0035, time * 0.0014);
+    vec2 cloudUV = (dir.xz / max(0.42, dir.y + 0.95)) * 0.82 + vec2(time * 0.0018, time * 0.0007);
     float cloudMask = cloud_map(cloudUV);
-    float cloudVerticalFade = smoothstep(-0.2, 0.4, dir.y);
-    float cloudDistanceFade = 1.0 - smoothstep(3.0, 6.0, length(cloudUV));
+    float cloudVerticalFade = smoothstep(0.02, 0.52, dir.y);
+    float cloudDistanceFade = 1.0 - smoothstep(1.8, 3.8, length(cloudUV));
     float cloudFade = cloudVerticalFade * cloudDistanceFade;
     float cloudNightVisibility = 0.22 + (0.78 * dayFactor);
     float cloudShade = mix(0.56, 1.05, max(dot(normalize(vec3(dir.x, 0.35, dir.z)), sunDir), 0.0));
@@ -196,7 +197,7 @@ vec3 render_sky(vec3 dir, vec3 sunDir, float time) {
 }
 
 void main() {
-    vec3 dir = normalize(vWorldDir);
+    vec3 dir = normalize(vWorldPos - cameraPosition);
     vec3 sunDir = normalize(uSunDir);
     vec3 finalSky = render_sky(dir, sunDir, uTime);
     gl_FragColor = vec4(clamp(finalSky, 0.0, 1.0), 1.0);
@@ -393,7 +394,7 @@ export function applySkyAtmosphere(scene, lightingBridge) {
         fog: false,
     });
 
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(420, 32, 18), material);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(420, 64, 32), material);
     mesh.frustumCulled = false;
     mesh.renderOrder = -1000;
 
@@ -401,6 +402,7 @@ export function applySkyAtmosphere(scene, lightingBridge) {
     const bloodMoonSmoke = createBloodMoonSmokeController(scene);
 
     const initialColor = new THREE.Color(SKY_COLOR);
+    const thunderFlashFog = new THREE.Color(0xd7e5ff);
     scene.background = initialColor;
     scene.fog = new THREE.Fog(initialColor.getHex(), 20, 80);
 
@@ -433,8 +435,7 @@ export function applySkyAtmosphere(scene, lightingBridge) {
                 scene.fog.color.setHex(fogHex);
             }
             if (eventMoments.thunderFlash > 0.001 && scene.fog?.color) {
-                const flashFog = new THREE.Color(0xd7e5ff);
-                scene.fog.color.lerp(flashFog, Math.min(0.7, eventMoments.thunderFlash));
+                scene.fog.color.lerp(thunderFlashFog, Math.min(0.7, eventMoments.thunderFlash));
                 scene.background.copy(scene.fog.color);
             }
 
