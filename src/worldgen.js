@@ -1,7 +1,7 @@
 const THREE = window.THREE;
 
 import { CHUNK_APPLY_BUDGET, CHUNK_CREATION_BUDGET, CHUNK_SIZE, ENABLE_COMPLEX_LOD, ENABLE_OCCLUSION_CULLING, ENABLE_WORLDGEN_WORKER, FORCE_BATCHED_CHUNK_RENDERING, HEX_HEIGHT, HEX_RADIUS, MAX_WORLDGEN_IN_FLIGHT, RENDER_DIST, NETHROCK_LEVEL_HEX, USE_YOUTUBE_RECORDING_MODE, WORLDGEN_WORKER_COUNT } from './config.js';
-import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, axialToWorld, worldToAxial } from './coords.js';
+import { AXIAL_NEIGHBOR_OFFSETS, axialDistance, worldToAxial } from './coords.js';
 import { normalizeChunkKey, packBlockKey, packChunkKey, unpackBlockKey, unpackChunkKey } from './keys.js';
 import { camera, occlusionScene, renderer, scene } from './scene.js';
 import { profilerMeasure, profilerRecord, worldState } from './state.js';
@@ -174,6 +174,30 @@ const HEX_CORNER_OFFSETS_XZ = Array.from({ length: 6 }, (_, i) => {
         z: Math.sin(angle) * HEX_RADIUS
     };
 });
+const AXIAL_TO_WORLD_X_FACTOR = HEX_RADIUS * Math.sqrt(3);
+const AXIAL_TO_WORLD_Z_FACTOR = HEX_RADIUS * 1.5;
+const CHUNK_LOCAL_XZ_BOUNDS = (() => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    for (const [q, r] of CHUNK_LOCAL_AXIALS) {
+        const localX = AXIAL_TO_WORLD_X_FACTOR * (q + (r * 0.5));
+        const localZ = AXIAL_TO_WORLD_Z_FACTOR * r;
+        for (const offset of HEX_CORNER_OFFSETS_XZ) {
+            const cornerX = localX + offset.x;
+            const cornerZ = localZ + offset.z;
+            minX = Math.min(minX, cornerX);
+            maxX = Math.max(maxX, cornerX);
+            minZ = Math.min(minZ, cornerZ);
+            maxZ = Math.max(maxZ, cornerZ);
+        }
+    }
+
+    return Object.freeze({ minX, maxX, minZ, maxZ });
+})();
+const streamingVisibleChunkKeys = new Set();
 
 function ensureChunkMeta(cq, cr) {
     const chunkKey = packChunkKey(cq, cr);
@@ -213,29 +237,20 @@ function recomputeChunkBounds(chunkKey) {
     const centerQ = cq * CHUNK_SIZE;
     const centerR = cr * CHUNK_SIZE;
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-
-    for (const [q, r] of CHUNK_LOCAL_AXIALS) {
-            const worldPos = axialToWorld(centerQ + q, centerR + r, 0);
-            for (const offset of HEX_CORNER_OFFSETS_XZ) {
-                const cornerX = worldPos.x + offset.x;
-                const cornerZ = worldPos.z + offset.z;
-                minX = Math.min(minX, cornerX);
-                maxX = Math.max(maxX, cornerX);
-                minZ = Math.min(minZ, cornerZ);
-                maxZ = Math.max(maxZ, cornerZ);
-            }
-    }
+    const centerX = AXIAL_TO_WORLD_X_FACTOR * (centerQ + (centerR * 0.5));
+    const centerZ = AXIAL_TO_WORLD_Z_FACTOR * centerR;
+    const minX = centerX + CHUNK_LOCAL_XZ_BOUNDS.minX;
+    const maxX = centerX + CHUNK_LOCAL_XZ_BOUNDS.maxX;
+    const minZ = centerZ + CHUNK_LOCAL_XZ_BOUNDS.minZ;
+    const maxZ = centerZ + CHUNK_LOCAL_XZ_BOUNDS.maxZ;
 
     let minH = Infinity;
     let maxH = -Infinity;
     for (let i = 0; i < chunkBlockData.count; i++) {
         const blockKey = chunkBlockData.keys[i];
         if (!blockKey) continue;
-        const { h } = unpackBlockKey(blockKey);
+        const cachedCoords = worldState.blockCoordsByKey.get(blockKey);
+        const h = cachedCoords?.h ?? unpackBlockKey(blockKey).h;
         minH = Math.min(minH, h);
         maxH = Math.max(maxH, h);
     }
@@ -933,8 +948,8 @@ function applyDirtyChunks(budget = Number.POSITIVE_INFINITY) {
 
     const processQueue = (queue, remainingBudget) => {
         let consumed = 0;
-        while (consumed < remainingBudget && queue.length > 0) {
-            const { chunkKey } = queue.shift();
+        for (let index = 0; consumed < remainingBudget && index < queue.length; index++) {
+            const { chunkKey } = queue[index];
             if (!worldState.dirtyChunks.has(chunkKey)) continue;
             if (processDirtyChunk(chunkKey)) consumed++;
         }
@@ -1234,8 +1249,11 @@ function getChunkPriorityScore(chunkQ, chunkR, cameraChunkQ, cameraChunkR) {
     cameraForwardXZ.y = 0;
     if (cameraForwardXZ.lengthSq() > 0.00001) cameraForwardXZ.normalize();
 
-    const chunkWorld = axialToWorld(chunkQ * CHUNK_SIZE, chunkR * CHUNK_SIZE, 0);
-    chunkPriorityVector.set(chunkWorld.x - camera.position.x, 0, chunkWorld.z - camera.position.z);
+    const chunkCenterQ = chunkQ * CHUNK_SIZE;
+    const chunkCenterR = chunkR * CHUNK_SIZE;
+    const chunkWorldX = AXIAL_TO_WORLD_X_FACTOR * (chunkCenterQ + (chunkCenterR * 0.5));
+    const chunkWorldZ = AXIAL_TO_WORLD_Z_FACTOR * chunkCenterR;
+    chunkPriorityVector.set(chunkWorldX - camera.position.x, 0, chunkWorldZ - camera.position.z);
     if (chunkPriorityVector.lengthSq() > 0.00001) chunkPriorityVector.normalize();
 
     const forwardDot = cameraForwardXZ.dot(chunkPriorityVector);
@@ -1271,7 +1289,8 @@ function collectProtectedChunkKeysNearPlayer(outSet) {
 }
 
 function rebuildStreamingQueue(cq, cr) {
-    const visibleChunkKeys = new Set();
+    const visibleChunkKeys = streamingVisibleChunkKeys;
+    visibleChunkKeys.clear();
     const cameraChunkKey = packChunkKey(cq, cr);
 
     for (let dq = -RENDER_DIST; dq <= RENDER_DIST; dq++) {
@@ -1293,11 +1312,11 @@ function rebuildStreamingQueue(cq, cr) {
         enqueueChunkGeneration(protectedChunkQ, protectedChunkR);
     }
 
-    for (const chunkKey of Array.from(worldState.loadedChunks)) {
+    for (const chunkKey of worldState.loadedChunks) {
         if (visibleChunkKeys.has(chunkKey)) continue;
 
         const chunkMeta = worldState.chunkMeta.get(chunkKey);
-        const unpacked = unpackChunkKey(chunkKey);
+        const unpacked = chunkMeta ? null : unpackChunkKey(chunkKey);
         const chunkQ = chunkMeta?.cq ?? unpacked.cq;
         const chunkR = chunkMeta?.cr ?? unpacked.cr;
         enqueueChunkUnload(chunkQ, chunkR);
