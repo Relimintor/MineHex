@@ -559,9 +559,16 @@ export function refreshBlockVisibilityForKeys(blockKeys) {
 
     for (const key of blockKeys) {
         const { q, r, h } = parseBlockKey(key);
-        const targets = [[q, r, h], ...FACE_DIRECTIONS.map(([dq, dr, dh]) => [q + dq, r + dr, h + dh])];
+        if (!visited.has(key)) {
+            visited.add(key);
+            updateBlockVisibilityAt(q, r, h);
+        }
 
-        for (const [targetQ, targetR, targetH] of targets) {
+        for (let faceIdx = 0; faceIdx < FACE_DIRECTIONS.length; faceIdx++) {
+            const [dq, dr, dh] = FACE_DIRECTIONS[faceIdx];
+            const targetQ = q + dq;
+            const targetR = r + dr;
+            const targetH = h + dh;
             const targetKey = packBlockKey(targetQ, targetR, targetH);
             if (visited.has(targetKey)) continue;
             visited.add(targetKey);

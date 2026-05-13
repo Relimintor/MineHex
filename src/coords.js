@@ -48,9 +48,10 @@ export function cubeDistance(a, b) {
 }
 
 export function axialDistance(qA, rA, qB, rB) {
-    const a = axialToCube(qA, rA);
-    const b = axialToCube(qB, rB);
-    return cubeDistance(a, b);
+    const dx = qA - qB;
+    const dz = rA - rB;
+    const dy = -dx - dz;
+    return Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
 }
 
 export function worldToAxial(point) {
